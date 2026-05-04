@@ -38,6 +38,18 @@ def _resolve_ltx(cli_value: str | None) -> str | None:
     return cli_value or os.environ.get("FPGA_LTX")
 
 
+def _is_power_of_two(v: int) -> bool:
+    return v > 0 and (v & (v - 1)) == 0
+
+
+def _validate_samples(samples: int) -> int:
+    if samples <= 0:
+        raise VivadoError("--samples must be > 0")
+    if not _is_power_of_two(samples):
+        raise VivadoError("--samples must be a power of two (e.g., 128, 256, 512, 1024)")
+    return samples
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="xdb", description="Generic FPGA ILA debug toolkit")
     p.add_argument("--version", action="version", version=f"xdb {__version__}")
@@ -95,7 +107,7 @@ def main() -> None:
                     _require_part_hint(args.part_hint),
                     args.ila,
                     args.csv,
-                    args.samples,
+                    _validate_samples(args.samples),
                     timeout=args.timeout,
                 )
             )
