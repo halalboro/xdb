@@ -72,6 +72,7 @@ def main() -> None:
     s_program = sub.add_parser("program")
     s_program.add_argument("--bit", default=None)
     s_program.add_argument("--ltx", default=None)
+    s_program.add_argument("--verbose", action="store_true")
     s_program.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
     s_program.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
     s_program.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
@@ -98,14 +99,17 @@ def main() -> None:
         if args.cmd == "targets":
             _print(list_targets(_resolve_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "program":
-            _print(
-                program(
-                    _resolve_bitstream(args.bit),
-                    _resolve_ltx(args.ltx),
-                    _require_part_hint(args.part_hint),
-                    timeout=args.timeout,
-                )
+            bit = _resolve_bitstream(args.bit)
+            ltx = _resolve_ltx(args.ltx)
+            result = program(
+                bit,
+                ltx,
+                _require_part_hint(args.part_hint),
+                timeout=args.timeout,
             )
+            result["bitstream"] = bit
+            result["ltx"] = ltx
+            _print(result)
         elif args.cmd == "ilas":
             _print(list_ilas(_require_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "capture":
