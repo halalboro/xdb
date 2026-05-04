@@ -31,11 +31,18 @@ def _resolve_bitstream(cli_value: str | None) -> str:
     bit = cli_value or os.environ.get("FPGA_BITSTREAM")
     if not bit:
         raise VivadoError("missing bitstream: pass --bit or set FPGA_BITSTREAM")
+    if not os.path.isfile(bit):
+        raise VivadoError(f"bitstream not found: {bit}")
     return bit
 
 
-def _resolve_ltx(cli_value: str | None) -> str | None:
-    return cli_value or os.environ.get("FPGA_LTX")
+def _resolve_ltx(cli_value: str | None) -> str:
+    ltx = cli_value or os.environ.get("FPGA_LTX")
+    if not ltx:
+        raise VivadoError("missing ltx: pass --ltx or set FPGA_LTX")
+    if not os.path.isfile(ltx):
+        raise VivadoError(f"ltx not found: {ltx}")
+    return ltx
 
 
 def _is_power_of_two(v: int) -> bool:
