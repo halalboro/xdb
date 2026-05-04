@@ -29,7 +29,13 @@ def _run_vivado_tcl(tcl: str, args: list[str], timeout: int = 120) -> VivadoResu
         cmd += ["-tclargs", *args]
 
     env = os.environ.copy()
-    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
+    except FileNotFoundError as e:
+        raise VivadoError(
+            "vivado executable not found in PATH. Run inside a Xilinx-enabled shell "
+            "(e.g., xilinx-shell) or source Vivado settings first."
+        ) from e
     try:
         Path(tcl_path).unlink(missing_ok=True)
     except Exception:
