@@ -32,25 +32,31 @@ python -m pip install -e .
 ## Usage
 
 ```bash
+# shared env (same names as helios-coyote)
+export FDEV_NAME=u280
+export FPGA_BDF=0000:c1:00.0
+export FPGA_PART_HINT=xcu280
+
 # show targets
-xdb targets --part-hint xcu280
+xdb targets
 
 # program board
-xdb program --bit /path/to/cyt_top.bit --ltx /path/to/cyt_top.ltx --part-hint xcu280
+xdb program --bit /path/to/cyt_top.bit --ltx /path/to/cyt_top.ltx
 
 # list ILAs
-xdb ilas --part-hint xcu280
+xdb ilas
 
 # capture
 xdb capture \
   --ila hw_ila_1 \
   --csv ./ila.csv \
-  --samples 2048 \
-  --part-hint xcu280
+  --samples 2048
 ```
 
 ## Notes
 
-- `--part-hint` is used to select the hardware target by matching `PART=` from `get_property NAME`.
+- `FPGA_PART_HINT` is used by default to select the hardware target by matching `PART=` from `get_property NAME`.
+- You can override with `--part-hint` (or `--fpga-part-hint`).
+- `FDEV_NAME` and `FPGA_BDF` are accepted for CLI consistency with helios-coyote.
 - Captures are one-shot and blocking (with timeout).
 - Output is intentionally minimal and script-friendly.
