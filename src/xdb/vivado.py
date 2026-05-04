@@ -225,8 +225,10 @@ set_property CONTROL.DATA_DEPTH $samples $ila
 run_hw_ila $ila
 wait_on_hw_ila $ila
 write_hw_ila_data -csv_file $csv_path [upload_hw_ila_data $ila]
+set out "{\"ok\":true,\"target\":\"$chosen\",\"part\":\"[get_property PART $dev]\","
+append out "\"ila\":\"$ila_name\",\"csv\":\"$csv_path\",\"samples\":$samples}"
 puts "XDB_JSON_BEGIN"
-puts "{\"ok\":true,\"target\":\"$chosen\",\"part\":\"[get_property PART $dev]\",\"ila\":\"$ila_name\",\"csv\":\"$csv_path\",\"samples\":$samples}"
+puts $out
 puts "XDB_JSON_END"
 exit 0
 '''

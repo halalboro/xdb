@@ -20,7 +20,10 @@ def _resolve_part_hint(cli_value: str | None) -> str | None:
 def _require_part_hint(cli_value: str | None) -> str:
     part_hint = _resolve_part_hint(cli_value)
     if not part_hint:
-        raise VivadoError("missing FPGA part hint: pass --part-hint (or --fpga-part-hint) or set FPGA_PART_HINT")
+        raise VivadoError(
+            "missing FPGA part hint: pass --part-hint "
+            "(or --fpga-part-hint) or set FPGA_PART_HINT"
+        )
     return part_hint
 
 
@@ -76,11 +79,26 @@ def main() -> None:
         if args.cmd == "targets":
             _print(list_targets(_resolve_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "program":
-            _print(program(_resolve_bitstream(args.bit), _resolve_ltx(args.ltx), _require_part_hint(args.part_hint), timeout=args.timeout))
+            _print(
+                program(
+                    _resolve_bitstream(args.bit),
+                    _resolve_ltx(args.ltx),
+                    _require_part_hint(args.part_hint),
+                    timeout=args.timeout,
+                )
+            )
         elif args.cmd == "ilas":
             _print(list_ilas(_require_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "capture":
-            _print(capture(_require_part_hint(args.part_hint), args.ila, args.csv, args.samples, timeout=args.timeout))
+            _print(
+                capture(
+                    _require_part_hint(args.part_hint),
+                    args.ila,
+                    args.csv,
+                    args.samples,
+                    timeout=args.timeout,
+                )
+            )
         else:
             p.error(f"unknown command: {args.cmd}")
     except VivadoError as e:

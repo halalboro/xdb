@@ -57,7 +57,8 @@ xdb capture \
 
 ## Notes
 
-- `FPGA_PART_HINT` is used by default to select the hardware target by matching `PART=` from `get_property NAME`.
+- `FPGA_PART_HINT` is used by default to select the hardware target.
+  Matching is done against `PART=` from `get_property NAME`.
 - `FPGA_BITSTREAM` and `FPGA_LTX` are used by default for `xdb program`.
 - You can override with `--part-hint`/`--fpga-part-hint`, `--bit`, and `--ltx`.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
