@@ -24,6 +24,17 @@ def _require_part_hint(cli_value: str | None) -> str:
     return part_hint
 
 
+def _resolve_bitstream(cli_value: str | None) -> str:
+    bit = cli_value or os.environ.get("FPGA_BITSTREAM")
+    if not bit:
+        raise VivadoError("missing bitstream: pass --bit or set FPGA_BITSTREAM")
+    return bit
+
+
+def _resolve_ltx(cli_value: str | None) -> str | None:
+    return cli_value or os.environ.get("FPGA_LTX")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="xdb", description="Generic FPGA ILA debug toolkit")
     p.add_argument("--version", action="version", version=f"xdb {__version__}")
@@ -37,7 +48,7 @@ def main() -> None:
     s_targets.add_argument("--timeout", type=int, default=120)
 
     s_program = sub.add_parser("program")
-    s_program.add_argument("--bit", required=True)
+    s_program.add_argument("--bit", default=None)
     s_program.add_argument("--ltx", default=None)
     s_program.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
     s_program.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
@@ -65,7 +76,7 @@ def main() -> None:
         if args.cmd == "targets":
             _print(list_targets(_resolve_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "program":
-            _print(program(args.bit, args.ltx, _require_part_hint(args.part_hint), timeout=args.timeout))
+            _print(program(_resolve_bitstream(args.bit), _resolve_ltx(args.ltx), _require_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "ilas":
             _print(list_ilas(_require_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "capture":
