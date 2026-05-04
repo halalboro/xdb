@@ -67,7 +67,8 @@ def list_targets(part_hint: str | None, timeout: int = 120) -> dict:
 open_hw_manager
 connect_hw_server
 set targets [get_hw_targets *]
-set out "{\"targets\":["
+set out "{\"targets\":"
+append out "\["
 set first 1
 foreach t $targets {
   open_hw_target $t
@@ -160,13 +161,15 @@ set dev [lindex [get_hw_devices] 0]
 current_hw_device $dev
 refresh_hw_device $dev
 set ilas [get_hw_ilas]
-set out "{\"target\":\"$chosen\",\"part\":\"[get_property PART $dev]\",\"ilas\":["
+set out "{\"target\":\"$chosen\",\"part\":\"[get_property PART $dev]\",\"ilas\":"
+append out "\["
 set fi 1
 foreach ila $ilas {
   if {!$fi} { append out "," }
   set fi 0
   set nm [get_property NAME $ila]
-  append out "{\"name\":\"$nm\",\"probes\":["
+  append out "{\"name\":\"$nm\",\"probes\":"
+  append out "\["
   set fp 1
   foreach p [get_hw_probes -of_objects $ila] {
     if {!$fp} { append out "," }
