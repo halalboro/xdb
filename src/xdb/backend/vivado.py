@@ -8,10 +8,11 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..errors import XdbError
 from .base import Capability
 
 
-class VivadoError(RuntimeError):
+class VivadoError(XdbError):
     pass
 
 
@@ -43,11 +44,29 @@ class VivadoBackend:
     ) -> dict:
         return capture(part_hint, ila_name, csv_path, samples, timeout=timeout)
 
+    def list_instruments(self, part_hint: str, timeout: int = 180) -> dict:
+        ilas = self.list_ilas(part_hint, timeout=timeout)
+        instruments = [
+            {
+                "type": "ila",
+                "name": ila.get("name", ""),
+                "capabilities": [Capability.ILA_LIST.value, Capability.ILA_BASIC_CAPTURE.value],
+            }
+            for ila in ilas.get("ilas", [])
+        ]
+        return {
+            "target": ilas.get("target", ""),
+            "part": ilas.get("part", ""),
+            "instruments": instruments,
+        }
+
     def capabilities(self) -> set[Capability]:
         return {
             Capability.TARGETS,
             Capability.PROGRAM,
+            Capability.ILA_LIST,
             Capability.ILA_BASIC_CAPTURE,
+            Capability.INSTRUMENTS_LIST,
         }
 
 

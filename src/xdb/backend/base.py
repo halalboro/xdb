@@ -5,9 +5,11 @@ from typing import Protocol, TypedDict
 
 
 class Capability(str, Enum):
-    ILA_BASIC_CAPTURE = "ila.basic_capture"
-    PROGRAM = "program"
     TARGETS = "targets"
+    PROGRAM = "program"
+    ILA_LIST = "ila.list"
+    ILA_BASIC_CAPTURE = "ila.basic_capture"
+    INSTRUMENTS_LIST = "instruments.list"
 
 
 class TargetInfo(TypedDict):
@@ -50,6 +52,18 @@ class CaptureResult(TypedDict):
     samples: int
 
 
+class InstrumentInfo(TypedDict):
+    type: str
+    name: str
+    capabilities: list[str]
+
+
+class InstrumentsResult(TypedDict):
+    target: str
+    part: str
+    instruments: list[InstrumentInfo]
+
+
 class DebugBackend(Protocol):
     name: str
 
@@ -70,6 +84,9 @@ class DebugBackend(Protocol):
         samples: int,
         timeout: int = 120,
     ) -> CaptureResult:
+        ...
+
+    def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult:
         ...
 
     def capabilities(self) -> set[Capability]:

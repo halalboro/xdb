@@ -1,3 +1,4 @@
+from ..errors import UnsupportedOperationError, XdbError
 from .base import Capability, DebugBackend
 from .chipscopy_backend import ChipScoPyBackend
 from .select import select_backend
@@ -9,5 +10,7 @@ __all__ = [
     "ChipScoPyBackend",
     "VivadoBackend",
     "VivadoError",
+    "XdbError",
+    "UnsupportedOperationError",
     "select_backend",
 ]

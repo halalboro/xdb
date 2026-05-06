@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 
+from ..errors import XdbError
 from .base import DebugBackend
 from .chipscopy_backend import ChipScoPyBackend
-from .vivado import VivadoBackend, VivadoError
+from .vivado import VivadoBackend
 
 
 def select_backend(name: str | None = None) -> DebugBackend:
@@ -20,6 +21,6 @@ def select_backend(name: str | None = None) -> DebugBackend:
             return ChipScoPyBackend()
         return VivadoBackend()
 
-    raise VivadoError(
+    raise XdbError(
         f"unsupported backend: {backend_name} (supported: auto, vivado, chipscopy)"
     )

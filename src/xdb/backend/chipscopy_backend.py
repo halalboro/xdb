@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..errors import XdbError
 from .base import Capability
-from .vivado import VivadoError
 
 
 class ChipScoPyBackend:
@@ -15,7 +15,9 @@ class ChipScoPyBackend:
         return {
             Capability.TARGETS,
             Capability.PROGRAM,
+            Capability.ILA_LIST,
             Capability.ILA_BASIC_CAPTURE,
+            Capability.INSTRUMENTS_LIST,
         }
 
     def list_targets(self, part_hint: str | None, timeout: int = 120) -> dict:
@@ -81,6 +83,22 @@ class ChipScoPyBackend:
         finally:
             self._delete_session(session)
 
+    def list_instruments(self, part_hint: str, timeout: int = 180) -> dict:
+        ilas = self.list_ilas(part_hint, timeout=timeout)
+        instruments = [
+            {
+                "type": "ila",
+                "name": ila.get("name", ""),
+                "capabilities": [Capability.ILA_LIST.value, Capability.ILA_BASIC_CAPTURE.value],
+            }
+            for ila in ilas.get("ilas", [])
+        ]
+        return {
+            "target": ilas.get("target", ""),
+            "part": ilas.get("part", ""),
+            "instruments": instruments,
+        }
+
     def capture(
         self,
         part_hint: str,
@@ -100,7 +118,7 @@ class ChipScoPyBackend:
 
             ila = dev.ila_cores.get(name=ila_name)
             if not ila:
-                raise VivadoError(f"ILA not found: {ila_name}")
+                raise XdbError(f"ILA not found: {ila_name}")
 
             ila.reset_probes()
             ila.run_trigger_immediately(
@@ -112,7 +130,7 @@ class ChipScoPyBackend:
             ila.wait_till_done(max_wait_minutes=max_wait_minutes)
             uploaded = ila.upload()
             if not uploaded or ila.waveform is None:
-                raise VivadoError("failed to upload ILA data")
+                raise XdbError("failed to upload ILA data")
 
             out_path = str(Path(csv_path))
             ila.waveform.export_waveform("CSV", out_path)
@@ -150,7 +168,7 @@ class ChipScoPyBackend:
         try:
             from chipscopy import create_session
         except Exception as e:
-            raise VivadoError(
+            raise XdbError(
                 "chipscopy backend requested but chipscopy is not available. "
                 "Install xdb with the 'versal' extra."
             ) from e
@@ -177,8 +195,8 @@ class ChipScoPyBackend:
                 return d
 
         if not versal_devices:
-            raise VivadoError("no Versal devices found via chipscopy")
-        raise VivadoError(f"no Versal target matching part hint {part_hint}")
+            raise XdbError("no Versal devices found via chipscopy")
+        raise XdbError(f"no Versal target matching part hint {part_hint}")
 
     @staticmethod
     def _target_name(device) -> str:
