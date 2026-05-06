@@ -6,7 +6,8 @@ import os
 import sys
 
 from . import __version__
-from .vivado import VivadoError, capture, list_ilas, list_targets, program
+from .backend.select import select_backend
+from .vivado import VivadoError
 
 
 def _print(data: dict) -> None:
@@ -96,12 +97,13 @@ def main() -> None:
     args = p.parse_args()
 
     try:
+        backend = select_backend()
         if args.cmd == "targets":
-            _print(list_targets(_resolve_part_hint(args.part_hint), timeout=args.timeout))
+            _print(backend.list_targets(_resolve_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "program":
             bit = _resolve_bitstream(args.bit)
             ltx = _resolve_ltx(args.ltx)
-            result = program(
+            result = backend.program(
                 bit,
                 ltx,
                 _require_part_hint(args.part_hint),
@@ -111,10 +113,10 @@ def main() -> None:
             result["ltx"] = ltx
             _print(result)
         elif args.cmd == "ilas":
-            _print(list_ilas(_require_part_hint(args.part_hint), timeout=args.timeout))
+            _print(backend.list_ilas(_require_part_hint(args.part_hint), timeout=args.timeout))
         elif args.cmd == "capture":
             _print(
-                capture(
+                backend.capture(
                     _require_part_hint(args.part_hint),
                     args.ila,
                     args.csv,
