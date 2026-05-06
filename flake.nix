@@ -57,13 +57,41 @@
         );
         pythonSetEditable = pythonSet.overrideScope editableOverlay;
         virtualenv = pythonSetEditable.mkVirtualEnv "xdb-dev-env" workspace.deps.all;
+
+        # Runtime variants
+        depsUltrascale = workspace.deps.default;
+        versalEnabled = builtins.elem "versal" (workspace.deps.optionals.xdb or [ ]);
+        depsVersal = workspace.deps.default // {
+          xdb = workspace.deps.default.xdb ++ lib.optional versalEnabled "versal";
+        };
+
+        ultrascaleEnv = pythonSet.mkVirtualEnv "xdb-ultrascale-env" depsUltrascale;
+        versalEnv = pythonSet.mkVirtualEnv "xdb-versal-env" depsVersal;
       in
       {
-        packages.default = pythonSet.mkVirtualEnv "xdb-env" workspace.deps.default;
+        packages = rec {
+          default = xdb;
 
-        apps.default = {
-          type = "app";
-          program = "${pythonSet.mkVirtualEnv "xdb-env" workspace.deps.default}/bin/xdb";
+          xdb = ultrascaleEnv;
+          xdb-ultrascale = ultrascaleEnv;
+          xdb-versal = versalEnv;
+        };
+
+        apps = rec {
+          default = xdb;
+
+          xdb = {
+            type = "app";
+            program = "${ultrascaleEnv}/bin/xdb";
+          };
+          xdb-ultrascale = {
+            type = "app";
+            program = "${ultrascaleEnv}/bin/xdb";
+          };
+          xdb-versal = {
+            type = "app";
+            program = "${versalEnv}/bin/xdb";
+          };
         };
 
         devShells.default = pkgs.mkShell {

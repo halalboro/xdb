@@ -345,23 +345,23 @@ wheels = [
 name = "xdb"
 version = "0.1.0"
 source = { editable = "." }
-dependencies = [
-    { name = "chipscopy" },
-]
 
 [package.optional-dependencies]
 dev = [
     { name = "pyright" },
     { name = "ruff" },
 ]
+versal = [
+    { name = "chipscopy" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "chipscopy", specifier = ">=2025.2" },
+    { name = "chipscopy", marker = "extra == 'versal'", specifier = ">=2025.2" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["versal", "dev"]
 
 [[package]]
 name = "zipp"

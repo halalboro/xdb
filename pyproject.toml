@@ -9,11 +9,12 @@ description = "Generic FPGA ILA debug toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "taugoust" }]
-dependencies = [
-  "chipscopy>=2025.2",
-]
+dependencies = []
 
 [project.optional-dependencies]
+versal = [
+  "chipscopy>=2025.2",
+]
 dev = [
   "pyright>=1.1.0",
   "ruff>=0.6.0",
