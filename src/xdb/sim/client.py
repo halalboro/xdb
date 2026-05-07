@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -113,6 +114,9 @@ def _spawn_daemon(
     ]
     if session_name:
         cmd.extend(["--session", session_name])
+    debug_env = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
+    if debug_env and debug_env.strip().lower() not in {"", "0", "false", "no", "off"}:
+        cmd.append("--debug")
     try:
         return subprocess.Popen(
             cmd,

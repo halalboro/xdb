@@ -113,8 +113,21 @@ def _join_tokens(values: list[str]) -> str | None:
     return " ".join(values).strip() or None
 
 
+def _env_debug_enabled() -> bool:
+    for name in ("XDB_DEBUG", "XDB_VERBOSE"):
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        if value.strip().lower() in {"", "0", "false", "no", "off"}:
+            continue
+        return True
+    return False
+
+
+
 def _configure_diagnostics(debug: bool) -> None:
-    if debug:
+    effective_debug = debug or _env_debug_enabled()
+    if effective_debug:
         os.environ["XDB_DEBUG"] = "1"
         os.environ["XDB_VERBOSE"] = "1"
     else:
