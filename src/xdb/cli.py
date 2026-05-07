@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import traceback
 
 from . import __version__
 from .backend.base import Capability
@@ -112,34 +113,64 @@ def _join_tokens(values: list[str]) -> str | None:
     return " ".join(values).strip() or None
 
 
+def _configure_diagnostics(debug: bool) -> None:
+    if debug:
+        os.environ["XDB_DEBUG"] = "1"
+        os.environ["XDB_VERBOSE"] = "1"
+    else:
+        os.environ.pop("XDB_DEBUG", None)
+        os.environ.pop("XDB_VERBOSE", None)
+
+
+
+def _print_error(message: str) -> None:
+    print(f"error: {message}", file=sys.stderr)
+
+
+
+def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--debug",
+        "--verbose",
+        dest="debug",
+        action="store_true",
+        help="print tracebacks and detailed Vivado diagnostics on failure",
+    )
+
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="xdb", description="Generic FPGA ILA debug toolkit")
     p.add_argument("--version", action="version", version=f"xdb {__version__}")
+    _add_debug_flag(p)
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s_targets = sub.add_parser("targets")
+    _add_debug_flag(s_targets)
     s_targets.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
     s_targets.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
     s_targets.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
     s_targets.add_argument("--timeout", type=int, default=120)
 
     s_program = sub.add_parser("program")
+    _add_debug_flag(s_program)
     s_program.add_argument("--bit", default=None)
     s_program.add_argument("--ltx", default=None)
-    s_program.add_argument("--verbose", action="store_true")
     s_program.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
     s_program.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
     s_program.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
     s_program.add_argument("--timeout", type=int, default=300)
 
     s_ilas = sub.add_parser("ilas")
+    _add_debug_flag(s_ilas)
     s_ilas.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
     s_ilas.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
     s_ilas.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
     s_ilas.add_argument("--timeout", type=int, default=180)
 
     s_capture = sub.add_parser("capture")
+    _add_debug_flag(s_capture)
     s_capture.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
     s_capture.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
     s_capture.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
@@ -151,16 +182,19 @@ def main() -> None:
     s_instruments = sub.add_parser("instruments")
     instruments_sub = s_instruments.add_subparsers(dest="instruments_cmd", required=True)
     s_instruments_list = instruments_sub.add_parser("list")
+    _add_debug_flag(s_instruments_list)
     s_instruments_list.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
     s_instruments_list.add_argument("--timeout", type=int, default=180)
 
     s_sim = sub.add_parser("sim", description="Persistent Vivado simulation session control")
+    _add_debug_flag(s_sim)
     sim_sub = s_sim.add_subparsers(dest="sim_cmd", required=True)
 
     def add_sim_session_arg(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("--session", default=None)
 
     s_sim_launch = sim_sub.add_parser("launch")
+    _add_debug_flag(s_sim_launch)
     add_sim_session_arg(s_sim_launch)
     s_sim_launch.add_argument("--project", default=None)
     s_sim_launch.add_argument("--simset", default=None)
@@ -174,57 +208,73 @@ def main() -> None:
     s_sim_launch.add_argument("--timeout", type=int, default=300)
 
     s_sim_run = sim_sub.add_parser("run")
+    _add_debug_flag(s_sim_run)
     add_sim_session_arg(s_sim_run)
     s_sim_run.add_argument("time", nargs="*")
 
     s_sim_restart = sim_sub.add_parser("restart")
+    _add_debug_flag(s_sim_restart)
     add_sim_session_arg(s_sim_restart)
 
     s_sim_close = sim_sub.add_parser("close")
+    _add_debug_flag(s_sim_close)
     add_sim_session_arg(s_sim_close)
 
     s_sim_time = sim_sub.add_parser("time")
+    _add_debug_flag(s_sim_time)
     add_sim_session_arg(s_sim_time)
 
     s_sim_get = sim_sub.add_parser("get")
+    _add_debug_flag(s_sim_get)
     add_sim_session_arg(s_sim_get)
     s_sim_get.add_argument("signal")
 
     s_sim_get_many = sim_sub.add_parser("get-many")
+    _add_debug_flag(s_sim_get_many)
     add_sim_session_arg(s_sim_get_many)
     s_sim_get_many.add_argument("pattern")
 
     s_sim_scopes = sim_sub.add_parser("scopes")
+    _add_debug_flag(s_sim_scopes)
     add_sim_session_arg(s_sim_scopes)
     s_sim_scopes.add_argument("scope", nargs="?", default=None)
 
     s_sim_objects = sim_sub.add_parser("objects")
+    _add_debug_flag(s_sim_objects)
     add_sim_session_arg(s_sim_objects)
     s_sim_objects.add_argument("scope")
 
     s_sim_top = sim_sub.add_parser("top")
+    _add_debug_flag(s_sim_top)
     add_sim_session_arg(s_sim_top)
     s_sim_top.add_argument("module")
 
     s_sim_wave = sim_sub.add_parser("wave")
+    _add_debug_flag(s_sim_wave)
     sim_wave_sub = s_sim_wave.add_subparsers(dest="sim_wave_cmd", required=True)
     s_sim_wave_add = sim_wave_sub.add_parser("add")
+    _add_debug_flag(s_sim_wave_add)
     add_sim_session_arg(s_sim_wave_add)
     s_sim_wave_add.add_argument("pattern")
 
     s_sim_step = sim_sub.add_parser("step")
+    _add_debug_flag(s_sim_step)
     add_sim_session_arg(s_sim_step)
     s_sim_step.add_argument("arg", nargs="*", default=[])
 
     s_sim_breakpoint = sim_sub.add_parser("breakpoint")
+    _add_debug_flag(s_sim_breakpoint)
     sim_bp_sub = s_sim_breakpoint.add_subparsers(dest="sim_bp_cmd", required=True)
     s_sim_breakpoint_add = sim_bp_sub.add_parser("add")
+    _add_debug_flag(s_sim_breakpoint_add)
     add_sim_session_arg(s_sim_breakpoint_add)
     s_sim_breakpoint_add.add_argument("condition", nargs="+")
     s_sim_breakpoint_clear = sim_bp_sub.add_parser("clear")
+    _add_debug_flag(s_sim_breakpoint_clear)
     add_sim_session_arg(s_sim_breakpoint_clear)
 
     s_simd = sub.add_parser("_simd", help=argparse.SUPPRESS)
+    _add_debug_flag(s_simd)
     s_simd.add_argument("--anchor-dir", required=True)
     s_simd.add_argument("--session", default=None)
     s_simd.add_argument("--project", required=True)
@@ -233,6 +283,7 @@ def main() -> None:
     s_simd.add_argument("--top", default="")
 
     args = p.parse_args()
+    _configure_diagnostics(bool(args.debug))
 
     try:
         if args.cmd == "_simd":
@@ -355,7 +406,22 @@ def main() -> None:
         else:
             p.error(f"unknown command: {args.cmd}")
     except XdbError as e:
-        print(str(e), file=sys.stderr)
+        _print_error(str(e))
+        if args.debug:
+            traceback.print_exc()
+        sys.exit(2)
+    except KeyboardInterrupt:
+        _print_error("interrupted")
+        if args.debug:
+            traceback.print_exc()
+        sys.exit(130)
+    except Exception as e:
+        if args.debug:
+            traceback.print_exc()
+        else:
+            _print_error(
+                f"unexpected internal error: {e}. Re-run with --debug for a traceback."
+            )
         sys.exit(2)
 
 

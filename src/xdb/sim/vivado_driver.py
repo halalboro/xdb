@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 
 from ..errors import XdbError
@@ -103,6 +104,44 @@ class VivadoSimDriver:
         self._reader_thread: threading.Thread | None = None
         self._queue: queue.Queue[str] = queue.Queue()
         self._log_file = None
+        self._recent_lines: deque[str] = deque(maxlen=80)
+
+    def _debug_enabled(self) -> bool:
+        value = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
+        if value is None:
+            return False
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+
+    def _tail_log(self, limit: int = 60) -> list[str]:
+        path = Path(self.vivado_log_path)
+        if not path.exists():
+            return []
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return []
+        return lines[-limit:]
+
+    def _format_exit_diagnostics(self, summary: str) -> str:
+        exit_code = None
+        if self.proc is not None:
+            exit_code = self.proc.poll()
+
+        message = summary
+        if exit_code is not None:
+            message += f" (exit code {exit_code})"
+        message += f". Vivado log: {self.vivado_log_path}"
+
+        if not self._debug_enabled():
+            message += " Re-run with --debug for recent Vivado output."
+            return message
+
+        recent = list(self._recent_lines)
+        if not recent:
+            recent = self._tail_log()
+        if recent:
+            message += "\n\nRecent Vivado output:\n" + "\n".join(recent[-60:])
+        return message
 
     def start(self, timeout: int = 300) -> None:
         vivado_bin = os.environ.get("XDB_VIVADO_BIN", "vivado")
@@ -135,6 +174,7 @@ class VivadoSimDriver:
             text = line.rstrip("\n")
             if self._log_file is not None:
                 self._log_file.write(text + "\n")
+            self._recent_lines.append(text)
             self._queue.put(text)
 
     def _send_raw(self, script: str) -> None:
@@ -146,7 +186,11 @@ class VivadoSimDriver:
                 self.proc.stdin.write("\n")
             self.proc.stdin.flush()
         except BrokenPipeError as e:
-            raise XdbError("vivado simulation process terminated unexpectedly") from e
+            raise XdbError(
+                self._format_exit_diagnostics(
+                    "vivado simulation process terminated unexpectedly"
+                )
+            ) from e
 
     def request(self, body_tcl: str, timeout: int = 120) -> dict:
         if self.proc is None:
@@ -181,7 +225,11 @@ if {{[catch {{
                 line = self._queue.get(timeout=min(0.2, remaining))
             except queue.Empty:
                 if self.proc is not None and self.proc.poll() is not None:
-                    raise XdbError("vivado simulation process exited while waiting for reply")
+                    raise XdbError(
+                        self._format_exit_diagnostics(
+                            "vivado simulation process exited while waiting for reply"
+                        )
+                    )
                 continue
 
             if line == begin_line:
