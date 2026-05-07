@@ -1,0 +1,33 @@
+from .client import (
+    add_breakpoint,
+    add_wave,
+    close_session,
+    get_many_signals,
+    get_objects,
+    get_scopes,
+    get_signal,
+    launch_session,
+    restart_session,
+    run_session,
+    set_top,
+    step_session,
+    time_session,
+    clear_breakpoints,
+)
+
+__all__ = [
+    "add_breakpoint",
+    "add_wave",
+    "clear_breakpoints",
+    "close_session",
+    "get_many_signals",
+    "get_objects",
+    "get_scopes",
+    "get_signal",
+    "launch_session",
+    "restart_session",
+    "run_session",
+    "set_top",
+    "step_session",
+    "time_session",
+]

@@ -16,6 +16,7 @@ This repo provides a standalone CLI so ILA debug automation is not tied to any o
 - Program bitstream + probes (`.ltx`)
 - List ILAs and probe metadata
 - Capture from an ILA and export CSV
+- Persistent Vivado simulation sessions for project-backed flows
 
 ## Requirements
 
@@ -53,6 +54,20 @@ xdb capture \
   --ila hw_ila_1 \
   --csv ./ila.csv \
   --samples 2048
+
+# launch a persistent simulation session from a Vivado project
+xdb sim launch --project ./myproj.xpr --top tb_top
+
+# query the same live session without relaunching Vivado
+xdb sim time
+xdb sim get /tb_top/dut/state
+xdb sim run 100 ns
+xdb sim scopes /tb_top
+xdb sim objects /tb_top/dut
+xdb sim wave add /tb_top/dut/*
+
+# close the session when done
+xdb sim close
 ```
 
 ## Notes
@@ -63,4 +78,6 @@ xdb capture \
 - You can override with `--part-hint`/`--fpga-part-hint`, `--bit`, and `--ltx`.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - Captures are one-shot and blocking (with timeout).
+- `xdb sim` is project-backed in v1: launch from an existing `.xpr` and optional simset/top.
+- `xdb sim launch` starts a persistent background session; later `xdb sim ...` commands talk to that live Vivado process.
 - Output is intentionally minimal and script-friendly.

@@ -9,6 +9,23 @@ from . import __version__
 from .backend.base import Capability
 from .backend.select import select_backend
 from .errors import UnsupportedOperationError, XdbError
+from .sim.client import (
+    add_breakpoint,
+    add_wave,
+    clear_breakpoints,
+    close_session,
+    get_many_signals,
+    get_objects,
+    get_scopes,
+    get_signal,
+    launch_session,
+    restart_session,
+    run_session,
+    set_top,
+    step_session,
+    time_session,
+)
+from .sim.daemon import run_daemon
 
 
 def _print(data: dict) -> None:
@@ -89,6 +106,12 @@ def _require_capability(
         )
 
 
+def _join_tokens(values: list[str]) -> str | None:
+    if not values:
+        return None
+    return " ".join(values).strip() or None
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="xdb", description="Generic FPGA ILA debug toolkit")
     p.add_argument("--version", action="version", version=f"xdb {__version__}")
@@ -131,9 +154,141 @@ def main() -> None:
     s_instruments_list.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
     s_instruments_list.add_argument("--timeout", type=int, default=180)
 
+    s_sim = sub.add_parser("sim", description="Persistent Vivado simulation session control")
+    sim_sub = s_sim.add_subparsers(dest="sim_cmd", required=True)
+
+    def add_sim_session_arg(sp: argparse.ArgumentParser) -> None:
+        sp.add_argument("--session", default=None)
+
+    s_sim_launch = sim_sub.add_parser("launch")
+    add_sim_session_arg(s_sim_launch)
+    s_sim_launch.add_argument("--project", default=None)
+    s_sim_launch.add_argument("--simset", default="sim_1")
+    s_sim_launch.add_argument(
+        "--mode",
+        choices=["behavioral", "post-synth", "post-impl"],
+        default="behavioral",
+    )
+    s_sim_launch.add_argument("--top", default=None)
+    s_sim_launch.add_argument("--replace", action="store_true")
+    s_sim_launch.add_argument("--timeout", type=int, default=300)
+
+    s_sim_run = sim_sub.add_parser("run")
+    add_sim_session_arg(s_sim_run)
+    s_sim_run.add_argument("time", nargs="*")
+
+    s_sim_restart = sim_sub.add_parser("restart")
+    add_sim_session_arg(s_sim_restart)
+
+    s_sim_close = sim_sub.add_parser("close")
+    add_sim_session_arg(s_sim_close)
+
+    s_sim_time = sim_sub.add_parser("time")
+    add_sim_session_arg(s_sim_time)
+
+    s_sim_get = sim_sub.add_parser("get")
+    add_sim_session_arg(s_sim_get)
+    s_sim_get.add_argument("signal")
+
+    s_sim_get_many = sim_sub.add_parser("get-many")
+    add_sim_session_arg(s_sim_get_many)
+    s_sim_get_many.add_argument("pattern")
+
+    s_sim_scopes = sim_sub.add_parser("scopes")
+    add_sim_session_arg(s_sim_scopes)
+    s_sim_scopes.add_argument("scope", nargs="?", default=None)
+
+    s_sim_objects = sim_sub.add_parser("objects")
+    add_sim_session_arg(s_sim_objects)
+    s_sim_objects.add_argument("scope")
+
+    s_sim_top = sim_sub.add_parser("top")
+    add_sim_session_arg(s_sim_top)
+    s_sim_top.add_argument("module")
+
+    s_sim_wave = sim_sub.add_parser("wave")
+    sim_wave_sub = s_sim_wave.add_subparsers(dest="sim_wave_cmd", required=True)
+    s_sim_wave_add = sim_wave_sub.add_parser("add")
+    add_sim_session_arg(s_sim_wave_add)
+    s_sim_wave_add.add_argument("pattern")
+
+    s_sim_step = sim_sub.add_parser("step")
+    add_sim_session_arg(s_sim_step)
+    s_sim_step.add_argument("arg", nargs="*", default=[])
+
+    s_sim_breakpoint = sim_sub.add_parser("breakpoint")
+    sim_bp_sub = s_sim_breakpoint.add_subparsers(dest="sim_bp_cmd", required=True)
+    s_sim_breakpoint_add = sim_bp_sub.add_parser("add")
+    add_sim_session_arg(s_sim_breakpoint_add)
+    s_sim_breakpoint_add.add_argument("condition", nargs="+")
+    s_sim_breakpoint_clear = sim_bp_sub.add_parser("clear")
+    add_sim_session_arg(s_sim_breakpoint_clear)
+
+    s_simd = sub.add_parser("_simd", help=argparse.SUPPRESS)
+    s_simd.add_argument("--anchor-dir", required=True)
+    s_simd.add_argument("--session", default=None)
+    s_simd.add_argument("--project", required=True)
+    s_simd.add_argument("--simset", required=True)
+    s_simd.add_argument("--mode", required=True)
+    s_simd.add_argument("--top", default="")
+
     args = p.parse_args()
 
     try:
+        if args.cmd == "_simd":
+            run_daemon(
+                anchor_dir=args.anchor_dir,
+                session_name=args.session,
+                project=args.project,
+                simset=args.simset,
+                mode=args.mode,
+                top=args.top,
+            )
+            return
+
+        if args.cmd == "sim":
+            if args.sim_cmd == "launch":
+                _print(
+                    launch_session(
+                        project=args.project,
+                        simset=args.simset,
+                        mode=args.mode,
+                        top=args.top,
+                        session_name=args.session,
+                        replace=args.replace,
+                        timeout=args.timeout,
+                    )
+                )
+            elif args.sim_cmd == "run":
+                _print(run_session(args.session, args.time))
+            elif args.sim_cmd == "restart":
+                _print(restart_session(args.session))
+            elif args.sim_cmd == "close":
+                _print(close_session(args.session))
+            elif args.sim_cmd == "time":
+                _print(time_session(args.session))
+            elif args.sim_cmd == "get":
+                _print(get_signal(args.session, args.signal))
+            elif args.sim_cmd == "get-many":
+                _print(get_many_signals(args.session, args.pattern))
+            elif args.sim_cmd == "scopes":
+                _print(get_scopes(args.session, args.scope))
+            elif args.sim_cmd == "objects":
+                _print(get_objects(args.session, args.scope))
+            elif args.sim_cmd == "top":
+                _print(set_top(args.session, args.module))
+            elif args.sim_cmd == "wave" and args.sim_wave_cmd == "add":
+                _print(add_wave(args.session, args.pattern))
+            elif args.sim_cmd == "step":
+                _print(step_session(args.session, _join_tokens(args.arg)))
+            elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "add":
+                _print(add_breakpoint(args.session, _join_tokens(args.condition) or ""))
+            elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "clear":
+                _print(clear_breakpoints(args.session))
+            else:
+                p.error("unknown sim command")
+            return
+
         backend = select_backend()
         if args.cmd == "targets":
             _require_capability(
