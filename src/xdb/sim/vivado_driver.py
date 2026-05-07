@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import pty
 import queue
+import select
 import shlex
 import shutil
 import subprocess
 import threading
 import time
+import tty
 import uuid
 from collections import deque
 from pathlib import Path
@@ -107,6 +110,7 @@ class VivadoSimDriver:
         self._queue: queue.Queue[str] = queue.Queue()
         self._log_file = None
         self._recent_lines: deque[str] = deque(maxlen=80)
+        self._pty_master_fd: int | None = None
 
     def _debug_enabled(self) -> bool:
         value = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
@@ -166,19 +170,31 @@ class VivadoSimDriver:
             )
 
         try:
+            master_fd, slave_fd = pty.openpty()
+            tty.setraw(slave_fd)
+            self._pty_master_fd = master_fd
             self.proc = subprocess.Popen(
                 cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                text=False,
+                close_fds=True,
             )
+            os.close(slave_fd)
         except FileNotFoundError as e:
             raise XdbError(
                 "vivado executable not found in PATH. Run inside a Xilinx-enabled shell "
                 "or set XDB_VIVADO_BIN."
             ) from e
+        except Exception:
+            if self._pty_master_fd is not None:
+                try:
+                    os.close(self._pty_master_fd)
+                except OSError:
+                    pass
+                self._pty_master_fd = None
+            raise
 
         self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._reader_thread.start()
@@ -186,22 +202,48 @@ class VivadoSimDriver:
         self.launch(timeout=timeout)
 
     def _reader_loop(self) -> None:
-        assert self.proc is not None and self.proc.stdout is not None
-        for line in self.proc.stdout:
-            text = line.rstrip("\n")
+        assert self._pty_master_fd is not None
+        pending = ""
+        while True:
+            if self.proc is not None and self.proc.poll() is not None:
+                try:
+                    ready, _, _ = select.select([self._pty_master_fd], [], [], 0)
+                except OSError:
+                    break
+                if not ready:
+                    break
+            try:
+                ready, _, _ = select.select([self._pty_master_fd], [], [], 0.2)
+            except OSError:
+                break
+            if not ready:
+                continue
+            try:
+                chunk = os.read(self._pty_master_fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            text_chunk = chunk.decode(errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+            pending += text_chunk
+            while "\n" in pending:
+                line, pending = pending.split("\n", 1)
+                if self._log_file is not None:
+                    self._log_file.write(line + "\n")
+                self._recent_lines.append(line)
+                self._queue.put(line)
+        if pending:
             if self._log_file is not None:
-                self._log_file.write(text + "\n")
-            self._recent_lines.append(text)
-            self._queue.put(text)
+                self._log_file.write(pending + "\n")
+            self._recent_lines.append(pending)
+            self._queue.put(pending)
 
     def _send_raw(self, script: str) -> None:
-        if self.proc is None or self.proc.stdin is None:
+        if self.proc is None or self._pty_master_fd is None:
             raise XdbError("vivado simulation process is not running")
         try:
-            self.proc.stdin.write(script)
-            if not script.endswith("\n"):
-                self.proc.stdin.write("\n")
-            self.proc.stdin.flush()
+            payload = script if script.endswith("\n") else script + "\n"
+            os.write(self._pty_master_fd, payload.encode())
         except BrokenPipeError as e:
             raise XdbError(
                 self._format_exit_diagnostics(
@@ -444,6 +486,12 @@ xdb_reply_ok_fields $__xdb_request_id "\"cleared\":$__xdb_cleared"
         except subprocess.TimeoutExpired:
             self.proc.kill()
             self.proc.wait(timeout=5)
+        if self._pty_master_fd is not None:
+            try:
+                os.close(self._pty_master_fd)
+            except OSError:
+                pass
+            self._pty_master_fd = None
         if self._log_file is not None:
             self._log_file.close()
             self._log_file = None
