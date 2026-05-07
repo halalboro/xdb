@@ -58,6 +58,16 @@ xdb capture \
 # launch a persistent simulation session from a Vivado project
 xdb sim launch --project ./myproj.xpr --top tb_top
 
+# or rely on environment defaults exported by an integration shell
+export XDB_SIM_PACKAGE_PROJECT=/nix/store/.../project/sim/myproj.xpr
+export XDB_SIM_WORKSPACE=$PWD/.build/sim-workspace
+export XDB_SIM_PROJECT=$XDB_SIM_WORKSPACE/sim/myproj.xpr
+export XDB_SIM_SIMSET=sim_1
+export XDB_SIM_TOP=tb_top
+export XDB_SIM_MODE=behavioral
+export XDB_SIM_SESSION=myproj
+xdb sim launch
+
 # query the same live session without relaunching Vivado
 xdb sim time
 xdb sim get /tb_top/dut/state
@@ -79,5 +89,7 @@ xdb sim close
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - Captures are one-shot and blocking (with timeout).
 - `xdb sim` is project-backed in v1: launch from an existing `.xpr` and optional simset/top.
+- `xdb sim launch` resolves missing flags from these environment variables when present: `XDB_SIM_PROJECT`, `XDB_SIM_PACKAGE_PROJECT`, `XDB_SIM_WORKSPACE`, `XDB_SIM_SIMSET`, `XDB_SIM_MODE`, `XDB_SIM_TOP`, `XDB_SIM_SESSION`.
+- When `XDB_SIM_PACKAGE_PROJECT` and `XDB_SIM_WORKSPACE` are set, `xdb sim launch` materializes the packaged project into the writable workspace before opening `XDB_SIM_PROJECT`.
 - `xdb sim launch` starts a persistent background session; later `xdb sim ...` commands talk to that live Vivado process.
 - Output is intentionally minimal and script-friendly.

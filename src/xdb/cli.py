@@ -163,11 +163,11 @@ def main() -> None:
     s_sim_launch = sim_sub.add_parser("launch")
     add_sim_session_arg(s_sim_launch)
     s_sim_launch.add_argument("--project", default=None)
-    s_sim_launch.add_argument("--simset", default="sim_1")
+    s_sim_launch.add_argument("--simset", default=None)
     s_sim_launch.add_argument(
         "--mode",
         choices=["behavioral", "post-synth", "post-impl"],
-        default="behavioral",
+        default=None,
     )
     s_sim_launch.add_argument("--top", default=None)
     s_sim_launch.add_argument("--replace", action="store_true")

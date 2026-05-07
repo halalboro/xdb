@@ -32,7 +32,10 @@ from .session_store import (
     pid_is_alive,
     remove_session,
     require_live_meta,
-    resolve_project_arg,
+    resolve_launch_project,
+    resolve_mode_arg,
+    resolve_simset_arg,
+    resolve_top_arg,
     session_paths,
     terminate_session,
 )
@@ -153,8 +156,8 @@ def _wait_until_stopped(session_name: str | None, timeout: float = 5.0) -> None:
 def launch_session(
     *,
     project: str | None,
-    simset: str,
-    mode: str,
+    simset: str | None,
+    mode: str | None,
     top: str | None,
     session_name: str | None,
     replace: bool,
@@ -163,8 +166,11 @@ def launch_session(
     paths = session_paths(session_name)
     cleanup_stale_session(paths)
     live_meta = load_meta(paths)
-    effective_project = resolve_project_arg(project, paths)
-    effective_top = top or str((live_meta or {}).get("top") or "")
+    effective_simset = resolve_simset_arg(simset)
+    effective_mode = resolve_mode_arg(mode)
+    effective_top = resolve_top_arg(top, live_meta)
+    project_info = resolve_launch_project(project, paths, materialize=False)
+    effective_project = str(project_info["project"])
 
     if live_meta and Path(str(live_meta.get("socket_path", ""))).exists() and pid_is_alive(int(live_meta.get("pid", 0) or 0)):
         if replace:
@@ -180,22 +186,33 @@ def launch_session(
                 _wait_until_stopped(session_name, timeout=2.0)
             cleanup_stale_session(paths)
         else:
-            if _config_matches(live_meta, effective_project, simset, mode, effective_top):
+            if bool(project_info.get("needs_materialization")):
+                raise XdbError(
+                    "the packaged simulation project changed and the writable workspace needs "
+                    "to be refreshed; use --replace or close the current session first"
+                )
+            if _config_matches(live_meta, effective_project, effective_simset, effective_mode, effective_top):
                 status = _send_request(session_name, make_request(OP_STATUS))
                 status["reused"] = True
+                for key in ("project", "package_project", "workspace", "materialized", "workspace_reused"):
+                    if key in project_info:
+                        status[key] = project_info[key]
                 return status
             raise XdbError(
                 "a live simulation session already exists with different configuration; "
                 "use --replace or choose another --session"
             )
 
+    project_info = resolve_launch_project(project, paths, materialize=True)
+    effective_project = str(project_info["project"])
+
     remove_session(paths)
     proc = _spawn_daemon(
         session_name=session_name,
         anchor_dir=str(paths.anchor_dir),
         project=effective_project,
-        simset=simset,
-        mode=mode,
+        simset=effective_simset,
+        mode=effective_mode,
         top=effective_top,
         daemon_log_path=str(paths.daemon_log_path),
     )
@@ -206,6 +223,9 @@ def launch_session(
             terminate_session({"pid": proc.pid, "socket_path": ""}, force=True)
         raise
     status["reused"] = False
+    for key in ("project", "package_project", "workspace", "materialized", "workspace_reused"):
+        if key in project_info:
+            status[key] = project_info[key]
     return status
 
 
