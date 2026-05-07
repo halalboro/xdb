@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -122,6 +124,11 @@ class VivadoSimDriver:
             return []
         return lines[-limit:]
 
+    def _record_debug_line(self, message: str) -> None:
+        self._recent_lines.append(message)
+        if self._log_file is not None:
+            self._log_file.write(message + "\n")
+
     def _format_exit_diagnostics(self, summary: str) -> str:
         exit_code = None
         if self.proc is not None:
@@ -146,6 +153,18 @@ class VivadoSimDriver:
     def start(self, timeout: int = 300) -> None:
         vivado_bin = os.environ.get("XDB_VIVADO_BIN", "vivado")
         cmd = [vivado_bin, "-mode", "tcl", "-nolog", "-nojournal", "-notrace"]
+        resolved_vivado = shutil.which(vivado_bin) if os.path.basename(vivado_bin) == vivado_bin else vivado_bin
+
+        Path(self.vivado_log_path).parent.mkdir(parents=True, exist_ok=True)
+        self._log_file = open(self.vivado_log_path, "a", encoding="utf-8", buffering=1)
+        if self._debug_enabled():
+            resolved_display = resolved_vivado if resolved_vivado else "<not found in PATH>"
+            self._record_debug_line(f"[xdb debug] vivado executable: {vivado_bin}")
+            self._record_debug_line(f"[xdb debug] vivado resolved path: {resolved_display}")
+            self._record_debug_line(
+                "[xdb debug] vivado argv: " + " ".join(shlex.quote(arg) for arg in cmd)
+            )
+
         try:
             self.proc = subprocess.Popen(
                 cmd,
@@ -161,8 +180,6 @@ class VivadoSimDriver:
                 "or set XDB_VIVADO_BIN."
             ) from e
 
-        Path(self.vivado_log_path).parent.mkdir(parents=True, exist_ok=True)
-        self._log_file = open(self.vivado_log_path, "a", encoding="utf-8", buffering=1)
         self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._reader_thread.start()
         self._send_raw(_HELPERS_TCL)
