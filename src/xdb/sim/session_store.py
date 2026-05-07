@@ -367,6 +367,36 @@ def _make_workspace_tree_user_writable(workspace: Path) -> None:
 
 
 
+def _rewrite_materialized_project_paths(source_project: Path, target_project: Path) -> None:
+    if target_project.suffix.lower() != ".xpr" or not target_project.exists():
+        return
+
+    try:
+        data = target_project.read_text(encoding="utf-8")
+    except OSError:
+        return
+
+    source_sim_dir = str(source_project.parent)
+    source_project_path = str(source_project)
+
+    data = re.sub(
+        r'/build/source/\.nix-hw-[^/\" ]+/sim/helios-coyote\.xpr',
+        source_project_path,
+        data,
+    )
+    data = re.sub(
+        r'/build/source/\.nix-hw-[^/\" ]+/sim',
+        source_sim_dir,
+        data,
+    )
+
+    try:
+        target_project.write_text(data, encoding="utf-8")
+    except OSError:
+        return
+
+
+
 def _write_materialization_stamp(
     workspace: Path,
     *,
@@ -407,6 +437,7 @@ def _materialize_project_tree(
     workspace.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_root, workspace, dirs_exist_ok=True, copy_function=shutil.copyfile)
     _make_workspace_tree_user_writable(workspace)
+    _rewrite_materialized_project_paths(source_project, target_project)
 
     if not target_project.is_file():
         raise XdbError(
