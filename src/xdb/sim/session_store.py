@@ -348,6 +348,25 @@ def _materialization_matches(
     )
 
 
+def _make_workspace_tree_user_writable(workspace: Path) -> None:
+    if not workspace.exists():
+        return
+
+    for path in [workspace, *workspace.rglob("*")]:
+        if path.is_symlink():
+            continue
+
+        try:
+            mode = path.stat().st_mode
+            if path.is_dir():
+                os.chmod(path, mode | 0o700)
+            else:
+                os.chmod(path, mode | 0o600)
+        except OSError:
+            continue
+
+
+
 def _write_materialization_stamp(
     workspace: Path,
     *,
@@ -383,9 +402,11 @@ def _materialize_project_tree(
         return False
 
     if workspace.exists():
+        _make_workspace_tree_user_writable(workspace)
         shutil.rmtree(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source_root, workspace, dirs_exist_ok=True, copy_function=shutil.copy2)
+    shutil.copytree(source_root, workspace, dirs_exist_ok=True, copy_function=shutil.copyfile)
+    _make_workspace_tree_user_writable(workspace)
 
     if not target_project.is_file():
         raise XdbError(
