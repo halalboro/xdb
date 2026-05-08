@@ -23,8 +23,10 @@ from .sim.client import (
     coyote_csr_write_session,
     coyote_invoke_session,
     coyote_irq_wait_session,
+    coyote_mem_list_session,
     coyote_mem_map_session,
     coyote_mem_read_session,
+    coyote_mem_reset_session,
     coyote_mem_unmap_session,
     coyote_mem_write_session,
     coyote_status_session,
@@ -580,6 +582,14 @@ def main() -> None:
     add_sim_session_arg(s_sim_mem_unmap)
     s_sim_mem_unmap.add_argument("space")
     s_sim_mem_unmap.add_argument("addr")
+    s_sim_mem_list = sim_mem_sub.add_parser("list")
+    _add_debug_flag(s_sim_mem_list)
+    add_sim_session_arg(s_sim_mem_list)
+    s_sim_mem_list.add_argument("space", nargs="?", default="host")
+    s_sim_mem_reset = sim_mem_sub.add_parser("reset")
+    _add_debug_flag(s_sim_mem_reset)
+    add_sim_session_arg(s_sim_mem_reset)
+    s_sim_mem_reset.add_argument("space", nargs="?", default="host")
     s_sim_mem_read = sim_mem_sub.add_parser("read")
     _add_debug_flag(s_sim_mem_read)
     add_sim_session_arg(s_sim_mem_read)
@@ -825,6 +835,10 @@ def main() -> None:
                         _parse_int(args.addr, what="memory address"),
                     )
                 )
+            elif args.sim_cmd == "mem" and args.sim_mem_cmd == "list":
+                _print(coyote_mem_list_session(args.session, args.space))
+            elif args.sim_cmd == "mem" and args.sim_mem_cmd == "reset":
+                _print(coyote_mem_reset_session(args.session, args.space))
             elif args.sim_cmd == "mem" and args.sim_mem_cmd == "write":
                 _print(
                     coyote_mem_write_session(

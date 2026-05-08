@@ -29,8 +29,10 @@ from .protocol import (
     OP_GET_MANY,
     OP_INVOKE,
     OP_IRQ_WAIT,
+    OP_MEM_LIST,
     OP_MEM_MAP,
     OP_MEM_READ,
+    OP_MEM_RESET,
     OP_MEM_UNMAP,
     OP_MEM_WRITE,
     OP_OBJECTS,
@@ -539,6 +541,26 @@ def coyote_mem_unmap_session(
     return _send_request(
         session_name,
         make_request(OP_MEM_UNMAP, space=space, addr=addr),
+    )
+
+
+def coyote_mem_list_session(
+    session_name: str | None,
+    space: str = "host",
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_MEM_LIST, space=space),
+    )
+
+
+def coyote_mem_reset_session(
+    session_name: str | None,
+    space: str = "host",
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_MEM_RESET, space=space),
     )
 
 

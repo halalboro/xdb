@@ -7,7 +7,6 @@ import re
 import select
 import struct
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -136,25 +135,21 @@ class CoyoteSimController:
             "sim_dir": str(self.sim_dir),
             "input_path": str(self.input_path),
             "output_path": str(self.output_path),
-            "mapped_segments": [
-                {
-                    "addr": base,
-                    "addr_hex": _hex(base),
-                    "size": len(data),
-                    "end": base + len(data),
-                    "end_hex": _hex(base + len(data)),
-                }
-                for base, data in sorted(self._segments.items())
-            ],
-            "host_write_count": self._host_write_count,
-            "host_read_count": self._host_read_count,
-            "pending_irqs": self._irq_events.qsize(),
-            "last_protocol_error": self._last_protocol_error,
+            **self.host_memory_status(),
             "supported_opcodes": sorted(_LOCAL_PROTOCOL_OPCODES),
             "notes": [
                 "current xdb Coyote support is limited to the local host-memory protocol",
                 "remote RDMA and TCP simulation commands are not supported by the underlying Coyote simulation target",
             ],
+        }
+
+    def host_memory_status(self) -> dict[str, object]:
+        return {
+            "mapped_segments": self._describe_segments(),
+            "host_write_count": self._host_write_count,
+            "host_read_count": self._host_read_count,
+            "pending_irqs": self._irq_events.qsize(),
+            "last_protocol_error": self._last_protocol_error,
         }
 
     def map_host_memory(self, addr: int, size: int) -> dict[str, object]:
@@ -182,6 +177,25 @@ class CoyoteSimController:
             "addr_hex": _hex(addr),
             "size": size,
             "unmapped": True,
+        }
+
+    def reset_host_memory(self) -> dict[str, object]:
+        unmapped_segments = self._describe_segments()
+        payload = b"".join(
+            self._encode_user_unmap(base) for base in sorted(self._segments)
+        )
+        self._segments.clear()
+        self._host_write_count = 0
+        self._host_read_count = 0
+        self._last_protocol_error = ""
+        if payload:
+            self.write_input(payload)
+        return {
+            "space": "host",
+            "reset": True,
+            "unmapped_count": len(unmapped_segments),
+            "unmapped_segments": unmapped_segments,
+            **self.host_memory_status(),
         }
 
     def ensure_host_memory(self, addr: int, size: int) -> bool:
@@ -326,6 +340,18 @@ class CoyoteSimController:
                     f"new=[{_hex(new_range.base)}, {_hex(new_range.end)}) "
                     f"existing=[{_hex(existing.base)}, {_hex(existing.end)})"
                 )
+
+    def _describe_segments(self) -> list[dict[str, int | str]]:
+        return [
+            {
+                "addr": base,
+                "addr_hex": _hex(base),
+                "size": len(data),
+                "end": base + len(data),
+                "end_hex": _hex(base + len(data)),
+            }
+            for base, data in sorted(self._segments.items())
+        ]
 
     def _find_segment(self, addr: int, size: int) -> tuple[int, bytearray, int]:
         _require_positive_size(size)

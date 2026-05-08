@@ -104,6 +104,7 @@ xdb sim coyote-status
 xdb sim csr write 0x0 0x1234
 xdb sim csr read 0x0
 xdb sim mem write host 0x1000 --hex deadbeef
+xdb sim mem list
 xdb sim mem read host 0x1000 4
 xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
 xdb sim completed local-transfer --count 1 --timeout 5
@@ -181,6 +182,11 @@ xdb sim close
   `xdb sim completed ...`, `xdb sim clear-completed`, `xdb sim irq wait`, and
   `xdb sim coyote-status` wrap the Coyote interactive simulation protocol when
   the runtime bundle contains `lynx_pkg.sv`.
+- `xdb sim mem list` reports the current host-memory mappings and local Coyote
+  accounting state.
+- `xdb sim mem reset` unmaps every host-memory segment tracked by `xdb` and
+  clears the local host read/write counters and last protocol error string.
+  It does not clear pending IRQ events or completion counters.
 - Current Coyote support is intentionally limited to the local host-memory
   protocol implemented by the upstream Coyote simulation target. Remote RDMA and
   TCP commands are not supported yet.

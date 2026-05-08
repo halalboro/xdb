@@ -128,6 +128,22 @@ class VivadoCoyoteMixin:
         self._coyote_pump_step()
         return result
 
+    def coyote_mem_list(self, space: str) -> dict:
+        if space != "host":
+            raise XdbError("only host memory is currently supported")
+        return {
+            "space": "host",
+            **self._require_coyote().host_memory_status(),
+        }
+
+    def coyote_mem_reset(self, space: str) -> dict:
+        if space != "host":
+            raise XdbError("only host memory is currently supported")
+        controller = self._require_coyote()
+        result = controller.reset_host_memory()
+        self._coyote_pump_step()
+        return result
+
     def coyote_mem_write(self, space: str, addr: int, data: bytes) -> dict:
         if space != "host":
             raise XdbError("only host memory is currently supported")

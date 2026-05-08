@@ -28,8 +28,10 @@ from .protocol import (
     OP_GET_MANY,
     OP_INVOKE,
     OP_IRQ_WAIT,
+    OP_MEM_LIST,
     OP_MEM_MAP,
     OP_MEM_READ,
+    OP_MEM_RESET,
     OP_MEM_UNMAP,
     OP_MEM_WRITE,
     OP_OBJECTS,
@@ -401,6 +403,10 @@ class SimDaemon:
                 str(args.get("space") or "host"),
                 int(args.get("addr") or 0),
             )
+        if op == OP_MEM_LIST:
+            return self.driver.coyote_mem_list(str(args.get("space") or "host"))
+        if op == OP_MEM_RESET:
+            return self.driver.coyote_mem_reset(str(args.get("space") or "host"))
         if op == OP_MEM_WRITE:
             data_hex = str(args.get("data_hex") or "")
             if not data_hex:

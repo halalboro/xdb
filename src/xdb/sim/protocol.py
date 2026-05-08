@@ -29,6 +29,8 @@ OP_CSR_READ = "csr_read"
 OP_CSR_WRITE = "csr_write"
 OP_MEM_MAP = "mem_map"
 OP_MEM_UNMAP = "mem_unmap"
+OP_MEM_LIST = "mem_list"
+OP_MEM_RESET = "mem_reset"
 OP_MEM_WRITE = "mem_write"
 OP_MEM_READ = "mem_read"
 OP_INVOKE = "invoke"
@@ -75,6 +77,8 @@ ALL_OPERATIONS = {
     OP_CSR_WRITE,
     OP_MEM_MAP,
     OP_MEM_UNMAP,
+    OP_MEM_LIST,
+    OP_MEM_RESET,
     OP_MEM_WRITE,
     OP_MEM_READ,
     OP_INVOKE,
