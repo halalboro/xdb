@@ -72,6 +72,7 @@ xdb sim run 100 ns
 xdb sim scopes /tb_top
 xdb sim objects /tb_top/dut
 xdb sim tcl current_time
+xdb sim source ./sim/helpers.tcl
 xdb sim wave add /tb_top/dut/*
 
 # close the session when done
@@ -99,4 +100,6 @@ xdb sim close
   `xdb sim ...` commands talk to that live simulator process.
 - `xdb sim tcl ...` evaluates arbitrary Tcl in the live simulator session and
   returns the Tcl result string plus the current simulation time.
+- `xdb sim source <file.tcl>` loads a Tcl file into the live simulator session
+  with Tcl `source`, preserving file-based error locations and proc definitions.
 - Output is intentionally minimal and script-friendly.

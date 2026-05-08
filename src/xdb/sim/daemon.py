@@ -18,6 +18,7 @@ from .protocol import (
     OP_OBJECTS,
     OP_RUN,
     OP_SCOPES,
+    OP_SOURCE,
     OP_STATUS,
     OP_STEP,
     OP_RESTART,
@@ -242,6 +243,11 @@ class SimDaemon:
             if not script:
                 raise XdbError("missing Tcl script")
             return self.driver.eval_tcl(script)
+        if op == OP_SOURCE:
+            path = str(args.get("path") or "")
+            if not path:
+                raise XdbError("missing Tcl script path")
+            return self.driver.source_tcl(path)
         if op == OP_CLOSE:
             return {"closed": True, "session_id": self.paths.session_id, "_shutdown": True}
         raise XdbError(f"unsupported simulation operation: {op}")

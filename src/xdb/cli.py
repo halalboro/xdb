@@ -23,6 +23,7 @@ from .sim.client import (
     restart_session,
     run_session,
     set_top,
+    source_session,
     step_session,
     time_session,
     tcl_session,
@@ -311,6 +312,11 @@ def main() -> None:
     s_sim_tcl.add_argument("--file", default=None)
     s_sim_tcl.add_argument("script", nargs="*")
 
+    s_sim_source = sim_sub.add_parser("source")
+    _add_debug_flag(s_sim_source)
+    add_sim_session_arg(s_sim_source)
+    s_sim_source.add_argument("path")
+
     s_simd = sub.add_parser("_simd", help=argparse.SUPPRESS)
     _add_debug_flag(s_simd)
     s_simd.add_argument("--anchor-dir", required=True)
@@ -387,6 +393,8 @@ def main() -> None:
                 _print(clear_breakpoints(args.session))
             elif args.sim_cmd == "tcl":
                 _print(tcl_session(args.session, _resolve_tcl_script(args.script, args.file)))
+            elif args.sim_cmd == "source":
+                _print(source_session(args.session, args.path))
             else:
                 p.error("unknown sim command")
             return

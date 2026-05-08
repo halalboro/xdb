@@ -545,6 +545,15 @@ xdb_reply_ok_fields $__xdb_request_id "\"result\":[xdb_json_string $__xdb_result
 '''
         return self.request(body)
 
+    def source_tcl(self, path: str) -> dict:
+        body = fr'''
+set __xdb_path {_tcl_string(path)}
+set __xdb_result [source $__xdb_path]
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"path\":[xdb_json_string $__xdb_path],\"result\":[xdb_json_string $__xdb_result],\"time\":[xdb_json_string $__xdb_time]"
+'''
+        return self.request(body)
+
     def shutdown(self) -> None:
         if self.proc is None:
             return

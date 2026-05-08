@@ -21,6 +21,7 @@ from .protocol import (
     OP_RUN,
     OP_SCOPES,
     OP_STATUS,
+    OP_SOURCE,
     OP_STEP,
     OP_TIME,
     OP_TCL,
@@ -326,3 +327,10 @@ def clear_breakpoints(session_name: str | None) -> dict[str, Any]:
 
 def tcl_session(session_name: str | None, script: str) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_TCL, script=script))
+
+
+def source_session(session_name: str | None, path: str) -> dict[str, Any]:
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise XdbError(f"Tcl script not found: {resolved}")
+    return _send_request(session_name, make_request(OP_SOURCE, path=str(resolved)))

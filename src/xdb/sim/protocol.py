@@ -20,6 +20,7 @@ OP_STEP = "step"
 OP_BREAKPOINT_ADD = "breakpoint_add"
 OP_BREAKPOINT_CLEAR = "breakpoint_clear"
 OP_TCL = "tcl"
+OP_SOURCE = "source"
 
 
 ALL_OPERATIONS = {
@@ -38,6 +39,7 @@ ALL_OPERATIONS = {
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
     OP_TCL,
+    OP_SOURCE,
 }
 
 
