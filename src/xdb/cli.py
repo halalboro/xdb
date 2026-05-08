@@ -31,17 +31,21 @@ from .sim.client import (
     get_objects,
     get_scopes,
     get_signal,
+    read_signals,
     launch_session,
     release_session,
     restart_session,
     run_session,
     set_top,
     source_session,
+    snapshot_session,
     step_session,
     time_session,
     tcl_session,
     wait_until_session,
     wait_until_signal_session,
+    diff_snapshot_session,
+    watch_changes_session,
 )
 from .sim.coyote import parse_hex_bytes
 from .sim.daemon import run_daemon
@@ -335,6 +339,11 @@ def main() -> None:
     add_sim_session_arg(s_sim_get_many)
     s_sim_get_many.add_argument("pattern")
 
+    s_sim_read = sim_sub.add_parser("read", help="read several named signals in one request")
+    _add_debug_flag(s_sim_read)
+    add_sim_session_arg(s_sim_read)
+    s_sim_read.add_argument("signals", nargs="+")
+
     s_sim_scopes = sim_sub.add_parser("scopes")
     _add_debug_flag(s_sim_scopes)
     add_sim_session_arg(s_sim_scopes)
@@ -349,6 +358,24 @@ def main() -> None:
     _add_debug_flag(s_sim_top)
     add_sim_session_arg(s_sim_top)
     s_sim_top.add_argument("module")
+
+    s_sim_snapshot = sim_sub.add_parser("snapshot", help="capture a structured snapshot of a scope subtree")
+    _add_debug_flag(s_sim_snapshot)
+    add_sim_session_arg(s_sim_snapshot)
+    s_sim_snapshot.add_argument("scope")
+    s_sim_snapshot.add_argument("--name", default=None)
+
+    s_sim_diff_snapshot = sim_sub.add_parser("diff-snapshot", help="compare two named snapshots")
+    _add_debug_flag(s_sim_diff_snapshot)
+    add_sim_session_arg(s_sim_diff_snapshot)
+    s_sim_diff_snapshot.add_argument("before")
+    s_sim_diff_snapshot.add_argument("after")
+
+    s_sim_watch_changes = sim_sub.add_parser("watch-changes", help="snapshot a scope, run, and diff the result")
+    _add_debug_flag(s_sim_watch_changes)
+    add_sim_session_arg(s_sim_watch_changes)
+    s_sim_watch_changes.add_argument("scope")
+    s_sim_watch_changes.add_argument("--for", dest="duration", nargs="+", required=True)
 
     s_sim_wave = sim_sub.add_parser("wave")
     _add_debug_flag(s_sim_wave)
@@ -619,12 +646,26 @@ def main() -> None:
                 _print(get_signal(args.session, args.signal))
             elif args.sim_cmd == "get-many":
                 _print(get_many_signals(args.session, args.pattern))
+            elif args.sim_cmd == "read":
+                _print(read_signals(args.session, args.signals))
             elif args.sim_cmd == "scopes":
                 _print(get_scopes(args.session, args.scope))
             elif args.sim_cmd == "objects":
                 _print(get_objects(args.session, args.scope))
             elif args.sim_cmd == "top":
                 _print(set_top(args.session, args.module))
+            elif args.sim_cmd == "snapshot":
+                _print(snapshot_session(args.session, args.scope, name=args.name))
+            elif args.sim_cmd == "diff-snapshot":
+                _print(diff_snapshot_session(args.session, args.before, args.after))
+            elif args.sim_cmd == "watch-changes":
+                _print(
+                    watch_changes_session(
+                        args.session,
+                        args.scope,
+                        _resolve_sim_step_tokens(args.duration),
+                    )
+                )
             elif args.sim_cmd == "wave" and args.sim_wave_cmd == "add":
                 _print(add_wave(args.session, args.pattern))
             elif args.sim_cmd == "step":

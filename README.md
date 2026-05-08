@@ -69,6 +69,7 @@ xdb sim launch
 # query the same live session without relaunching Vivado
 xdb sim time
 xdb sim get /tb_top/dut/state
+xdb sim read /tb_top/dut/state /tb_top/dut/done /tb_top/clk
 xdb sim run 100 ns
 xdb sim until '{[get_value /tb_top/done] eq "1"}'
 xdb sim wait '{[get_value /tb_top/done] eq "1"}'
@@ -79,6 +80,11 @@ xdb sim wait-on-signal /tb_top/done 1
 xdb sim until-signal --step 100 ps --timeout 2 /tb_top/done 1
 xdb sim scopes /tb_top
 xdb sim objects /tb_top/dut
+xdb sim snapshot /tb_top/dut --name before
+xdb sim run 100 ns
+xdb sim snapshot /tb_top/dut --name after
+xdb sim diff-snapshot before after
+xdb sim watch-changes /tb_top/dut --for 100 ns
 xdb sim tcl current_time
 xdb sim source ./sim/helpers.tcl
 xdb sim force /tb_top/reset 1
@@ -136,9 +142,17 @@ xdb sim close
 - `xdb sim source <file.tcl>` loads a Tcl file into the live simulator session
   with Tcl `source`, preserving file-based error locations and proc
   definitions.
-- `xdb sim get`, `xdb sim get-many`, `xdb sim objects`, and `xdb sim scopes`
-  now include richer machine-readable metadata such as `kind`, `width`,
-  `parent_scope`, and `value` where applicable.
+- `xdb sim get`, `xdb sim get-many`, `xdb sim read`, `xdb sim objects`, and
+  `xdb sim scopes` now include richer machine-readable metadata such as
+  `kind`, `width`, `parent_scope`, and `value` where applicable.
+- `xdb sim snapshot <scope>` captures a structured subtree snapshot and stores
+  it under a session-local snapshot name. Use `--name <id>` to choose the
+  identifier explicitly.
+- `xdb sim diff-snapshot <before> <after>` compares two stored snapshots and
+  reports added, removed, and changed objects.
+- `xdb sim watch-changes <scope> --for <duration>` captures a snapshot, runs the
+  simulation for the given duration, captures another snapshot, and returns the
+  diff directly.
 - `xdb sim force <signal> <value...>` wraps `add_force`; use `--radix`,
   `--repeat-every`, and `--cancel-after` for common options.
 - `xdb sim release <signal>` releases forces created through `xdb sim force`.

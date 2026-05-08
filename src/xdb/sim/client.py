@@ -29,11 +29,13 @@ from .protocol import (
     OP_MEM_UNMAP,
     OP_MEM_WRITE,
     OP_OBJECTS,
+    OP_READ_SIGNALS,
     OP_RELEASE,
     OP_RESTART,
     OP_RUN,
     OP_SCOPES,
     OP_SOURCE,
+    OP_SNAPSHOT,
     OP_STATUS,
     OP_STEP,
     OP_TCL,
@@ -41,7 +43,9 @@ from .protocol import (
     OP_TOP,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
+    OP_WATCH_CHANGES,
     OP_WAVE_ADD,
+    OP_DIFF_SNAPSHOT,
     make_request,
 )
 from .session_store import (
@@ -302,6 +306,10 @@ def get_many_signals(session_name: str | None, pattern: str) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_GET_MANY, pattern=pattern))
 
 
+def read_signals(session_name: str | None, signals: list[str]) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_READ_SIGNALS, signals=signals))
+
+
 def get_scopes(session_name: str | None, scope: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_SCOPES, scope=scope or ""))
 
@@ -540,4 +548,35 @@ def coyote_irq_wait_session(
     return _send_request(
         session_name,
         make_request(OP_IRQ_WAIT, timeout_seconds=timeout_seconds),
+    )
+
+
+def snapshot_session(
+    session_name: str | None,
+    scope: str,
+    *,
+    name: str | None = None,
+) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_SNAPSHOT, scope=scope, name=name or ""))
+
+
+def diff_snapshot_session(
+    session_name: str | None,
+    before: str,
+    after: str,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_DIFF_SNAPSHOT, before=before, after=after),
+    )
+
+
+def watch_changes_session(
+    session_name: str | None,
+    scope: str,
+    duration_tokens: list[str],
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_WATCH_CHANGES, scope=scope, duration_tokens=duration_tokens),
     )

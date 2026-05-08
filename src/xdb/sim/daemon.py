@@ -28,11 +28,13 @@ from .protocol import (
     OP_MEM_UNMAP,
     OP_MEM_WRITE,
     OP_OBJECTS,
+    OP_READ_SIGNALS,
     OP_RELEASE,
     OP_RESTART,
     OP_RUN,
     OP_SCOPES,
     OP_SOURCE,
+    OP_SNAPSHOT,
     OP_STATUS,
     OP_STEP,
     OP_TIME,
@@ -40,7 +42,9 @@ from .protocol import (
     OP_TOP,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
+    OP_WATCH_CHANGES,
     OP_WAVE_ADD,
+    OP_DIFF_SNAPSHOT,
 )
 from .session_store import SessionPaths, ensure_session_dir, write_meta
 from .vivado_driver import VivadoSimDriver
@@ -237,6 +241,11 @@ class SimDaemon:
             if not pattern:
                 raise XdbError("missing pattern")
             return self.driver.get_many(pattern)
+        if op == OP_READ_SIGNALS:
+            signals = [str(v) for v in list(args.get("signals") or []) if str(v)]
+            if not signals:
+                raise XdbError("missing signals")
+            return self.driver.read_signals(signals)
         if op == OP_SCOPES:
             scope = args.get("scope")
             return self.driver.scopes(None if scope in (None, "") else str(scope))
@@ -400,6 +409,26 @@ class SimDaemon:
                 if args.get("timeout_seconds") is None
                 else float(args.get("timeout_seconds")),
             )
+        if op == OP_SNAPSHOT:
+            scope = str(args.get("scope") or "")
+            if not scope:
+                raise XdbError("missing scope")
+            name = str(args.get("name") or "")
+            return self.driver.snapshot_scope(scope, name=name or None)
+        if op == OP_DIFF_SNAPSHOT:
+            before = str(args.get("before") or "")
+            after = str(args.get("after") or "")
+            if not before or not after:
+                raise XdbError("diff-snapshot requires both snapshot identifiers")
+            return self.driver.diff_snapshot(before, after)
+        if op == OP_WATCH_CHANGES:
+            scope = str(args.get("scope") or "")
+            duration_tokens = [str(v) for v in list(args.get("duration_tokens") or [])]
+            if not scope:
+                raise XdbError("missing scope")
+            if not duration_tokens:
+                raise XdbError("missing duration")
+            return self.driver.watch_changes(scope, duration_tokens=duration_tokens)
         if op == OP_CLOSE:
             return {"closed": True, "session_id": self.paths.session_id, "_shutdown": True}
         raise XdbError(f"unsupported simulation operation: {op}")

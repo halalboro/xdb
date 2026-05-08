@@ -36,6 +36,10 @@ OP_COMPLETED = "completed"
 OP_CLEAR_COMPLETED = "clear_completed"
 OP_IRQ_WAIT = "irq_wait"
 OP_COYOTE_STATUS = "coyote_status"
+OP_READ_SIGNALS = "read_signals"
+OP_SNAPSHOT = "snapshot"
+OP_DIFF_SNAPSHOT = "diff_snapshot"
+OP_WATCH_CHANGES = "watch_changes"
 
 
 ALL_OPERATIONS = {
@@ -70,6 +74,10 @@ ALL_OPERATIONS = {
     OP_CLEAR_COMPLETED,
     OP_IRQ_WAIT,
     OP_COYOTE_STATUS,
+    OP_READ_SIGNALS,
+    OP_SNAPSHOT,
+    OP_DIFF_SNAPSHOT,
+    OP_WATCH_CHANGES,
 }
 
 

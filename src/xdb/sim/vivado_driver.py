@@ -243,6 +243,50 @@ proc xdb_json_object_metadata_array {items default_kind include_value} {
   return "\[[join $parts ,]\]"
 }
 
+proc xdb_collect_snapshot_value_objects {root_scope} {
+  set pending [list [string trim $root_scope]]
+  set visited_scopes [dict create]
+  set seen_objects [dict create]
+  set out {}
+
+  while {[llength $pending] > 0} {
+    set scope [lindex $pending 0]
+    set pending [lrange $pending 1 end]
+    if {$scope eq ""} {
+      continue
+    }
+    if {[dict exists $visited_scopes $scope]} {
+      continue
+    }
+    dict set visited_scopes $scope 1
+
+    set pattern [format "%s/*" $scope]
+    set scope_objects {}
+    if {![catch {set scope_objects [get_objects $pattern]}]} {
+      foreach item $scope_objects {
+        if {[catch {get_value $item}]} {
+          continue
+        }
+        if {![dict exists $seen_objects $item]} {
+          dict set seen_objects $item 1
+          lappend out $item
+        }
+      }
+    }
+
+    set child_scopes {}
+    if {![catch {set child_scopes [get_scopes $pattern]}]} {
+      foreach child_scope $child_scopes {
+        if {![dict exists $visited_scopes $child_scope]} {
+          lappend pending $child_scope
+        }
+      }
+    }
+  }
+
+  return $out
+}
+
 proc xdb_reply_json {request_id payload} {
   puts "__XDB_BEGIN__ $request_id"
   puts $payload
@@ -317,6 +361,7 @@ class VivadoSimDriver:
         self._recent_lines: deque[str] = deque(maxlen=80)
         self._pty_master_fd: int | None = None
         self._coyote: CoyoteSimController | None = None
+        self._snapshots: dict[str, dict] = {}
 
     def _debug_enabled(self) -> bool:
         value = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
@@ -686,6 +731,13 @@ xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_patte
 '''
         return self.request(body)
 
+    def read_signals(self, signals: list[str]) -> dict:
+        body = fr'''
+set __xdb_signals {_tcl_list(signals)}
+xdb_reply_ok_fields $__xdb_request_id "\"signals\":[xdb_json_object_metadata_array $__xdb_signals \"signal\" 1]"
+'''
+        return self.request(body)
+
     def scopes(self, scope: str | None) -> dict:
         pattern = "*" if not scope else f"{scope}/*"
         body = fr'''
@@ -704,6 +756,97 @@ set __xdb_objects [get_objects $__xdb_pattern]
 xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"objects\":[xdb_json_array_strings $__xdb_objects],\"metadata\":[xdb_json_object_metadata_array $__xdb_objects \"signal\" 1]"
 '''
         return self.request(body)
+
+    def snapshot_scope(self, scope: str, *, name: str | None = None) -> dict:
+        body = fr'''
+set __xdb_scope {_tcl_string(scope)}
+set __xdb_objects [xdb_collect_snapshot_value_objects $__xdb_scope]
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"time\":[xdb_json_string $__xdb_time],\"objects\":[xdb_json_object_metadata_array $__xdb_objects \"signal\" 1]"
+'''
+        result = self.request(body)
+        snapshot_id = name or f"snapshot-{uuid.uuid4().hex[:12]}"
+        if snapshot_id in self._snapshots:
+            raise XdbError(f"snapshot already exists: {snapshot_id}")
+        stored = {
+            "snapshot": snapshot_id,
+            "scope": result.get("scope", scope),
+            "time": result.get("time", ""),
+            "objects": list(result.get("objects") or []),
+        }
+        stored["count"] = len(stored["objects"])
+        self._snapshots[snapshot_id] = stored
+        return dict(stored)
+
+    @staticmethod
+    def _diff_snapshot_payload(before: dict, after: dict) -> dict:
+        before_map = {str(obj.get("path")): obj for obj in list(before.get("objects") or [])}
+        after_map = {str(obj.get("path")): obj for obj in list(after.get("objects") or [])}
+        added_paths = sorted(set(after_map) - set(before_map))
+        removed_paths = sorted(set(before_map) - set(after_map))
+        shared_paths = sorted(set(before_map) & set(after_map))
+
+        changed = []
+        unchanged_count = 0
+        compare_fields = ["kind", "width", "value", "value_radix", "parent_scope"]
+        for path in shared_paths:
+            old_obj = before_map[path]
+            new_obj = after_map[path]
+            changed_fields = [field for field in compare_fields if old_obj.get(field) != new_obj.get(field)]
+            if changed_fields:
+                changed.append(
+                    {
+                        "path": path,
+                        "fields": changed_fields,
+                        "before": old_obj,
+                        "after": new_obj,
+                    }
+                )
+            else:
+                unchanged_count += 1
+
+        return {
+            "before": str(before.get("snapshot") or ""),
+            "after": str(after.get("snapshot") or ""),
+            "scope_before": str(before.get("scope") or ""),
+            "scope_after": str(after.get("scope") or ""),
+            "time_before": str(before.get("time") or ""),
+            "time_after": str(after.get("time") or ""),
+            "added": [after_map[path] for path in added_paths],
+            "removed": [before_map[path] for path in removed_paths],
+            "changed": changed,
+            "unchanged_count": unchanged_count,
+            "before_count": len(before_map),
+            "after_count": len(after_map),
+            "changed_count": len(changed),
+            "added_count": len(added_paths),
+            "removed_count": len(removed_paths),
+        }
+
+    def diff_snapshot(self, before: str, after: str) -> dict:
+        before_snapshot = self._snapshots.get(before)
+        if before_snapshot is None:
+            raise XdbError(f"unknown snapshot: {before}")
+        after_snapshot = self._snapshots.get(after)
+        if after_snapshot is None:
+            raise XdbError(f"unknown snapshot: {after}")
+        return self._diff_snapshot_payload(before_snapshot, after_snapshot)
+
+    def watch_changes(self, scope: str, *, duration_tokens: list[str]) -> dict:
+        before_id = f"watch-before-{uuid.uuid4().hex[:10]}"
+        after_id = f"watch-after-{uuid.uuid4().hex[:10]}"
+        before = self.snapshot_scope(scope, name=before_id)
+        run_result = self.run(duration_tokens)
+        after = self.snapshot_scope(scope, name=after_id)
+        diff = self._diff_snapshot_payload(before, after)
+        return {
+            "scope": scope,
+            "duration": " ".join(duration_tokens),
+            "run": run_result,
+            "before": before,
+            "after": after,
+            "diff": diff,
+        }
 
     def set_top(self, top: str, timeout: int = 300) -> dict:
         if top != self.top:
