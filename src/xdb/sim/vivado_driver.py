@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ..errors import XdbError
 from .coyote import CoyoteSimController
+from .tcl_api import API_TCL, build_proc_request
 from .tcl_helpers import HELPERS_TCL, _tcl_list, _tcl_string
 from .vivado_coyote_runtime import VivadoCoyoteMixin
 from .vivado_debug import VivadoDebugMixin
@@ -103,7 +104,7 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
         self._log_file = open(self.vivado_log_path, "a", encoding="utf-8", buffering=1)
         self._prepare_runtime_bundle()
         self._start_runtime_simulator()
-        self._send_raw(HELPERS_TCL)
+        self._send_raw(HELPERS_TCL + "\n" + API_TCL)
         self._wait_for_runtime_prompt(timeout=timeout)
 
     def _start_pty_process(self, cmd: list[str], *, cwd: str | None = None) -> None:
@@ -341,59 +342,19 @@ if {{[catch {{
         return self.time()
 
     def time(self) -> dict:
-        body = r'''
-set __xdb_time [current_time]
-xdb_reply_ok_fields $__xdb_request_id "\"time\":[xdb_json_string $__xdb_time]"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_time"))
 
     def run(self, tokens: list[str]) -> dict:
-        body = fr'''
-set __xdb_before [current_time]
-set __xdb_args {_tcl_list(tokens)}
-if {{[llength $__xdb_args] == 0}} {{
-  run
-}} else {{
-  eval [linsert $__xdb_args 0 run]
-}}
-set __xdb_after [current_time]
-set __xdb_joined [join $__xdb_args " "]
-xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined]"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_run", tokens))
 
     def restart(self) -> dict:
-        body = r'''
-set __xdb_before [current_time]
-restart
-set __xdb_after [current_time]
-xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after]"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_restart"))
 
     def step(self, count: int | None = None, time_tokens: list[str] | None = None) -> dict:
         if time_tokens:
-            body = fr'''
-set __xdb_before [current_time]
-set __xdb_args {_tcl_list(time_tokens)}
-eval [linsert $__xdb_args 0 run]
-set __xdb_after [current_time]
-set __xdb_joined [join $__xdb_args " "]
-xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined],\"step_mode\":[xdb_json_string "time"]"
-'''
-            return self.request(body)
-
+            return self.request(build_proc_request("xdb_api_step_time", time_tokens))
         step_count = count or 1
-        body = fr'''
-set __xdb_count {step_count}
-set __xdb_before [current_time]
-for {{set __xdb_i 0}} {{$__xdb_i < $__xdb_count}} {{incr __xdb_i}} {{
-  step
-}}
-set __xdb_after [current_time]
-xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"count\":$__xdb_count,\"step_mode\":[xdb_json_string "count"]"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_step_count", step_count))
 
     def wait_until(
         self,
@@ -404,44 +365,16 @@ xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_b
         max_iterations: int | None = None,
     ) -> dict:
         request_timeout = 86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
-        body = fr'''
-set __xdb_expr_raw {_tcl_string(expr)}
-set __xdb_expr [xdb_normalize_expr $__xdb_expr_raw]
-set __xdb_step_args {_tcl_list(step_tokens)}
-set __xdb_timeout_seconds {_tcl_string("" if timeout_seconds is None else str(timeout_seconds))}
-set __xdb_max_iterations {_tcl_string("" if max_iterations is None else str(max_iterations))}
-set __xdb_time_before [current_time]
-set __xdb_iterations 0
-set __xdb_deadline_ms -1
-if {{$__xdb_timeout_seconds ne ""}} {{
-  set __xdb_deadline_ms [expr {{[clock milliseconds] + int(1000.0 * $__xdb_timeout_seconds)}}]
-}}
-while {{1}} {{
-  if {{[uplevel #0 [list expr $__xdb_expr]]}} {{
-    break
-  }}
-  if {{$__xdb_max_iterations ne "" && $__xdb_iterations >= $__xdb_max_iterations}} {{
-    error [format "condition not met before reaching max iterations (%s)" $__xdb_max_iterations]
-  }}
-  if {{$__xdb_deadline_ms >= 0 && [clock milliseconds] >= $__xdb_deadline_ms}} {{
-    error [format "timed out after %s second(s) while waiting for condition" $__xdb_timeout_seconds]
-  }}
-  set __xdb_prev_time [current_time]
-  eval [linsert $__xdb_step_args 0 run]
-  incr __xdb_iterations
-  set __xdb_current_time [current_time]
-  if {{$__xdb_current_time eq $__xdb_prev_time}} {{
-    if {{[uplevel #0 [list expr $__xdb_expr]]}} {{
-      break
-    }}
-    error "condition not met and simulation did not advance while waiting"
-  }}
-}}
-set __xdb_time_after [current_time]
-set __xdb_step [join $__xdb_step_args " "]
-xdb_reply_ok_fields $__xdb_request_id "\"expr\":[xdb_json_string $__xdb_expr],\"step\":[xdb_json_string $__xdb_step],\"iterations\":$__xdb_iterations,\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"timeout_seconds\":[xdb_json_string $__xdb_timeout_seconds],\"max_iterations\":[xdb_json_string $__xdb_max_iterations]"
-'''
-        return self.request(body, timeout=request_timeout)
+        return self.request(
+            build_proc_request(
+                "xdb_api_wait_until",
+                expr,
+                step_tokens,
+                "" if timeout_seconds is None else str(timeout_seconds),
+                "" if max_iterations is None else str(max_iterations),
+            ),
+            timeout=request_timeout,
+        )
 
     def wait_until_signal(
         self,
@@ -453,47 +386,17 @@ xdb_reply_ok_fields $__xdb_request_id "\"expr\":[xdb_json_string $__xdb_expr],\"
         max_iterations: int | None = None,
     ) -> dict:
         request_timeout = 86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
-        body = fr'''
-set __xdb_signal {_tcl_string(signal)}
-set __xdb_expected {_tcl_string(value)}
-set __xdb_step_args {_tcl_list(step_tokens)}
-set __xdb_timeout_seconds {_tcl_string("" if timeout_seconds is None else str(timeout_seconds))}
-set __xdb_max_iterations {_tcl_string("" if max_iterations is None else str(max_iterations))}
-set __xdb_time_before [current_time]
-set __xdb_iterations 0
-set __xdb_deadline_ms -1
-if {{$__xdb_timeout_seconds ne ""}} {{
-  set __xdb_deadline_ms [expr {{[clock milliseconds] + int(1000.0 * $__xdb_timeout_seconds)}}]
-}}
-while {{1}} {{
-  set __xdb_value [get_value $__xdb_signal]
-  if {{$__xdb_value eq $__xdb_expected}} {{
-    break
-  }}
-  if {{$__xdb_max_iterations ne "" && $__xdb_iterations >= $__xdb_max_iterations}} {{
-    error [format "signal did not reach expected value before reaching max iterations (%s)" $__xdb_max_iterations]
-  }}
-  if {{$__xdb_deadline_ms >= 0 && [clock milliseconds] >= $__xdb_deadline_ms}} {{
-    error [format "timed out after %s second(s) while waiting for signal" $__xdb_timeout_seconds]
-  }}
-  set __xdb_prev_time [current_time]
-  eval [linsert $__xdb_step_args 0 run]
-  incr __xdb_iterations
-  set __xdb_current_time [current_time]
-  if {{$__xdb_current_time eq $__xdb_prev_time}} {{
-    set __xdb_value [get_value $__xdb_signal]
-    if {{$__xdb_value eq $__xdb_expected}} {{
-      break
-    }}
-    error "signal did not reach expected value and simulation did not advance while waiting"
-  }}
-}}
-set __xdb_time_after [current_time]
-set __xdb_value [get_value $__xdb_signal]
-set __xdb_step [join $__xdb_step_args " "]
-xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"value\":[xdb_json_string $__xdb_value],\"expected\":[xdb_json_string $__xdb_expected],\"step\":[xdb_json_string $__xdb_step],\"iterations\":$__xdb_iterations,\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"timeout_seconds\":[xdb_json_string $__xdb_timeout_seconds],\"max_iterations\":[xdb_json_string $__xdb_max_iterations]"
-'''
-        return self.request(body, timeout=request_timeout)
+        return self.request(
+            build_proc_request(
+                "xdb_api_wait_until_signal",
+                signal,
+                value,
+                step_tokens,
+                "" if timeout_seconds is None else str(timeout_seconds),
+                "" if max_iterations is None else str(max_iterations),
+            ),
+            timeout=request_timeout,
+        )
 
     def shutdown(self) -> None:
         try:

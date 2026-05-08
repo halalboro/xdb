@@ -4,7 +4,7 @@ import re
 import uuid
 
 from ..errors import XdbError
-from .tcl_helpers import _tcl_list, _tcl_string
+from .tcl_api import build_proc_request
 
 
 class VivadoQueryMixin:
@@ -48,29 +48,7 @@ class VivadoQueryMixin:
         return child_scopes[0] if child_scopes else (top_scope or None)
 
     def describe_session(self) -> dict:
-        body = fr'''
-set __xdb_top_name {_tcl_string(self.top)}
-set __xdb_time [current_time]
-set __xdb_root_scopes [get_scopes *]
-set __xdb_top_scope ""
-foreach __xdb_scope $__xdb_root_scopes {{
-  if {{[xdb_basename $__xdb_scope] eq $__xdb_top_name}} {{
-    set __xdb_top_scope $__xdb_scope
-    break
-  }}
-}}
-if {{$__xdb_top_scope eq "" && [llength $__xdb_root_scopes] == 1}} {{
-  set __xdb_top_scope [lindex $__xdb_root_scopes 0]
-}}
-if {{$__xdb_top_scope eq ""}} {{
-  set __xdb_top_scope $__xdb_top_name
-}}
-set __xdb_child_scopes {{}}
-catch {{set __xdb_child_scopes [get_scopes [format "%s/*" $__xdb_top_scope]]}}
-set __xdb_objects [xdb_collect_snapshot_value_objects $__xdb_top_scope]
-xdb_reply_ok_fields $__xdb_request_id "\"top\":[xdb_json_string $__xdb_top_name],\"top_scope\":[xdb_json_string $__xdb_top_scope],\"time\":[xdb_json_string $__xdb_time],\"root_scopes\":[xdb_json_array_strings $__xdb_root_scopes],\"child_scopes\":[xdb_json_array_strings $__xdb_child_scopes],\"child_scope_metadata\":[xdb_json_object_metadata_array $__xdb_child_scopes \"module\" 0],\"objects\":[xdb_json_object_metadata_array $__xdb_objects \"signal\" 1]"
-'''
-        result = self.request(body)
+        result = self.request(build_proc_request("xdb_api_describe", self.top))
         objects = list(result.get("objects") or [])
         top_scope = str(result.get("top_scope") or "")
         child_scopes = [str(scope) for scope in list(result.get("child_scopes") or [])]
@@ -104,56 +82,23 @@ xdb_reply_ok_fields $__xdb_request_id "\"top\":[xdb_json_string $__xdb_top_name]
         }
 
     def get_signal(self, signal: str) -> dict:
-        body = fr'''
-set __xdb_signal {_tcl_string(signal)}
-set __xdb_value [get_value $__xdb_signal]
-set __xdb_object_json [xdb_json_object_metadata $__xdb_signal "signal" 1]
-xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"value\":[xdb_json_string $__xdb_value],\"object\":$__xdb_object_json"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_get_signal", signal))
 
     def get_many(self, pattern: str) -> dict:
-        body = fr'''
-set __xdb_pattern {_tcl_string(pattern)}
-set __xdb_items [get_objects $__xdb_pattern]
-xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_pattern],\"signals\":[xdb_json_signal_values $__xdb_items],\"objects\":[xdb_json_object_metadata_array $__xdb_items \"signal\" 1]"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_get_many", pattern))
 
     def read_signals(self, signals: list[str]) -> dict:
-        body = fr'''
-set __xdb_signals {_tcl_list(signals)}
-xdb_reply_ok_fields $__xdb_request_id "\"signals\":[xdb_json_object_metadata_array $__xdb_signals \"signal\" 1]"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_read_signals", signals))
 
     def scopes(self, scope: str | None) -> dict:
         pattern = "*" if not scope else f"{scope}/*"
-        body = fr'''
-set __xdb_scope {_tcl_string(scope or "")}
-set __xdb_pattern {_tcl_string(pattern)}
-set __xdb_scopes [get_scopes $__xdb_pattern]
-xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"scopes\":[xdb_json_array_strings $__xdb_scopes],\"metadata\":[xdb_json_object_metadata_array $__xdb_scopes \"module\" 0]"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_scopes", scope or "", pattern))
 
     def objects(self, scope: str) -> dict:
-        body = fr'''
-set __xdb_scope {_tcl_string(scope)}
-set __xdb_pattern [format "%s/*" $__xdb_scope]
-set __xdb_objects [get_objects $__xdb_pattern]
-xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"objects\":[xdb_json_array_strings $__xdb_objects],\"metadata\":[xdb_json_object_metadata_array $__xdb_objects \"signal\" 1]"
-'''
-        return self.request(body)
+        return self.request(build_proc_request("xdb_api_objects", scope))
 
     def snapshot_scope(self, scope: str, *, name: str | None = None) -> dict:
-        body = fr'''
-set __xdb_scope {_tcl_string(scope)}
-set __xdb_objects [xdb_collect_snapshot_value_objects $__xdb_scope]
-set __xdb_time [current_time]
-xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"time\":[xdb_json_string $__xdb_time],\"objects\":[xdb_json_object_metadata_array $__xdb_objects \"signal\" 1]"
-'''
-        result = self.request(body)
+        result = self.request(build_proc_request("xdb_api_snapshot_scope", scope))
         snapshot_id = name or f"snapshot-{uuid.uuid4().hex[:12]}"
         if snapshot_id in self._snapshots:
             raise XdbError(f"snapshot already exists: {snapshot_id}")
