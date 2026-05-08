@@ -26,6 +26,7 @@ from .sim.client import (
     coyote_mem_unmap_session,
     coyote_mem_write_session,
     coyote_status_session,
+    describe_session,
     force_session,
     get_many_signals,
     get_objects,
@@ -331,6 +332,10 @@ def main() -> None:
     s_sim_time = sim_sub.add_parser("time")
     _add_debug_flag(s_sim_time)
     add_sim_session_arg(s_sim_time)
+
+    s_sim_describe = sim_sub.add_parser("describe", help="summarize the current simulation session")
+    _add_debug_flag(s_sim_describe)
+    add_sim_session_arg(s_sim_describe)
 
     s_sim_get = sim_sub.add_parser("get")
     _add_debug_flag(s_sim_get)
@@ -660,6 +665,8 @@ def main() -> None:
                 _print(close_session(args.session))
             elif args.sim_cmd == "time":
                 _print(time_session(args.session))
+            elif args.sim_cmd == "describe":
+                _print(describe_session(args.session))
             elif args.sim_cmd == "get":
                 _print(get_signal(args.session, args.signal))
             elif args.sim_cmd == "get-many":

@@ -43,6 +43,7 @@ OP_WATCH_CHANGES = "watch_changes"
 OP_VCD_START = "vcd_start"
 OP_VCD_STOP = "vcd_stop"
 OP_VCD_STATUS = "vcd_status"
+OP_DESCRIBE = "describe"
 
 
 ALL_OPERATIONS = {
@@ -84,6 +85,7 @@ ALL_OPERATIONS = {
     OP_VCD_START,
     OP_VCD_STOP,
     OP_VCD_STATUS,
+    OP_DESCRIBE,
 }
 
 

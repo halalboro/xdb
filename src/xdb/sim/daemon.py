@@ -18,6 +18,7 @@ from .protocol import (
     OP_COYOTE_STATUS,
     OP_CSR_READ,
     OP_CSR_WRITE,
+    OP_DESCRIBE,
     OP_FORCE,
     OP_GET,
     OP_GET_MANY,
@@ -210,6 +211,8 @@ class SimDaemon:
             }
         if op == OP_TIME:
             return self.driver.time()
+        if op == OP_DESCRIBE:
+            return self.driver.describe_session()
         if op == OP_RUN:
             return self.driver.run(list(args.get("tokens") or []))
         if op == OP_RESTART:

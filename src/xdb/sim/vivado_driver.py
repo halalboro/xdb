@@ -98,6 +98,18 @@ proc xdb_parent_scope {path} {
   return [string range $normalized 0 [expr {$last_sep - 1}]]
 }
 
+proc xdb_basename {path} {
+  set normalized [string trim $path]
+  if {$normalized eq ""} {
+    return ""
+  }
+  set last_sep [string last "/" $normalized]
+  if {$last_sep < 0} {
+    return $normalized
+  }
+  return [string range $normalized [expr {$last_sep + 1}] end]
+}
+
 proc xdb_normalize_kind {raw_kind default_kind} {
   set raw [string tolower [string trim $raw_kind]]
   if {$raw eq ""} {
@@ -690,6 +702,101 @@ set __xdb_time [current_time]
 xdb_reply_ok_fields $__xdb_request_id "\"time\":[xdb_json_string $__xdb_time]"
 '''
         return self.request(body)
+
+    @staticmethod
+    def _infer_known_signal_paths(objects: list[dict], patterns: list[str]) -> list[str]:
+        compiled = [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
+        out: list[str] = []
+        seen: set[str] = set()
+        for obj in objects:
+            path = str(obj.get("path") or "")
+            if not path or path in seen:
+                continue
+            base = path.rsplit("/", 1)[-1]
+            if any(regex.search(base) for regex in compiled):
+                seen.add(path)
+                out.append(path)
+        return out
+
+    @staticmethod
+    def _infer_dut_scope(top_scope: str, child_scopes: list[str]) -> str | None:
+        if not child_scopes:
+            return None
+        preferred: list[tuple[int, str]] = []
+        for scope in child_scopes:
+            base = scope.rsplit("/", 1)[-1]
+            score = None
+            lowered = base.lower()
+            if lowered == "dut":
+                score = 0
+            elif lowered == "inst_dut":
+                score = 1
+            elif "dut" in lowered:
+                score = 2
+            elif lowered.startswith("inst_"):
+                score = 3
+            if score is not None:
+                preferred.append((score, scope))
+        if preferred:
+            preferred.sort(key=lambda item: (item[0], len(item[1]), item[1]))
+            return preferred[0][1]
+        return child_scopes[0] if child_scopes else (top_scope or None)
+
+    def describe_session(self) -> dict:
+        body = fr'''
+set __xdb_top_name {_tcl_string(self.top)}
+set __xdb_time [current_time]
+set __xdb_root_scopes [get_scopes *]
+set __xdb_top_scope ""
+foreach __xdb_scope $__xdb_root_scopes {{
+  if {{[xdb_basename $__xdb_scope] eq $__xdb_top_name}} {{
+    set __xdb_top_scope $__xdb_scope
+    break
+  }}
+}}
+if {{$__xdb_top_scope eq "" && [llength $__xdb_root_scopes] == 1}} {{
+  set __xdb_top_scope [lindex $__xdb_root_scopes 0]
+}}
+if {{$__xdb_top_scope eq ""}} {{
+  set __xdb_top_scope $__xdb_top_name
+}}
+set __xdb_child_scopes {{}}
+catch {{set __xdb_child_scopes [get_scopes [format "%s/*" $__xdb_top_scope]]}}
+set __xdb_objects [xdb_collect_snapshot_value_objects $__xdb_top_scope]
+xdb_reply_ok_fields $__xdb_request_id "\"top\":[xdb_json_string $__xdb_top_name],\"top_scope\":[xdb_json_string $__xdb_top_scope],\"time\":[xdb_json_string $__xdb_time],\"root_scopes\":[xdb_json_array_strings $__xdb_root_scopes],\"child_scopes\":[xdb_json_array_strings $__xdb_child_scopes],\"child_scope_metadata\":[xdb_json_object_metadata_array $__xdb_child_scopes \"module\" 0],\"objects\":[xdb_json_object_metadata_array $__xdb_objects \"signal\" 1]"
+'''
+        result = self.request(body)
+        objects = list(result.get("objects") or [])
+        top_scope = str(result.get("top_scope") or "")
+        child_scopes = [str(scope) for scope in list(result.get("child_scopes") or [])]
+        clocks = self._infer_known_signal_paths(
+            objects,
+            [r"(^|_)(clk|clock)(_|$)", r"(^|_)(aclk)(_|$)"],
+        )
+        resets = self._infer_known_signal_paths(
+            objects,
+            [r"(^|_)(rst|reset|aresetn|resetn|srst|rstn)(_|$)"],
+        )
+        dut_scope = self._infer_dut_scope(top_scope, child_scopes)
+        common_scopes = [scope for scope in [top_scope, *child_scopes] if scope]
+        return {
+            "top": result.get("top", self.top),
+            "top_scope": top_scope,
+            "time": result.get("time", ""),
+            "dut": dut_scope,
+            "clocks": clocks,
+            "resets": resets,
+            "common_scopes": common_scopes,
+            "root_scopes": result.get("root_scopes", []),
+            "child_scopes": child_scopes,
+            "child_scope_metadata": result.get("child_scope_metadata", []),
+            "project": self.project,
+            "simset": self.simset,
+            "mode": self.mode,
+            "runtime_root": self.runtime_root,
+            "work_dir": self.work_dir,
+            "coyote": self._coyote is not None,
+        }
 
     def run(self, tokens: list[str]) -> dict:
         body = fr'''

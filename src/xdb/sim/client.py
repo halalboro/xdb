@@ -19,6 +19,7 @@ from .protocol import (
     OP_COYOTE_STATUS,
     OP_CSR_READ,
     OP_CSR_WRITE,
+    OP_DESCRIBE,
     OP_FORCE,
     OP_GET,
     OP_GET_MANY,
@@ -299,6 +300,10 @@ def close_session(session_name: str | None) -> dict[str, Any]:
 
 def time_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_TIME))
+
+
+def describe_session(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_DESCRIBE))
 
 
 def get_signal(session_name: str | None, signal: str) -> dict[str, Any]:
