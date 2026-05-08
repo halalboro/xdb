@@ -362,6 +362,7 @@ class VivadoSimDriver:
         self._pty_master_fd: int | None = None
         self._coyote: CoyoteSimController | None = None
         self._snapshots: dict[str, dict] = {}
+        self._vcd_state: dict | None = None
 
     def _debug_enabled(self) -> bool:
         value = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
@@ -868,6 +869,77 @@ xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_patte
 '''
         return self.request(body)
 
+    def vcd_start(self, file_path: str, scope: str | None = None) -> dict:
+        if self._vcd_state is not None:
+            raise XdbError(
+                f"a VCD dump is already active: {self._vcd_state.get('file', '<unknown>')}"
+            )
+        resolved = Path(file_path).expanduser().resolve()
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        body = fr'''
+set __xdb_path {_tcl_string(str(resolved))}
+set __xdb_scope {_tcl_string(scope or "")}
+open_vcd $__xdb_path
+if {{$__xdb_scope eq ""}} {{
+  log_vcd -r /*
+}} else {{
+  set __xdb_pattern [format "%s/*" $__xdb_scope]
+  log_vcd -r $__xdb_pattern
+}}
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"file\":[xdb_json_string $__xdb_path],\"scope\":[xdb_json_nullable_string $__xdb_scope],\"time\":[xdb_json_string $__xdb_time],\"active\":true"
+'''
+        result = self.request(body)
+        self._vcd_state = {
+            "active": True,
+            "file": str(resolved),
+            "scope": scope,
+            "started_at": str(result.get("time") or ""),
+        }
+        return dict(self._vcd_state)
+
+    def vcd_stop(self) -> dict:
+        if self._vcd_state is None:
+            return {
+                "active": False,
+                "stopped": False,
+                "file": None,
+                "scope": None,
+            }
+        state = dict(self._vcd_state)
+        body = r'''
+close_vcd
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"time\":[xdb_json_string $__xdb_time],\"active\":false"
+'''
+        result = self.request(body)
+        self._vcd_state = None
+        return {
+            "active": False,
+            "stopped": True,
+            "file": state.get("file"),
+            "scope": state.get("scope"),
+            "started_at": state.get("started_at"),
+            "stopped_at": result.get("time"),
+        }
+
+    def vcd_status(self) -> dict:
+        time_info = self.time()
+        if self._vcd_state is None:
+            return {
+                "active": False,
+                "file": None,
+                "scope": None,
+                "time": time_info.get("time"),
+            }
+        return {
+            "active": True,
+            "file": self._vcd_state.get("file"),
+            "scope": self._vcd_state.get("scope"),
+            "started_at": self._vcd_state.get("started_at"),
+            "time": time_info.get("time"),
+        }
+
     def step(self, count: int | None = None, time_tokens: list[str] | None = None) -> dict:
         if time_tokens:
             body = fr'''
@@ -1373,6 +1445,18 @@ xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal
                     self.proc.kill()
                     self.proc.wait(timeout=5)
         finally:
+            if self.proc is not None and self._vcd_state is not None:
+                try:
+                    self.request(
+                        r'''
+catch {close_vcd}
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"time\":[xdb_json_string $__xdb_time],\"active\":false"
+'''
+                    )
+                except XdbError:
+                    pass
+                self._vcd_state = None
             if self._pty_master_fd is not None:
                 try:
                     os.close(self._pty_master_fd)

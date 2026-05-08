@@ -40,6 +40,9 @@ OP_READ_SIGNALS = "read_signals"
 OP_SNAPSHOT = "snapshot"
 OP_DIFF_SNAPSHOT = "diff_snapshot"
 OP_WATCH_CHANGES = "watch_changes"
+OP_VCD_START = "vcd_start"
+OP_VCD_STOP = "vcd_stop"
+OP_VCD_STATUS = "vcd_status"
 
 
 ALL_OPERATIONS = {
@@ -78,6 +81,9 @@ ALL_OPERATIONS = {
     OP_SNAPSHOT,
     OP_DIFF_SNAPSHOT,
     OP_WATCH_CHANGES,
+    OP_VCD_START,
+    OP_VCD_STOP,
+    OP_VCD_STATUS,
 }
 
 

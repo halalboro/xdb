@@ -42,6 +42,9 @@ from .protocol import (
     OP_TOP,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
+    OP_VCD_START,
+    OP_VCD_STATUS,
+    OP_VCD_STOP,
     OP_WATCH_CHANGES,
     OP_WAVE_ADD,
     OP_DIFF_SNAPSHOT,
@@ -429,6 +432,16 @@ class SimDaemon:
             if not duration_tokens:
                 raise XdbError("missing duration")
             return self.driver.watch_changes(scope, duration_tokens=duration_tokens)
+        if op == OP_VCD_START:
+            path = str(args.get("path") or "")
+            if not path:
+                raise XdbError("missing VCD file path")
+            scope = str(args.get("scope") or "")
+            return self.driver.vcd_start(path, scope or None)
+        if op == OP_VCD_STOP:
+            return self.driver.vcd_stop()
+        if op == OP_VCD_STATUS:
+            return self.driver.vcd_status()
         if op == OP_CLOSE:
             return {"closed": True, "session_id": self.paths.session_id, "_shutdown": True}
         raise XdbError(f"unsupported simulation operation: {op}")

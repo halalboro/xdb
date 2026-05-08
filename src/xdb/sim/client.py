@@ -43,6 +43,9 @@ from .protocol import (
     OP_TOP,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
+    OP_VCD_START,
+    OP_VCD_STATUS,
+    OP_VCD_STOP,
     OP_WATCH_CHANGES,
     OP_WAVE_ADD,
     OP_DIFF_SNAPSHOT,
@@ -580,3 +583,23 @@ def watch_changes_session(
         session_name,
         make_request(OP_WATCH_CHANGES, scope=scope, duration_tokens=duration_tokens),
     )
+
+
+def vcd_start_session(
+    session_name: str | None,
+    path: str,
+    scope: str | None = None,
+) -> dict[str, Any]:
+    resolved = Path(path).expanduser().resolve()
+    return _send_request(
+        session_name,
+        make_request(OP_VCD_START, path=str(resolved), scope=scope or ""),
+    )
+
+
+def vcd_stop_session(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_VCD_STOP))
+
+
+def vcd_status_session(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_VCD_STATUS))

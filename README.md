@@ -90,6 +90,9 @@ xdb sim source ./sim/helpers.tcl
 xdb sim force /tb_top/reset 1
 xdb sim release /tb_top/reset
 xdb sim wave add /tb_top/dut/*
+xdb sim vcd start ./waves/fail.vcd /tb_top/dut
+xdb sim vcd status
+xdb sim vcd stop
 
 # Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
 xdb sim coyote-status
@@ -153,6 +156,9 @@ xdb sim close
 - `xdb sim watch-changes <scope> --for <duration>` captures a snapshot, runs the
   simulation for the given duration, captures another snapshot, and returns the
   diff directly.
+- `xdb sim vcd start <file> [scope]` starts persistent VCD dumping. If `scope`
+  is omitted, the whole design is logged recursively. Use
+  `xdb sim vcd status` and `xdb sim vcd stop` to inspect or stop capture.
 - `xdb sim force <signal> <value...>` wraps `add_force`; use `--radix`,
   `--repeat-every`, and `--cancel-after` for common options.
 - `xdb sim release <signal>` releases forces created through `xdb sim force`.

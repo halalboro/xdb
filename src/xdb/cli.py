@@ -41,6 +41,9 @@ from .sim.client import (
     snapshot_session,
     step_session,
     time_session,
+    vcd_start_session,
+    vcd_status_session,
+    vcd_stop_session,
     tcl_session,
     wait_until_session,
     wait_until_signal_session,
@@ -385,6 +388,21 @@ def main() -> None:
     add_sim_session_arg(s_sim_wave_add)
     s_sim_wave_add.add_argument("pattern")
 
+    s_sim_vcd = sim_sub.add_parser("vcd", help="control persistent VCD dumping")
+    _add_debug_flag(s_sim_vcd)
+    sim_vcd_sub = s_sim_vcd.add_subparsers(dest="sim_vcd_cmd", required=True)
+    s_sim_vcd_start = sim_vcd_sub.add_parser("start")
+    _add_debug_flag(s_sim_vcd_start)
+    add_sim_session_arg(s_sim_vcd_start)
+    s_sim_vcd_start.add_argument("file")
+    s_sim_vcd_start.add_argument("scope", nargs="?", default=None)
+    s_sim_vcd_stop = sim_vcd_sub.add_parser("stop")
+    _add_debug_flag(s_sim_vcd_stop)
+    add_sim_session_arg(s_sim_vcd_stop)
+    s_sim_vcd_status = sim_vcd_sub.add_parser("status")
+    _add_debug_flag(s_sim_vcd_status)
+    add_sim_session_arg(s_sim_vcd_status)
+
     s_sim_step = sim_sub.add_parser("step")
     _add_debug_flag(s_sim_step)
     add_sim_session_arg(s_sim_step)
@@ -668,6 +686,12 @@ def main() -> None:
                 )
             elif args.sim_cmd == "wave" and args.sim_wave_cmd == "add":
                 _print(add_wave(args.session, args.pattern))
+            elif args.sim_cmd == "vcd" and args.sim_vcd_cmd == "start":
+                _print(vcd_start_session(args.session, args.file, args.scope))
+            elif args.sim_cmd == "vcd" and args.sim_vcd_cmd == "stop":
+                _print(vcd_stop_session(args.session))
+            elif args.sim_cmd == "vcd" and args.sim_vcd_cmd == "status":
+                _print(vcd_status_session(args.session))
             elif args.sim_cmd == "step":
                 _print(step_session(args.session, _join_tokens(args.arg)))
             elif args.sim_cmd in {"until", "wait", "wait-on-condition"}:
