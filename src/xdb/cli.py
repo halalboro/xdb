@@ -304,18 +304,51 @@ def main() -> None:
     add_sim_session_arg(s_sim_step)
     s_sim_step.add_argument("arg", nargs="*", default=[])
 
-    s_sim_until = sim_sub.add_parser("until")
+    s_sim_until = sim_sub.add_parser(
+        "until",
+        help="run in steps until a Tcl expression becomes true",
+        description=(
+            "Run the simulator in repeated time steps until the given Tcl expression "
+            "evaluates true. The default step is '10 ns'. Example: "
+            "xdb sim until '{[get_value /tb_top/done] eq \"1\"}'"
+        ),
+    )
     _add_debug_flag(s_sim_until)
     add_sim_session_arg(s_sim_until)
-    s_sim_until.add_argument("--step", nargs="+", default=["10", "ns"])
-    s_sim_until.add_argument("expr", nargs="+")
+    s_sim_until.add_argument(
+        "--step",
+        nargs="+",
+        default=["10", "ns"],
+        metavar="STEP",
+        help="simulation time step between condition checks, default: 10 ns",
+    )
+    s_sim_until.add_argument(
+        "expr",
+        nargs="+",
+        metavar="TCL_EXPR",
+        help="Tcl expr body, e.g. '{[get_value /tb_top/done] eq \"1\"}'",
+    )
 
-    s_sim_until_signal = sim_sub.add_parser("until-signal")
+    s_sim_until_signal = sim_sub.add_parser(
+        "until-signal",
+        help="run in steps until a signal reaches an exact value",
+        description=(
+            "Run the simulator in repeated time steps until get_value <signal> equals "
+            "the expected value exactly. The default step is '10 ns'. Example: "
+            "xdb sim until-signal /tb_top/done 1"
+        ),
+    )
     _add_debug_flag(s_sim_until_signal)
     add_sim_session_arg(s_sim_until_signal)
-    s_sim_until_signal.add_argument("--step", nargs="+", default=["10", "ns"])
-    s_sim_until_signal.add_argument("signal")
-    s_sim_until_signal.add_argument("value")
+    s_sim_until_signal.add_argument(
+        "--step",
+        nargs="+",
+        default=["10", "ns"],
+        metavar="STEP",
+        help="simulation time step between value checks, default: 10 ns",
+    )
+    s_sim_until_signal.add_argument("signal", help="hierarchical signal path")
+    s_sim_until_signal.add_argument("value", help="exact expected get_value result")
 
     s_sim_breakpoint = sim_sub.add_parser("breakpoint")
     _add_debug_flag(s_sim_breakpoint)
