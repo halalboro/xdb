@@ -11,6 +11,8 @@ from typing import Any
 
 from ..errors import XdbError
 from .protocol import (
+    OP_ASSERT_SIGNAL,
+    OP_ASSERT_TCL,
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
     OP_CLEAR_COMPLETED,
@@ -20,6 +22,8 @@ from .protocol import (
     OP_CSR_READ,
     OP_CSR_WRITE,
     OP_DESCRIBE,
+    OP_EXPECT_CHANGE,
+    OP_EXPECT_SIGNAL,
     OP_FORCE,
     OP_GET,
     OP_GET_MANY,
@@ -387,6 +391,49 @@ def wait_until_signal_session(
             timeout_seconds=timeout_seconds,
             max_iterations=max_iterations,
         ),
+    )
+
+
+def assert_signal_session(
+    session_name: str | None,
+    signal: str,
+    value: str,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_ASSERT_SIGNAL, signal=signal, value=value),
+    )
+
+
+def assert_tcl_session(session_name: str | None, expr: str) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_ASSERT_TCL, expr=expr))
+
+
+def expect_signal_session(
+    session_name: str | None,
+    signal: str,
+    value: str,
+    within_tokens: list[str],
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(
+            OP_EXPECT_SIGNAL,
+            signal=signal,
+            value=value,
+            within_tokens=within_tokens,
+        ),
+    )
+
+
+def expect_change_session(
+    session_name: str | None,
+    signal: str,
+    within_tokens: list[str],
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_EXPECT_CHANGE, signal=signal, within_tokens=within_tokens),
     )
 
 

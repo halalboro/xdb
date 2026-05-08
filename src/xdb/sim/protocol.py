@@ -44,6 +44,10 @@ OP_VCD_START = "vcd_start"
 OP_VCD_STOP = "vcd_stop"
 OP_VCD_STATUS = "vcd_status"
 OP_DESCRIBE = "describe"
+OP_ASSERT_SIGNAL = "assert_signal"
+OP_ASSERT_TCL = "assert_tcl"
+OP_EXPECT_SIGNAL = "expect_signal"
+OP_EXPECT_CHANGE = "expect_change"
 
 
 ALL_OPERATIONS = {
@@ -86,6 +90,10 @@ ALL_OPERATIONS = {
     OP_VCD_STOP,
     OP_VCD_STATUS,
     OP_DESCRIBE,
+    OP_ASSERT_SIGNAL,
+    OP_ASSERT_TCL,
+    OP_EXPECT_SIGNAL,
+    OP_EXPECT_CHANGE,
 }
 
 

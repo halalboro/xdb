@@ -77,6 +77,10 @@ xdb sim wait '{[get_value /tb_top/done] eq "1"}'
 xdb sim until --step 1 ns '{[get_value /tb_top/done] eq "1"}'
 xdb sim until --timeout 5 --max-iterations 1000 '{[get_value /tb_top/done] eq "1"}'
 xdb sim until-signal /tb_top/done 1
+xdb sim assert-signal /tb_top/resetn 1
+xdb sim assert-tcl '{[get_value /tb_top/resetn] eq "1"}'
+xdb sim expect-signal --within 1 us /tb_top/done 1
+xdb sim expect-change --within 100 ns /tb_top/dut/state
 xdb sim wait-on-signal /tb_top/done 1
 xdb sim until-signal --step 100 ps --timeout 2 /tb_top/done 1
 xdb sim scopes /tb_top
@@ -149,6 +153,12 @@ xdb sim close
 - `xdb sim describe` summarizes the live session with the inferred top scope,
   likely DUT scope, known clocks, known resets, common scopes, time, and
   runtime metadata.
+- `xdb sim assert-signal <path> <value>` and `xdb sim assert-tcl <expr>`
+  provide immediate assertion-style checks with explicit pass/fail behavior.
+- `xdb sim expect-signal --within <duration> <path> <value>` waits for a signal
+  to reach an expected value within the given simulation time bound.
+- `xdb sim expect-change --within <duration> <path>` waits for a signal to
+  change from its current value within the given simulation time bound.
 - `xdb sim get`, `xdb sim get-many`, `xdb sim read`, `xdb sim objects`, and
   `xdb sim scopes` now include richer machine-readable metadata such as
   `kind`, `width`, `parent_scope`, and `value` where applicable.

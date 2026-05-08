@@ -13,6 +13,8 @@ from .errors import UnsupportedOperationError, XdbError
 from .sim.client import (
     add_breakpoint,
     add_wave,
+    assert_signal_session,
+    assert_tcl_session,
     clear_breakpoints,
     close_session,
     coyote_clear_completed_session,
@@ -26,6 +28,8 @@ from .sim.client import (
     coyote_mem_unmap_session,
     coyote_mem_write_session,
     coyote_status_session,
+    expect_change_session,
+    expect_signal_session,
     describe_session,
     force_session,
     get_many_signals,
@@ -487,6 +491,30 @@ def main() -> None:
     s_sim_until_signal.add_argument("signal", help="hierarchical signal path")
     s_sim_until_signal.add_argument("value", help="exact expected get_value result")
 
+    s_sim_assert_signal = sim_sub.add_parser("assert-signal", help="assert a signal has an exact value now")
+    _add_debug_flag(s_sim_assert_signal)
+    add_sim_session_arg(s_sim_assert_signal)
+    s_sim_assert_signal.add_argument("signal")
+    s_sim_assert_signal.add_argument("value")
+
+    s_sim_assert_tcl = sim_sub.add_parser("assert-tcl", help="assert a Tcl expression is true now")
+    _add_debug_flag(s_sim_assert_tcl)
+    add_sim_session_arg(s_sim_assert_tcl)
+    s_sim_assert_tcl.add_argument("expr", nargs="+")
+
+    s_sim_expect_signal = sim_sub.add_parser("expect-signal", help="expect a signal to reach a value within a simulation time bound")
+    _add_debug_flag(s_sim_expect_signal)
+    add_sim_session_arg(s_sim_expect_signal)
+    s_sim_expect_signal.add_argument("--within", nargs="+", required=True)
+    s_sim_expect_signal.add_argument("signal")
+    s_sim_expect_signal.add_argument("value")
+
+    s_sim_expect_change = sim_sub.add_parser("expect-change", help="expect a signal to change within a simulation time bound")
+    _add_debug_flag(s_sim_expect_change)
+    add_sim_session_arg(s_sim_expect_change)
+    s_sim_expect_change.add_argument("--within", nargs="+", required=True)
+    s_sim_expect_change.add_argument("signal")
+
     s_sim_breakpoint = sim_sub.add_parser("breakpoint")
     _add_debug_flag(s_sim_breakpoint)
     sim_bp_sub = s_sim_breakpoint.add_subparsers(dest="sim_bp_cmd", required=True)
@@ -720,6 +748,27 @@ def main() -> None:
                         _resolve_sim_step_tokens(args.step),
                         timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
                         max_iterations=_validate_positive_iteration_limit(args.max_iterations),
+                    )
+                )
+            elif args.sim_cmd == "assert-signal":
+                _print(assert_signal_session(args.session, args.signal, args.value))
+            elif args.sim_cmd == "assert-tcl":
+                _print(assert_tcl_session(args.session, _join_tokens(args.expr) or ""))
+            elif args.sim_cmd == "expect-signal":
+                _print(
+                    expect_signal_session(
+                        args.session,
+                        args.signal,
+                        args.value,
+                        _resolve_sim_step_tokens(args.within),
+                    )
+                )
+            elif args.sim_cmd == "expect-change":
+                _print(
+                    expect_change_session(
+                        args.session,
+                        args.signal,
+                        _resolve_sim_step_tokens(args.within),
                     )
                 )
             elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "add":

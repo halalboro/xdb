@@ -10,6 +10,8 @@ from typing import Any
 
 from ..errors import XdbError
 from .protocol import (
+    OP_ASSERT_SIGNAL,
+    OP_ASSERT_TCL,
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
     OP_CLEAR_COMPLETED,
@@ -19,6 +21,8 @@ from .protocol import (
     OP_CSR_READ,
     OP_CSR_WRITE,
     OP_DESCRIBE,
+    OP_EXPECT_CHANGE,
+    OP_EXPECT_SIGNAL,
     OP_FORCE,
     OP_GET,
     OP_GET_MANY,
@@ -323,6 +327,38 @@ class SimDaemon:
                 timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
                 max_iterations=None if max_iterations is None else int(max_iterations),
             )
+        if op == OP_ASSERT_SIGNAL:
+            signal_name = str(args.get("signal") or "")
+            value = str(args.get("value") or "")
+            if not signal_name:
+                raise XdbError("missing signal")
+            if value == "":
+                raise XdbError("missing expected signal value")
+            return self.driver.assert_signal(signal_name, value)
+        if op == OP_ASSERT_TCL:
+            expr = str(args.get("expr") or "")
+            if not expr:
+                raise XdbError("missing Tcl expression")
+            return self.driver.assert_tcl(expr)
+        if op == OP_EXPECT_SIGNAL:
+            signal_name = str(args.get("signal") or "")
+            value = str(args.get("value") or "")
+            within_tokens = [str(v) for v in list(args.get("within_tokens") or [])]
+            if not signal_name:
+                raise XdbError("missing signal")
+            if value == "":
+                raise XdbError("missing expected signal value")
+            if not within_tokens:
+                raise XdbError("missing within duration")
+            return self.driver.expect_signal(signal_name, value, within_tokens=within_tokens)
+        if op == OP_EXPECT_CHANGE:
+            signal_name = str(args.get("signal") or "")
+            within_tokens = [str(v) for v in list(args.get("within_tokens") or [])]
+            if not signal_name:
+                raise XdbError("missing signal")
+            if not within_tokens:
+                raise XdbError("missing within duration")
+            return self.driver.expect_change(signal_name, within_tokens=within_tokens)
         if op == OP_BREAKPOINT_ADD:
             condition = str(args.get("condition") or "")
             if not condition:

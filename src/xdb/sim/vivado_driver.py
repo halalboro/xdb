@@ -332,6 +332,14 @@ proc xdb_normalize_expr {expr_text} {
   return [string trim $normalized]
 }
 
+proc xdb_signal_eq_expr {signal expected} {
+  return [format {[string equal [get_value %s] %s]} [list $signal] [list $expected]]
+}
+
+proc xdb_signal_change_expr {signal initial} {
+  return [format {![string equal [get_value %s] %s]} [list $signal] [list $initial]]
+}
+
 if {![info exists ::xdb_breakpoints]} {
   set ::xdb_breakpoints {}
 }
@@ -1170,6 +1178,76 @@ set __xdb_step [join $__xdb_step_args " "]
 xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"value\":[xdb_json_string $__xdb_value],\"expected\":[xdb_json_string $__xdb_expected],\"step\":[xdb_json_string $__xdb_step],\"iterations\":$__xdb_iterations,\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"timeout_seconds\":[xdb_json_string $__xdb_timeout_seconds],\"max_iterations\":[xdb_json_string $__xdb_max_iterations]"
 '''
         return self.request(body, timeout=request_timeout)
+
+    def assert_signal(self, signal: str, value: str) -> dict:
+        body = fr'''
+set __xdb_signal {_tcl_string(signal)}
+set __xdb_expected {_tcl_string(value)}
+set __xdb_actual [get_value $__xdb_signal]
+set __xdb_time [current_time]
+if {{$__xdb_actual ne $__xdb_expected}} {{
+  error [format "assert-signal failed at %s: %s expected %s got %s" $__xdb_time $__xdb_signal $__xdb_expected $__xdb_actual]
+}}
+xdb_reply_ok_fields $__xdb_request_id "\"passed\":true,\"kind\":[xdb_json_string \"assert-signal\"],\"signal\":[xdb_json_string $__xdb_signal],\"expected\":[xdb_json_string $__xdb_expected],\"value\":[xdb_json_string $__xdb_actual],\"time\":[xdb_json_string $__xdb_time]"
+'''
+        return self.request(body)
+
+    def assert_tcl(self, expr: str) -> dict:
+        body = fr'''
+set __xdb_expr_raw {_tcl_string(expr)}
+set __xdb_expr [xdb_normalize_expr $__xdb_expr_raw]
+set __xdb_time [current_time]
+if {{![uplevel #0 [list expr $__xdb_expr]]}} {{
+  error [format "assert-tcl failed at %s: %s" $__xdb_time $__xdb_expr]
+}}
+xdb_reply_ok_fields $__xdb_request_id "\"passed\":true,\"kind\":[xdb_json_string \"assert-tcl\"],\"expr\":[xdb_json_string $__xdb_expr],\"time\":[xdb_json_string $__xdb_time]"
+'''
+        return self.request(body)
+
+    def expect_signal(self, signal: str, value: str, *, within_tokens: list[str]) -> dict:
+        body = fr'''
+set __xdb_signal {_tcl_string(signal)}
+set __xdb_expected {_tcl_string(value)}
+set __xdb_within_args {_tcl_list(within_tokens)}
+set __xdb_time_before [current_time]
+set __xdb_initial [get_value $__xdb_signal]
+if {{$__xdb_initial eq $__xdb_expected}} {{
+  xdb_reply_ok_fields $__xdb_request_id "\"passed\":true,\"kind\":[xdb_json_string \"expect-signal\"],\"signal\":[xdb_json_string $__xdb_signal],\"expected\":[xdb_json_string $__xdb_expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_initial],\"within\":[xdb_json_string [join $__xdb_within_args \" \"]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_before],\"iterations\":0"
+}} else {{
+  set ::xdb_expect_signal_hit 0
+  set __xdb_condition [xdb_signal_eq_expr $__xdb_signal $__xdb_expected]
+  set __xdb_id [when $__xdb_condition {{set ::xdb_expect_signal_hit 1; stop}}]
+  eval [linsert $__xdb_within_args 0 run]
+  catch {{nowhen $__xdb_id}}
+  set __xdb_time_after [current_time]
+  set __xdb_actual [get_value $__xdb_signal]
+  if {{!$::xdb_expect_signal_hit && $__xdb_actual ne $__xdb_expected}} {{
+    error [format "expect-signal failed: %s did not reach %s within %s (start=%s end=%s time_before=%s time_after=%s)" $__xdb_signal $__xdb_expected [join $__xdb_within_args \" \"] $__xdb_initial $__xdb_actual $__xdb_time_before $__xdb_time_after]
+  }}
+  xdb_reply_ok_fields $__xdb_request_id "\"passed\":true,\"kind\":[xdb_json_string \"expect-signal\"],\"signal\":[xdb_json_string $__xdb_signal],\"expected\":[xdb_json_string $__xdb_expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string [join $__xdb_within_args \" \"]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"iterations\":1"
+}}
+'''
+        return self.request(body)
+
+    def expect_change(self, signal: str, *, within_tokens: list[str]) -> dict:
+        body = fr'''
+set __xdb_signal {_tcl_string(signal)}
+set __xdb_within_args {_tcl_list(within_tokens)}
+set __xdb_time_before [current_time]
+set __xdb_initial [get_value $__xdb_signal]
+set ::xdb_expect_change_hit 0
+set __xdb_condition [xdb_signal_change_expr $__xdb_signal $__xdb_initial]
+set __xdb_id [when $__xdb_condition {{set ::xdb_expect_change_hit 1; stop}}]
+eval [linsert $__xdb_within_args 0 run]
+catch {{nowhen $__xdb_id}}
+set __xdb_time_after [current_time]
+set __xdb_actual [get_value $__xdb_signal]
+if {{!$::xdb_expect_change_hit && $__xdb_actual eq $__xdb_initial}} {{
+  error [format "expect-change failed: %s did not change within %s (value=%s time_before=%s time_after=%s)" $__xdb_signal [join $__xdb_within_args \" \"] $__xdb_initial $__xdb_time_before $__xdb_time_after]
+}}
+xdb_reply_ok_fields $__xdb_request_id "\"passed\":true,\"kind\":[xdb_json_string \"expect-change\"],\"signal\":[xdb_json_string $__xdb_signal],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string [join $__xdb_within_args \" \"]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"changed\":true"
+'''
+        return self.request(body)
 
     def add_breakpoint(self, condition: str) -> dict:
         body = fr'''
