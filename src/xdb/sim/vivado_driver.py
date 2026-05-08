@@ -429,7 +429,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_b
     def restart(self) -> dict:
         body = r'''
 set __xdb_before [current_time]
-restart -force
+restart
 set __xdb_after [current_time]
 xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after]"
 '''
