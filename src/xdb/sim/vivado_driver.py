@@ -16,8 +16,8 @@ from pathlib import Path
 
 from ..errors import XdbError
 from .coyote import CoyoteSimController
-from .tcl_api import API_TCL, build_proc_request
-from .tcl_helpers import HELPERS_TCL, _tcl_list, _tcl_string
+from .tcl_api import build_proc_request
+from .tcl_helpers import _tcl_string, load_tcl_library
 from .vivado_coyote_runtime import VivadoCoyoteMixin
 from .vivado_debug import VivadoDebugMixin
 from .vivado_queries import VivadoQueryMixin
@@ -104,7 +104,7 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
         self._log_file = open(self.vivado_log_path, "a", encoding="utf-8", buffering=1)
         self._prepare_runtime_bundle()
         self._start_runtime_simulator()
-        self._send_raw(HELPERS_TCL + "\n" + API_TCL)
+        self._send_raw(load_tcl_library())
         self._wait_for_runtime_prompt(timeout=timeout)
 
     def _start_pty_process(self, cmd: list[str], *, cwd: str | None = None) -> None:

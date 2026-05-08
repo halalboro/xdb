@@ -29,6 +29,9 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"xdb.sim" = ["tcl/*.tcl"]
+
 [tool.ruff]
 line-length = 100
 
