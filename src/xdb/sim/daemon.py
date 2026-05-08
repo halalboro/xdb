@@ -33,7 +33,6 @@ class SimDaemon:
     def __init__(
         self,
         paths: SessionPaths,
-        launch_kind: str,
         project: str,
         simset: str,
         mode: str,
@@ -46,7 +45,6 @@ class SimDaemon:
         simulate_script: str = "",
     ):
         self.paths = paths
-        self.launch_kind = launch_kind
         self.project = project
         self.simset = simset
         self.mode = mode
@@ -58,7 +56,6 @@ class SimDaemon:
         self.elaborate_script = elaborate_script
         self.simulate_script = simulate_script
         self.driver = VivadoSimDriver(
-            launch_kind=launch_kind,
             project=project,
             simset=simset,
             mode=mode,
@@ -77,7 +74,7 @@ class SimDaemon:
             {
                 "pid": os.getpid(),
                 "cwd": str(Path.cwd()),
-                "launch_kind": self.launch_kind,
+                "launch_kind": "runtime",
                 "project": self.project,
                 "simset": self.simset,
                 "mode": self.mode,
@@ -259,7 +256,6 @@ def run_daemon(
     *,
     anchor_dir: str,
     session_name: str | None,
-    launch_kind: str,
     project: str,
     simset: str,
     mode: str,
@@ -274,7 +270,6 @@ def run_daemon(
     paths = SessionPaths(Path(anchor_dir), session_name)
     daemon = SimDaemon(
         paths=paths,
-        launch_kind=launch_kind,
         project=project,
         simset=simset,
         mode=mode,

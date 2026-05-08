@@ -6,7 +6,6 @@ import pty
 import queue
 import select
 import shlex
-import shutil
 import subprocess
 import threading
 import time
@@ -94,7 +93,6 @@ if {![info exists ::xdb_breakpoints]} {
 class VivadoSimDriver:
     def __init__(
         self,
-        launch_kind: str,
         project: str,
         simset: str,
         mode: str,
@@ -106,7 +104,6 @@ class VivadoSimDriver:
         elaborate_script: str = "",
         simulate_script: str = "",
     ):
-        self.launch_kind = launch_kind
         self.project = str(Path(project).resolve()) if project else ""
         self.simset = simset
         self.mode = mode
@@ -169,36 +166,10 @@ class VivadoSimDriver:
     def start(self, timeout: int = 300) -> None:
         Path(self.vivado_log_path).parent.mkdir(parents=True, exist_ok=True)
         self._log_file = open(self.vivado_log_path, "a", encoding="utf-8", buffering=1)
-
-        if self.launch_kind == "runtime":
-            self._prepare_runtime_bundle()
-            self._start_runtime_simulator()
-            self._send_raw(_HELPERS_TCL)
-            self._wait_for_runtime_prompt(timeout=timeout)
-            return
-
-        vivado_bin = os.environ.get("XDB_VIVADO_BIN", "vivado")
-        cmd = [vivado_bin, "-mode", "tcl", "-nolog", "-nojournal", "-notrace"]
-        resolved_vivado = shutil.which(vivado_bin) if os.path.basename(vivado_bin) == vivado_bin else vivado_bin
-
-        if self._debug_enabled():
-            resolved_display = resolved_vivado if resolved_vivado else "<not found in PATH>"
-            self._record_debug_line(f"[xdb debug] vivado executable: {vivado_bin}")
-            self._record_debug_line(f"[xdb debug] vivado resolved path: {resolved_display}")
-            self._record_debug_line(
-                "[xdb debug] vivado argv: " + " ".join(shlex.quote(arg) for arg in cmd)
-            )
-
-        try:
-            self._start_pty_process(cmd)
-        except FileNotFoundError as e:
-            raise XdbError(
-                "vivado executable not found in PATH. Run inside a Xilinx-enabled shell "
-                "or set XDB_VIVADO_BIN."
-            ) from e
-
+        self._prepare_runtime_bundle()
+        self._start_runtime_simulator()
         self._send_raw(_HELPERS_TCL)
-        self.launch(timeout=timeout)
+        self._wait_for_runtime_prompt(timeout=timeout)
 
     def _start_pty_process(self, cmd: list[str], *, cwd: str | None = None) -> None:
         try:
@@ -419,50 +390,16 @@ if {{[catch {{
 
     def launch(self, timeout: int = 300, top: str | None = None) -> dict:
         effective_top = self.top if top is None else top
-        if self.launch_kind == "runtime":
-            if top is not None and top != self.top:
-                raise XdbError("changing top module is not supported for runtime-backed simulation sessions")
-            time_info = self.time()
-            return {
-                "project": self.project,
-                "simset": self.simset,
-                "mode": self.mode,
-                "top": effective_top,
-                "time": str(time_info.get("time", "")),
-            }
-
-        body = fr'''
-set __xdb_project {_tcl_string(self.project)}
-set __xdb_simset {_tcl_string(self.simset)}
-set __xdb_mode {_tcl_string(self.mode)}
-set __xdb_top {_tcl_string(effective_top)}
-catch {{close_sim -force}}
-catch {{close_project}}
-open_project $__xdb_project
-set __xdb_fileset [get_filesets $__xdb_simset]
-if {{[llength $__xdb_fileset] == 0}} {{
-  error "simulation fileset not found: $__xdb_simset"
-}}
-if {{$__xdb_top ne ""}} {{
-  set_property top $__xdb_top $__xdb_fileset
-}}
-if {{$__xdb_mode eq "behavioral"}} {{
-  launch_simulation -simset $__xdb_simset -mode behavioral
-}} elseif {{$__xdb_mode eq "post-synth"}} {{
-  launch_simulation -simset $__xdb_simset -mode post-synthesis
-}} elseif {{$__xdb_mode eq "post-impl"}} {{
-  launch_simulation -simset $__xdb_simset -mode post-implementation
-}} else {{
-  error "unsupported simulation mode: $__xdb_mode"
-}}
-set __xdb_effective_top [get_property top $__xdb_fileset]
-set __xdb_time [current_time]
-set ::xdb_breakpoints {{}}
-xdb_reply_ok_fields $__xdb_request_id "\"project\":[xdb_json_string $__xdb_project],\"simset\":[xdb_json_string $__xdb_simset],\"mode\":[xdb_json_string $__xdb_mode],\"top\":[xdb_json_string $__xdb_effective_top],\"time\":[xdb_json_string $__xdb_time]"
-'''
-        data = self.request(body, timeout=timeout)
-        self.top = str(data.get("top", effective_top))
-        return data
+        if top is not None and top != self.top:
+            raise XdbError("changing top module is not supported for runtime-backed simulation sessions")
+        time_info = self.time()
+        return {
+            "project": self.project,
+            "simset": self.simset,
+            "mode": self.mode,
+            "top": effective_top,
+            "time": str(time_info.get("time", "")),
+        }
 
     def status(self) -> dict:
         return self.time()
@@ -534,8 +471,10 @@ xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],
         return self.request(body)
 
     def set_top(self, top: str, timeout: int = 300) -> dict:
+        if top != self.top:
+            raise XdbError("changing top module is not supported for runtime-backed simulation sessions")
         data = self.launch(timeout=timeout, top=top)
-        data["relaunched"] = self.launch_kind != "runtime"
+        data["relaunched"] = False
         return data
 
     def add_wave(self, pattern: str) -> dict:
@@ -601,10 +540,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"cleared\":$__xdb_cleared"
         if self.proc is None:
             return
         try:
-            if self.launch_kind == "runtime":
-                self._send_raw("catch {quit -force}\nexit\n")
-            else:
-                self._send_raw("catch {close_sim -force}\ncatch {close_project}\nexit\n")
+            self._send_raw("catch {quit -force}\nexit\n")
         except XdbError:
             pass
         try:

@@ -76,18 +76,9 @@ def _recv_all(sock: socket.socket) -> bytes:
 
 
 def _config_matches(meta: dict[str, Any], launch_spec: dict[str, Any], simset: str, mode: str, top: str) -> bool:
-    launch_kind = str(launch_spec.get("launch_kind") or "project")
-    if str(meta.get("launch_kind") or "project") != launch_kind:
-        return False
-    if launch_kind == "runtime":
-        return (
-            str(meta.get("package_runtime") or "") == str(launch_spec.get("package_runtime") or "")
-            and str(meta.get("simset") or "") == simset
-            and str(meta.get("mode") or "") == mode
-            and str(meta.get("top") or "") == top
-        )
     return (
-        str(meta.get("project") or "") == str(launch_spec.get("project") or "")
+        str(meta.get("launch_kind") or "") == "runtime"
+        and str(meta.get("package_runtime") or "") == str(launch_spec.get("package_runtime") or "")
         and str(meta.get("simset") or "") == simset
         and str(meta.get("mode") or "") == mode
         and str(meta.get("top") or "") == top
@@ -113,8 +104,6 @@ def _spawn_daemon(
         "_simd",
         "--anchor-dir",
         anchor_dir,
-        "--launch-kind",
-        str(launch_spec.get("launch_kind") or "project"),
         "--project",
         str(launch_spec.get("project") or ""),
         "--simset",
@@ -126,11 +115,10 @@ def _spawn_daemon(
     ]
     if session_name:
         cmd.extend(["--session", session_name])
-    if str(launch_spec.get("launch_kind") or "project") == "runtime":
-        for name in ("package_runtime", "runtime_root", "work_dir", "compile_script", "elaborate_script", "simulate_script"):
-            value = launch_spec.get(name)
-            if value:
-                cmd.extend([f"--{name.replace('_', '-')}", str(value)])
+    for name in ("package_runtime", "runtime_root", "work_dir", "compile_script", "elaborate_script", "simulate_script"):
+        value = launch_spec.get(name)
+        if value:
+            cmd.extend([f"--{name.replace('_', '-')}", str(value)])
     debug_env = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
     if debug_env and debug_env.strip().lower() not in {"", "0", "false", "no", "off"}:
         cmd.append("--debug")
@@ -176,7 +164,6 @@ def _wait_until_stopped(session_name: str | None, timeout: float = 5.0) -> None:
 
 def launch_session(
     *,
-    project: str | None,
     simset: str | None,
     mode: str | None,
     top: str | None,
@@ -190,7 +177,7 @@ def launch_session(
     effective_simset = resolve_simset_arg(simset)
     effective_mode = resolve_mode_arg(mode)
     effective_top = resolve_top_arg(top, live_meta)
-    launch_spec = resolve_launch_spec(project, paths, materialize=False)
+    launch_spec = resolve_launch_spec(stage=False)
 
     if live_meta and Path(str(live_meta.get("socket_path", ""))).exists() and pid_is_alive(int(live_meta.get("pid", 0) or 0)):
         if replace:
@@ -206,7 +193,7 @@ def launch_session(
                 _wait_until_stopped(session_name, timeout=2.0)
             cleanup_stale_session(paths)
         else:
-            if bool(launch_spec.get("needs_materialization")):
+            if bool(launch_spec.get("needs_stage")):
                 raise XdbError(
                     "the packaged simulation input changed and the writable workspace needs "
                     "to be refreshed; use --replace or close the current session first"
@@ -217,7 +204,6 @@ def launch_session(
                 for key in (
                     "launch_kind",
                     "project",
-                    "package_project",
                     "package_runtime",
                     "runtime_root",
                     "workspace",
@@ -225,7 +211,7 @@ def launch_session(
                     "compile_script",
                     "elaborate_script",
                     "simulate_script",
-                    "materialized",
+                    "staged",
                     "workspace_reused",
                 ):
                     if key in launch_spec:
@@ -236,7 +222,7 @@ def launch_session(
                 "use --replace or choose another --session"
             )
 
-    launch_spec = resolve_launch_spec(project, paths, materialize=True)
+    launch_spec = resolve_launch_spec(stage=True)
 
     remove_session(paths)
     proc = _spawn_daemon(
@@ -258,7 +244,6 @@ def launch_session(
     for key in (
         "launch_kind",
         "project",
-        "package_project",
         "package_runtime",
         "runtime_root",
         "workspace",
@@ -266,7 +251,7 @@ def launch_session(
         "compile_script",
         "elaborate_script",
         "simulate_script",
-        "materialized",
+        "staged",
         "workspace_reused",
     ):
         if key in launch_spec:

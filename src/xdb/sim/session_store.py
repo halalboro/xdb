@@ -12,7 +12,6 @@ from pathlib import Path
 from ..errors import XdbError
 from .types import SessionMeta
 
-_MATERIALIZED_STAMP = ".xdb-materialized.json"
 _RUNTIME_STAGED_STAMP = ".xdb-runtime-staged.json"
 _RUNTIME_META = "xdb-runtime.json"
 
@@ -205,111 +204,6 @@ def resolve_top_arg(top: str | None, meta: SessionMeta | None) -> str:
     return str((meta or {}).get("top") or "")
 
 
-def _find_single_xpr(root: Path, *, recursive: bool, context: str) -> Path:
-    candidates = sorted(root.rglob("*.xpr") if recursive else root.glob("*.xpr"))
-    if len(candidates) == 1:
-        return candidates[0].resolve()
-    if len(candidates) > 1:
-        raise XdbError(f"multiple .xpr files found in {context}; pass --project")
-    raise XdbError(f"missing simulation project in {context}: pass --project <path.xpr>")
-
-
-def _materialization_stamp_path(workspace: Path) -> Path:
-    return workspace / _MATERIALIZED_STAMP
-
-
-def _current_materialization_stamp(workspace: Path) -> dict[str, object] | None:
-    stamp_path = _materialization_stamp_path(workspace)
-    if not stamp_path.exists():
-        return None
-    try:
-        with stamp_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return None
-    if not isinstance(data, dict):
-        return None
-    return data
-
-
-def _target_relative_to_workspace(target_project: Path, workspace: Path) -> Path:
-    try:
-        return target_project.resolve().relative_to(workspace.resolve())
-    except ValueError as e:
-        raise XdbError(
-            "XDB_SIM_PROJECT must point inside XDB_SIM_WORKSPACE when using "
-            "XDB_SIM_PACKAGE_PROJECT"
-        ) from e
-
-
-def _resolve_packaged_project_layout(
-    package_value: str,
-    workspace_value: str,
-    target_value: str | None,
-) -> tuple[Path, Path, Path, Path]:
-    package_path = _resolve_path(package_value)
-    workspace = _resolve_path(workspace_value)
-    target_project = _resolve_path(target_value) if target_value else None
-
-    if package_path.is_file():
-        source_project = package_path.resolve()
-        if target_project is None:
-            source_root = source_project.parent
-            target_rel = Path(source_project.name)
-            target_project = workspace / target_rel
-        else:
-            target_rel = _target_relative_to_workspace(target_project, workspace)
-            if len(target_rel.parts) > len(source_project.parts):
-                raise XdbError(
-                    "cannot map packaged simulation project into workspace: "
-                    f"target path is too deep for source project {source_project}"
-                )
-            source_root = source_project.parents[len(target_rel.parts) - 1]
-            if (source_root / target_rel).resolve() != source_project:
-                raise XdbError(
-                    "cannot map packaged simulation project into workspace: "
-                    f"source={source_project} target={target_project}"
-                )
-        return (
-            source_root.resolve(),
-            source_project,
-            workspace.resolve(),
-            target_project.resolve(),
-        )
-
-    if package_path.is_dir():
-        source_root = package_path.resolve()
-        if target_project is None:
-            source_project = _find_single_xpr(
-                source_root,
-                recursive=True,
-                context=str(source_root),
-            )
-            target_rel = source_project.relative_to(source_root)
-            target_project = workspace / target_rel
-        else:
-            target_rel = _target_relative_to_workspace(target_project, workspace)
-            source_project = (source_root / target_rel).resolve()
-            if not source_project.is_file():
-                raise XdbError(
-                    "packaged simulation project not found at expected path: "
-                    f"{source_project}"
-                )
-        return (
-            source_root,
-            source_project,
-            workspace.resolve(),
-            target_project.resolve(),
-        )
-
-    if package_path.exists():
-        raise XdbError(f"unsupported packaged simulation project path: {package_path}")
-    raise XdbError(
-        f"packaged simulation project not found: {package_path} "
-        "(build the simulation package first)"
-    )
-
-
 def _source_tree_fingerprint(source_root: Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(source_root.rglob("*")):
@@ -331,25 +225,6 @@ def _source_tree_fingerprint(source_root: Path) -> str:
     return digest.hexdigest()
 
 
-def _materialization_matches(
-    workspace: Path,
-    *,
-    source_root: Path,
-    source_project: Path,
-    target_project: Path,
-) -> bool:
-    stamp = _current_materialization_stamp(workspace)
-    if not stamp:
-        return False
-    return (
-        stamp.get("source_root") == str(source_root)
-        and stamp.get("source_project") == str(source_project)
-        and stamp.get("target_project") == str(target_project)
-        and stamp.get("source_fingerprint") == _source_tree_fingerprint(source_root)
-        and target_project.is_file()
-    )
-
-
 def _make_workspace_tree_user_writable(workspace: Path) -> None:
     if not workspace.exists():
         return
@@ -357,7 +232,6 @@ def _make_workspace_tree_user_writable(workspace: Path) -> None:
     for path in [workspace, *workspace.rglob("*")]:
         if path.is_symlink():
             continue
-
         try:
             mode = path.stat().st_mode
             if path.is_dir():
@@ -366,57 +240,6 @@ def _make_workspace_tree_user_writable(workspace: Path) -> None:
                 os.chmod(path, mode | 0o600)
         except OSError:
             continue
-
-
-
-def _rewrite_materialized_project_paths(source_project: Path, target_project: Path) -> None:
-    if target_project.suffix.lower() != ".xpr" or not target_project.exists():
-        return
-
-    try:
-        data = target_project.read_text(encoding="utf-8")
-    except OSError:
-        return
-
-    source_sim_dir = str(source_project.parent)
-    source_project_path = str(source_project)
-
-    data = re.sub(
-        r'/build/source/\.nix-hw-[^/\" ]+/sim/helios-coyote\.xpr',
-        source_project_path,
-        data,
-    )
-    data = re.sub(
-        r'/build/source/\.nix-hw-[^/\" ]+/sim',
-        source_sim_dir,
-        data,
-    )
-
-    try:
-        target_project.write_text(data, encoding="utf-8")
-    except OSError:
-        return
-
-
-
-def _write_materialization_stamp(
-    workspace: Path,
-    *,
-    source_root: Path,
-    source_project: Path,
-    target_project: Path,
-) -> None:
-    workspace.mkdir(parents=True, exist_ok=True)
-    stamp_path = _materialization_stamp_path(workspace)
-    payload = {
-        "source_root": str(source_root),
-        "source_project": str(source_project),
-        "target_project": str(target_project),
-        "source_fingerprint": _source_tree_fingerprint(source_root),
-        "updated_at": _now_iso(),
-    }
-    with stamp_path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, sort_keys=True)
 
 
 def _runtime_stage_stamp_path(workspace: Path) -> Path:
@@ -515,175 +338,55 @@ def _stage_runtime_tree(source_root: Path, workspace: Path) -> bool:
     return True
 
 
-def _materialize_project_tree(
-    source_root: Path,
-    source_project: Path,
-    workspace: Path,
-    target_project: Path,
-) -> bool:
-    if _materialization_matches(
-        workspace,
-        source_root=source_root,
-        source_project=source_project,
-        target_project=target_project,
-    ):
-        return False
-
-    if workspace.exists():
-        _make_workspace_tree_user_writable(workspace)
-        shutil.rmtree(workspace)
-    workspace.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source_root, workspace, dirs_exist_ok=True, copy_function=shutil.copyfile)
-    _make_workspace_tree_user_writable(workspace)
-    _rewrite_materialized_project_paths(source_project, target_project)
-
-    if not target_project.is_file():
-        raise XdbError(
-            "materialized simulation project is missing after copy: "
-            f"{target_project}"
-        )
-
-    _write_materialization_stamp(
-        workspace,
-        source_root=source_root,
-        source_project=source_project,
-        target_project=target_project,
-    )
-    return True
-
-
-def resolve_launch_project(
-    project: str | None,
-    paths: SessionPaths,
-    *,
-    materialize: bool,
-) -> dict[str, str | bool]:
-    if project:
-        p = _resolve_path(project)
-        if not p.is_file():
-            raise XdbError(f"simulation project not found: {p}")
-        return {
-            "project": str(p),
-            "materialized": False,
-            "workspace_reused": False,
-            "needs_materialization": False,
-        }
-
-    package_value = _env_value("XDB_SIM_PACKAGE_PROJECT")
-    if package_value is not None:
-        workspace_value = _env_value("XDB_SIM_WORKSPACE")
-        if workspace_value is None:
-            raise XdbError(
-                "XDB_SIM_PACKAGE_PROJECT is set but XDB_SIM_WORKSPACE is missing"
-            )
-        target_value = _env_value("XDB_SIM_PROJECT")
-        (
-            source_root,
-            source_project,
-            workspace,
-            target_project,
-        ) = _resolve_packaged_project_layout(
-            package_value,
-            workspace_value,
-            target_value,
-        )
-        needs_materialization = not _materialization_matches(
-            workspace,
-            source_root=source_root,
-            source_project=source_project,
-            target_project=target_project,
-        )
-        did_materialize = False
-        if materialize:
-            did_materialize = _materialize_project_tree(
-                source_root,
-                source_project,
-                workspace,
-                target_project,
-            )
-        return {
-            "project": str(target_project),
-            "package_project": str(source_project),
-            "workspace": str(workspace),
-            "materialized": did_materialize,
-            "workspace_reused": not needs_materialization,
-            "needs_materialization": needs_materialization,
-        }
-
-    env_project = _env_value("XDB_SIM_PROJECT")
-    if env_project is not None:
-        p = _resolve_path(env_project)
-        if not p.is_file():
-            raise XdbError(f"simulation project not found: {p}")
-        return {
-            "project": str(p),
-            "materialized": False,
-            "workspace_reused": False,
-            "needs_materialization": False,
-        }
-
-    meta = load_meta(paths)
-    if meta and meta.get("project"):
-        return {
-            "project": str(meta["project"]),
-            "materialized": False,
-            "workspace_reused": False,
-            "needs_materialization": False,
-        }
-
-    candidate = _find_single_xpr(Path.cwd(), recursive=False, context="current directory")
-    return {
-        "project": str(candidate),
-        "materialized": False,
-        "workspace_reused": False,
-        "needs_materialization": False,
-    }
-
-
-def resolve_launch_spec(
-    project: str | None,
-    paths: SessionPaths,
-    *,
-    materialize: bool,
-) -> dict[str, str | bool]:
+def resolve_launch_spec(*, stage: bool) -> dict[str, str | bool]:
     runtime_value = _env_value("XDB_SIM_PACKAGE_RUNTIME")
-    if project is None and runtime_value is not None:
-        workspace_value = _env_value("XDB_SIM_WORKSPACE")
-        if workspace_value is None:
-            raise XdbError(
-                "XDB_SIM_PACKAGE_RUNTIME is set but XDB_SIM_WORKSPACE is missing"
-            )
-        source_root, workspace = _resolve_packaged_runtime_layout(runtime_value, workspace_value)
-        needs_stage = not _runtime_stage_matches(workspace, source_root=source_root)
-        did_stage = False
-        runtime_root = workspace
-        if materialize:
-            did_stage = _stage_runtime_tree(source_root, workspace)
-        elif needs_stage:
-            runtime_root = source_root
-
-        meta_root = runtime_root if runtime_root.exists() else source_root
-        runtime_meta = _load_runtime_meta(meta_root)
-        work_dir = (runtime_root / runtime_meta["work_dir"]).resolve()
-        compile_script = (runtime_root / runtime_meta["compile_script"]).resolve()
-        elaborate_script = (runtime_root / runtime_meta["elaborate_script"]).resolve()
-        simulate_script = (runtime_root / runtime_meta["simulate_script"]).resolve()
-
-        return {
-            "launch_kind": "runtime",
-            "package_runtime": str(source_root),
-            "runtime_root": str(runtime_root),
-            "workspace": str(workspace),
-            "project": str(runtime_meta.get("project", "")),
-            "work_dir": str(work_dir),
-            "compile_script": str(compile_script),
-            "elaborate_script": str(elaborate_script),
-            "simulate_script": str(simulate_script),
-            "materialized": did_stage,
-            "workspace_reused": not needs_stage,
-            "needs_materialization": needs_stage,
+    if runtime_value is None:
+        legacy_values = {
+            name: _env_value(name)
+            for name in ("XDB_SIM_PACKAGE_PROJECT", "XDB_SIM_PROJECT")
         }
+        if any(legacy_values.values()):
+            raise XdbError(
+                "project-backed simulation launch is no longer supported; "
+                "export XDB_SIM_PACKAGE_RUNTIME instead"
+            )
+        raise XdbError(
+            "missing packaged simulation runtime: set XDB_SIM_PACKAGE_RUNTIME"
+        )
 
-    project_info = resolve_launch_project(project, paths, materialize=materialize)
-    project_info["launch_kind"] = "project"
-    return project_info
+    workspace_value = _env_value("XDB_SIM_WORKSPACE")
+    if workspace_value is None:
+        raise XdbError(
+            "XDB_SIM_PACKAGE_RUNTIME is set but XDB_SIM_WORKSPACE is missing"
+        )
+
+    source_root, workspace = _resolve_packaged_runtime_layout(runtime_value, workspace_value)
+    needs_stage = not _runtime_stage_matches(workspace, source_root=source_root)
+    did_stage = False
+    runtime_root = workspace
+    if stage:
+        did_stage = _stage_runtime_tree(source_root, workspace)
+    elif needs_stage:
+        runtime_root = source_root
+
+    meta_root = runtime_root if runtime_root.exists() else source_root
+    runtime_meta = _load_runtime_meta(meta_root)
+    work_dir = (runtime_root / runtime_meta["work_dir"]).resolve()
+    compile_script = (runtime_root / runtime_meta["compile_script"]).resolve()
+    elaborate_script = (runtime_root / runtime_meta["elaborate_script"]).resolve()
+    simulate_script = (runtime_root / runtime_meta["simulate_script"]).resolve()
+
+    return {
+        "launch_kind": "runtime",
+        "package_runtime": str(source_root),
+        "runtime_root": str(runtime_root),
+        "workspace": str(workspace),
+        "project": str(runtime_meta.get("project", "")),
+        "work_dir": str(work_dir),
+        "compile_script": str(compile_script),
+        "elaborate_script": str(elaborate_script),
+        "simulate_script": str(simulate_script),
+        "staged": did_stage,
+        "workspace_reused": not needs_stage,
+        "needs_stage": needs_stage,
+    }

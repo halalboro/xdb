@@ -209,7 +209,6 @@ def main() -> None:
     s_sim_launch = sim_sub.add_parser("launch")
     _add_debug_flag(s_sim_launch)
     add_sim_session_arg(s_sim_launch)
-    s_sim_launch.add_argument("--project", default=None)
     s_sim_launch.add_argument("--simset", default=None)
     s_sim_launch.add_argument(
         "--mode",
@@ -290,7 +289,6 @@ def main() -> None:
     _add_debug_flag(s_simd)
     s_simd.add_argument("--anchor-dir", required=True)
     s_simd.add_argument("--session", default=None)
-    s_simd.add_argument("--launch-kind", choices=["project", "runtime"], default="project")
     s_simd.add_argument("--project", default="")
     s_simd.add_argument("--simset", required=True)
     s_simd.add_argument("--mode", required=True)
@@ -310,7 +308,6 @@ def main() -> None:
             run_daemon(
                 anchor_dir=args.anchor_dir,
                 session_name=args.session,
-                launch_kind=args.launch_kind,
                 project=args.project,
                 simset=args.simset,
                 mode=args.mode,
@@ -328,7 +325,6 @@ def main() -> None:
             if args.sim_cmd == "launch":
                 _print(
                     launch_session(
-                        project=args.project,
                         simset=args.simset,
                         mode=args.mode,
                         top=args.top,
