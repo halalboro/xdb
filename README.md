@@ -73,6 +73,8 @@ xdb sim scopes /tb_top
 xdb sim objects /tb_top/dut
 xdb sim tcl current_time
 xdb sim source ./sim/helpers.tcl
+xdb sim force /tb_top/reset 1
+xdb sim release /tb_top/reset
 xdb sim wave add /tb_top/dut/*
 
 # close the session when done
@@ -101,5 +103,10 @@ xdb sim close
 - `xdb sim tcl ...` evaluates arbitrary Tcl in the live simulator session and
   returns the Tcl result string plus the current simulation time.
 - `xdb sim source <file.tcl>` loads a Tcl file into the live simulator session
-  with Tcl `source`, preserving file-based error locations and proc definitions.
+  with Tcl `source`, preserving file-based error locations and proc
+  definitions.
+- `xdb sim force <signal> <value...>` wraps `add_force`; use `--radix`,
+  `--repeat-every`, and `--cancel-after` for common options.
+- `xdb sim release <signal>` releases forces created through `xdb sim force`.
+  Use `xdb sim release --all` to clear all forces from the simulator.
 - Output is intentionally minimal and script-friendly.

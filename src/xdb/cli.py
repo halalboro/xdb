@@ -15,11 +15,13 @@ from .sim.client import (
     add_wave,
     clear_breakpoints,
     close_session,
+    force_session,
     get_many_signals,
     get_objects,
     get_scopes,
     get_signal,
     launch_session,
+    release_session,
     restart_session,
     run_session,
     set_top,
@@ -317,6 +319,21 @@ def main() -> None:
     add_sim_session_arg(s_sim_source)
     s_sim_source.add_argument("path")
 
+    s_sim_force = sim_sub.add_parser("force")
+    _add_debug_flag(s_sim_force)
+    add_sim_session_arg(s_sim_force)
+    s_sim_force.add_argument("--radix", default=None)
+    s_sim_force.add_argument("--repeat-every", default=None)
+    s_sim_force.add_argument("--cancel-after", default=None)
+    s_sim_force.add_argument("signal")
+    s_sim_force.add_argument("values", nargs="+")
+
+    s_sim_release = sim_sub.add_parser("release")
+    _add_debug_flag(s_sim_release)
+    add_sim_session_arg(s_sim_release)
+    s_sim_release.add_argument("--all", action="store_true")
+    s_sim_release.add_argument("signal", nargs="?", default=None)
+
     s_simd = sub.add_parser("_simd", help=argparse.SUPPRESS)
     _add_debug_flag(s_simd)
     s_simd.add_argument("--anchor-dir", required=True)
@@ -395,6 +412,19 @@ def main() -> None:
                 _print(tcl_session(args.session, _resolve_tcl_script(args.script, args.file)))
             elif args.sim_cmd == "source":
                 _print(source_session(args.session, args.path))
+            elif args.sim_cmd == "force":
+                _print(
+                    force_session(
+                        args.session,
+                        args.signal,
+                        args.values,
+                        radix=args.radix,
+                        repeat_every=args.repeat_every,
+                        cancel_after=args.cancel_after,
+                    )
+                )
+            elif args.sim_cmd == "release":
+                _print(release_session(args.session, args.signal, all_forces=args.all))
             else:
                 p.error("unknown sim command")
             return

@@ -87,6 +87,10 @@ proc xdb_reply_error {request_id msg} {
 if {![info exists ::xdb_breakpoints]} {
   set ::xdb_breakpoints {}
 }
+
+if {![info exists ::xdb_forces]} {
+  set ::xdb_forces [dict create]
+}
 '''
 
 
@@ -551,6 +555,72 @@ set __xdb_path {_tcl_string(path)}
 set __xdb_result [source $__xdb_path]
 set __xdb_time [current_time]
 xdb_reply_ok_fields $__xdb_request_id "\"path\":[xdb_json_string $__xdb_path],\"result\":[xdb_json_string $__xdb_result],\"time\":[xdb_json_string $__xdb_time]"
+'''
+        return self.request(body)
+
+    def force(
+        self,
+        signal: str,
+        values: list[str],
+        *,
+        radix: str | None = None,
+        repeat_every: str | None = None,
+        cancel_after: str | None = None,
+    ) -> dict:
+        body = fr'''
+set __xdb_signal {_tcl_string(signal)}
+set __xdb_values {_tcl_list(values)}
+set __xdb_radix {_tcl_string(radix or "")}
+set __xdb_repeat_every {_tcl_string(repeat_every or "")}
+set __xdb_cancel_after {_tcl_string(cancel_after or "")}
+set __xdb_cmd [list add_force]
+if {{$__xdb_radix ne ""}} {{
+  lappend __xdb_cmd -radix $__xdb_radix
+}}
+if {{$__xdb_repeat_every ne ""}} {{
+  lappend __xdb_cmd -repeat_every $__xdb_repeat_every
+}}
+if {{$__xdb_cancel_after ne ""}} {{
+  lappend __xdb_cmd -cancel_after $__xdb_cancel_after
+}}
+lappend __xdb_cmd $__xdb_signal
+set __xdb_force_id [uplevel #0 [concat $__xdb_cmd $__xdb_values]]
+dict lappend ::xdb_forces $__xdb_signal $__xdb_force_id
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"force_id\":[xdb_json_string $__xdb_force_id],\"time\":[xdb_json_string $__xdb_time]"
+'''
+        return self.request(body)
+
+    def release(self, signal: str | None = None, *, all_forces: bool = False) -> dict:
+        if all_forces:
+            body = r'''
+set __xdb_released 0
+if {[info exists ::xdb_forces]} {
+  dict for {__xdb_signal __xdb_ids} $::xdb_forces {
+    incr __xdb_released [llength $__xdb_ids]
+  }
+}
+remove_forces -all
+set ::xdb_forces [dict create]
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"all\":true,\"released\":$__xdb_released,\"time\":[xdb_json_string $__xdb_time]"
+'''
+            return self.request(body)
+
+        body = fr'''
+set __xdb_signal {_tcl_string(signal or "")}
+set __xdb_released 0
+if {{[dict exists $::xdb_forces $__xdb_signal]}} {{
+  set __xdb_ids [dict get $::xdb_forces $__xdb_signal]
+  foreach __xdb_id $__xdb_ids {{
+    if {{![catch {{remove_forces $__xdb_id}}]}} {{
+      incr __xdb_released
+    }}
+  }}
+  dict unset ::xdb_forces $__xdb_signal
+}}
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"released\":$__xdb_released,\"time\":[xdb_json_string $__xdb_time]"
 '''
         return self.request(body)
 

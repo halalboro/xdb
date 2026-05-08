@@ -21,6 +21,8 @@ OP_BREAKPOINT_ADD = "breakpoint_add"
 OP_BREAKPOINT_CLEAR = "breakpoint_clear"
 OP_TCL = "tcl"
 OP_SOURCE = "source"
+OP_FORCE = "force"
+OP_RELEASE = "release"
 
 
 ALL_OPERATIONS = {
@@ -40,6 +42,8 @@ ALL_OPERATIONS = {
     OP_BREAKPOINT_CLEAR,
     OP_TCL,
     OP_SOURCE,
+    OP_FORCE,
+    OP_RELEASE,
 }
 
 

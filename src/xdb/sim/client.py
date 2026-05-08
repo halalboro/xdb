@@ -21,6 +21,8 @@ from .protocol import (
     OP_RUN,
     OP_SCOPES,
     OP_STATUS,
+    OP_FORCE,
+    OP_RELEASE,
     OP_SOURCE,
     OP_STEP,
     OP_TIME,
@@ -334,3 +336,42 @@ def source_session(session_name: str | None, path: str) -> dict[str, Any]:
     if not resolved.is_file():
         raise XdbError(f"Tcl script not found: {resolved}")
     return _send_request(session_name, make_request(OP_SOURCE, path=str(resolved)))
+
+
+def force_session(
+    session_name: str | None,
+    signal: str,
+    values: list[str],
+    *,
+    radix: str | None = None,
+    repeat_every: str | None = None,
+    cancel_after: str | None = None,
+) -> dict[str, Any]:
+    if not signal:
+        raise XdbError("missing signal")
+    if not values:
+        raise XdbError("missing force value")
+    return _send_request(
+        session_name,
+        make_request(
+            OP_FORCE,
+            signal=signal,
+            values=values,
+            radix=radix or "",
+            repeat_every=repeat_every or "",
+            cancel_after=cancel_after or "",
+        ),
+    )
+
+
+def release_session(
+    session_name: str | None,
+    signal: str | None,
+    *,
+    all_forces: bool = False,
+) -> dict[str, Any]:
+    if all_forces:
+        return _send_request(session_name, make_request(OP_RELEASE, all=True))
+    if not signal:
+        raise XdbError("missing signal; pass a signal path or --all")
+    return _send_request(session_name, make_request(OP_RELEASE, signal=signal, all=False))

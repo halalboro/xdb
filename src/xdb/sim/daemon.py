@@ -13,9 +13,11 @@ from .protocol import (
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
     OP_CLOSE,
+    OP_FORCE,
     OP_GET,
     OP_GET_MANY,
     OP_OBJECTS,
+    OP_RELEASE,
     OP_RUN,
     OP_SCOPES,
     OP_SOURCE,
@@ -192,6 +194,26 @@ class SimDaemon:
             return self.driver.run(list(args.get("tokens") or []))
         if op == OP_RESTART:
             return self.driver.restart()
+        if op == OP_FORCE:
+            signal_name = str(args.get("signal") or "")
+            values = [str(v) for v in list(args.get("values") or [])]
+            if not signal_name:
+                raise XdbError("missing signal")
+            if not values:
+                raise XdbError("missing force value")
+            return self.driver.force(
+                signal_name,
+                values,
+                radix=str(args.get("radix") or "") or None,
+                repeat_every=str(args.get("repeat_every") or "") or None,
+                cancel_after=str(args.get("cancel_after") or "") or None,
+            )
+        if op == OP_RELEASE:
+            all_forces = bool(args.get("all"))
+            signal_name = str(args.get("signal") or "")
+            if not all_forces and not signal_name:
+                raise XdbError("missing signal; pass a signal path or --all")
+            return self.driver.release(signal_name or None, all_forces=all_forces)
         if op == OP_GET:
             signal_name = str(args.get("signal") or "")
             if not signal_name:
