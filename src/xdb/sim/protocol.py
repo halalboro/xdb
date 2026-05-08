@@ -19,6 +19,7 @@ OP_WAVE_ADD = "wave_add"
 OP_STEP = "step"
 OP_BREAKPOINT_ADD = "breakpoint_add"
 OP_BREAKPOINT_CLEAR = "breakpoint_clear"
+OP_TCL = "tcl"
 
 
 ALL_OPERATIONS = {
@@ -36,6 +37,7 @@ ALL_OPERATIONS = {
     OP_STEP,
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
+    OP_TCL,
 }
 
 

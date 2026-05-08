@@ -71,6 +71,7 @@ xdb sim get /tb_top/dut/state
 xdb sim run 100 ns
 xdb sim scopes /tb_top
 xdb sim objects /tb_top/dut
+xdb sim tcl current_time
 xdb sim wave add /tb_top/dut/*
 
 # close the session when done
@@ -96,4 +97,6 @@ xdb sim close
   scripts there, and then starts a persistent `xsim` session.
 - `xdb sim launch` starts a persistent background session; later
   `xdb sim ...` commands talk to that live simulator process.
+- `xdb sim tcl ...` evaluates arbitrary Tcl in the live simulator session and
+  returns the Tcl result string plus the current simulation time.
 - Output is intentionally minimal and script-friendly.

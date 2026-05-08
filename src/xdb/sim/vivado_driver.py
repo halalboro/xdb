@@ -536,6 +536,15 @@ xdb_reply_ok_fields $__xdb_request_id "\"cleared\":$__xdb_cleared"
 '''
         return self.request(body)
 
+    def eval_tcl(self, script: str) -> dict:
+        body = fr'''
+set __xdb_script {_tcl_string(script)}
+set __xdb_result [uplevel #0 $__xdb_script]
+set __xdb_time [current_time]
+xdb_reply_ok_fields $__xdb_request_id "\"result\":[xdb_json_string $__xdb_result],\"time\":[xdb_json_string $__xdb_time]"
+'''
+        return self.request(body)
+
     def shutdown(self) -> None:
         if self.proc is None:
             return

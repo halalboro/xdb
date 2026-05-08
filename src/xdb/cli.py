@@ -25,6 +25,7 @@ from .sim.client import (
     set_top,
     step_session,
     time_session,
+    tcl_session,
 )
 from .sim.daemon import run_daemon
 
@@ -111,6 +112,25 @@ def _join_tokens(values: list[str]) -> str | None:
     if not values:
         return None
     return " ".join(values).strip() or None
+
+
+def _resolve_tcl_script(values: list[str], file_path: str | None) -> str:
+    if file_path and values:
+        raise XdbError("pass either Tcl tokens or --file, not both")
+    if file_path:
+        if file_path == "-":
+            return sys.stdin.read()
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError as e:
+            raise XdbError(f"failed to read Tcl script: {file_path}") from e
+    script = _join_tokens(values)
+    if script == "-":
+        return sys.stdin.read()
+    if not script:
+        raise XdbError("missing Tcl script")
+    return script
 
 
 def _env_debug_enabled() -> bool:
@@ -285,6 +305,12 @@ def main() -> None:
     _add_debug_flag(s_sim_breakpoint_clear)
     add_sim_session_arg(s_sim_breakpoint_clear)
 
+    s_sim_tcl = sim_sub.add_parser("tcl")
+    _add_debug_flag(s_sim_tcl)
+    add_sim_session_arg(s_sim_tcl)
+    s_sim_tcl.add_argument("--file", default=None)
+    s_sim_tcl.add_argument("script", nargs="*")
+
     s_simd = sub.add_parser("_simd", help=argparse.SUPPRESS)
     _add_debug_flag(s_simd)
     s_simd.add_argument("--anchor-dir", required=True)
@@ -359,6 +385,8 @@ def main() -> None:
                 _print(add_breakpoint(args.session, _join_tokens(args.condition) or ""))
             elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "clear":
                 _print(clear_breakpoints(args.session))
+            elif args.sim_cmd == "tcl":
+                _print(tcl_session(args.session, _resolve_tcl_script(args.script, args.file)))
             else:
                 p.error("unknown sim command")
             return

@@ -23,6 +23,7 @@ from .protocol import (
     OP_STATUS,
     OP_STEP,
     OP_TIME,
+    OP_TCL,
     OP_TOP,
     OP_WAVE_ADD,
     make_request,
@@ -321,3 +322,7 @@ def add_breakpoint(session_name: str | None, condition: str) -> dict[str, Any]:
 
 def clear_breakpoints(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_BREAKPOINT_CLEAR))
+
+
+def tcl_session(session_name: str | None, script: str) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_TCL, script=script))

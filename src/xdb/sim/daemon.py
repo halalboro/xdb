@@ -22,6 +22,7 @@ from .protocol import (
     OP_STEP,
     OP_RESTART,
     OP_TIME,
+    OP_TCL,
     OP_TOP,
     OP_WAVE_ADD,
 )
@@ -236,6 +237,11 @@ class SimDaemon:
             return self.driver.add_breakpoint(condition)
         if op == OP_BREAKPOINT_CLEAR:
             return self.driver.clear_breakpoints()
+        if op == OP_TCL:
+            script = str(args.get("script") or "")
+            if not script:
+                raise XdbError("missing Tcl script")
+            return self.driver.eval_tcl(script)
         if op == OP_CLOSE:
             return {"closed": True, "session_id": self.paths.session_id, "_shutdown": True}
         raise XdbError(f"unsupported simulation operation: {op}")

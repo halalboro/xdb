@@ -13,6 +13,7 @@ from .client import (
     step_session,
     time_session,
     clear_breakpoints,
+    tcl_session,
 )
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "run_session",
     "set_top",
     "step_session",
+    "tcl_session",
     "time_session",
 ]
