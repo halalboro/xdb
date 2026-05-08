@@ -306,6 +306,7 @@ def main() -> None:
 
     s_sim_until = sim_sub.add_parser(
         "until",
+        aliases=["wait", "wait-on-condition"],
         help="run in steps until a Tcl expression becomes true",
         description=(
             "Run the simulator in repeated time steps until the given Tcl expression "
@@ -331,6 +332,7 @@ def main() -> None:
 
     s_sim_until_signal = sim_sub.add_parser(
         "until-signal",
+        aliases=["wait-signal", "wait-on-signal"],
         help="run in steps until a signal reaches an exact value",
         description=(
             "Run the simulator in repeated time steps until get_value <signal> equals "
@@ -457,7 +459,7 @@ def main() -> None:
                 _print(add_wave(args.session, args.pattern))
             elif args.sim_cmd == "step":
                 _print(step_session(args.session, _join_tokens(args.arg)))
-            elif args.sim_cmd == "until":
+            elif args.sim_cmd in {"until", "wait", "wait-on-condition"}:
                 _print(
                     wait_until_session(
                         args.session,
@@ -465,7 +467,7 @@ def main() -> None:
                         _resolve_sim_step_tokens(args.step),
                     )
                 )
-            elif args.sim_cmd == "until-signal":
+            elif args.sim_cmd in {"until-signal", "wait-signal", "wait-on-signal"}:
                 _print(
                     wait_until_signal_session(
                         args.session,

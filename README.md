@@ -70,8 +70,10 @@ xdb sim time
 xdb sim get /tb_top/dut/state
 xdb sim run 100 ns
 xdb sim until '{[get_value /tb_top/done] eq "1"}'
+xdb sim wait '{[get_value /tb_top/done] eq "1"}'
 xdb sim until --step 1 ns '{[get_value /tb_top/done] eq "1"}'
 xdb sim until-signal /tb_top/done 1
+xdb sim wait-on-signal /tb_top/done 1
 xdb sim until-signal --step 100 ps /tb_top/done 1
 xdb sim scopes /tb_top
 xdb sim objects /tb_top/dut
@@ -106,10 +108,12 @@ xdb sim close
   `xdb sim ...` commands talk to that live simulator process.
 - `xdb sim until <tcl expr>` runs the simulator in repeated time steps
   (default `10 ns`) until the Tcl expression becomes true.
+  Aliases: `xdb sim wait`, `xdb sim wait-on-condition`.
   Examples: `xdb sim until '{[get_value /tb_top/done] eq "1"}'`,
   `xdb sim until --step 1 ns '{[get_value /tb_top/done] eq "1"}'`.
 - `xdb sim until-signal <signal> <value>` is a convenience wrapper for waiting
   until a signal reaches an exact value, using the same stepped execution.
+  Aliases: `xdb sim wait-signal`, `xdb sim wait-on-signal`.
   Example: `xdb sim until-signal --step 100 ps /tb_top/done 1`.
 - `xdb sim tcl ...` evaluates arbitrary Tcl in the live simulator session and
   returns the Tcl result string plus the current simulation time.
