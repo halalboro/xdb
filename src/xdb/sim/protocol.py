@@ -25,6 +25,17 @@ OP_TCL = "tcl"
 OP_SOURCE = "source"
 OP_FORCE = "force"
 OP_RELEASE = "release"
+OP_CSR_READ = "csr_read"
+OP_CSR_WRITE = "csr_write"
+OP_MEM_MAP = "mem_map"
+OP_MEM_UNMAP = "mem_unmap"
+OP_MEM_WRITE = "mem_write"
+OP_MEM_READ = "mem_read"
+OP_INVOKE = "invoke"
+OP_COMPLETED = "completed"
+OP_CLEAR_COMPLETED = "clear_completed"
+OP_IRQ_WAIT = "irq_wait"
+OP_COYOTE_STATUS = "coyote_status"
 
 
 ALL_OPERATIONS = {
@@ -48,6 +59,17 @@ ALL_OPERATIONS = {
     OP_SOURCE,
     OP_FORCE,
     OP_RELEASE,
+    OP_CSR_READ,
+    OP_CSR_WRITE,
+    OP_MEM_MAP,
+    OP_MEM_UNMAP,
+    OP_MEM_WRITE,
+    OP_MEM_READ,
+    OP_INVOKE,
+    OP_COMPLETED,
+    OP_CLEAR_COMPLETED,
+    OP_IRQ_WAIT,
+    OP_COYOTE_STATUS,
 }
 
 

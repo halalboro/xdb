@@ -15,6 +15,17 @@ from .sim.client import (
     add_wave,
     clear_breakpoints,
     close_session,
+    coyote_clear_completed_session,
+    coyote_completed_session,
+    coyote_csr_read_session,
+    coyote_csr_write_session,
+    coyote_invoke_session,
+    coyote_irq_wait_session,
+    coyote_mem_map_session,
+    coyote_mem_read_session,
+    coyote_mem_unmap_session,
+    coyote_mem_write_session,
+    coyote_status_session,
     force_session,
     get_many_signals,
     get_objects,
@@ -32,6 +43,7 @@ from .sim.client import (
     wait_until_session,
     wait_until_signal_session,
 )
+from .sim.coyote import parse_hex_bytes
 from .sim.daemon import run_daemon
 
 
@@ -172,6 +184,37 @@ def _validate_positive_iteration_limit(value: int | None) -> int | None:
     if value <= 0:
         raise XdbError("--max-iterations must be > 0")
     return value
+
+
+def _parse_int(value: str, *, what: str) -> int:
+    text = value.strip()
+    if not text:
+        raise XdbError(f"missing {what}")
+    try:
+        return int(text, 0)
+    except ValueError as e:
+        raise XdbError(f"invalid {what}: {value}") from e
+
+
+def _read_binary_file(path: str) -> bytes:
+    resolved = path if path != "-" else None
+    try:
+        if resolved is None:
+            return sys.stdin.buffer.read()
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError as e:
+        raise XdbError(f"failed to read binary payload: {path}") from e
+
+
+def _resolve_mem_payload(args: argparse.Namespace) -> bytes:
+    if args.hex_data is not None:
+        return parse_hex_bytes(args.hex_data)
+    if args.text_data is not None:
+        return args.text_data.encode("utf-8")
+    if args.file is not None:
+        return _read_binary_file(args.file)
+    raise XdbError("provide one of --hex, --text, or --file")
 
 
 def _configure_diagnostics(debug: bool) -> None:
@@ -431,6 +474,91 @@ def main() -> None:
     s_sim_release.add_argument("--all", action="store_true")
     s_sim_release.add_argument("signal", nargs="?", default=None)
 
+    s_sim_csr = sim_sub.add_parser("csr", help="Coyote CSR access")
+    _add_debug_flag(s_sim_csr)
+    sim_csr_sub = s_sim_csr.add_subparsers(dest="sim_csr_cmd", required=True)
+    s_sim_csr_read = sim_csr_sub.add_parser("read")
+    _add_debug_flag(s_sim_csr_read)
+    add_sim_session_arg(s_sim_csr_read)
+    s_sim_csr_read.add_argument("addr")
+    s_sim_csr_read.add_argument("--timeout", type=float, default=None)
+    s_sim_csr_write = sim_csr_sub.add_parser("write")
+    _add_debug_flag(s_sim_csr_write)
+    add_sim_session_arg(s_sim_csr_write)
+    s_sim_csr_write.add_argument("addr")
+    s_sim_csr_write.add_argument("value")
+
+    s_sim_mem = sim_sub.add_parser("mem", help="Coyote host memory access")
+    _add_debug_flag(s_sim_mem)
+    sim_mem_sub = s_sim_mem.add_subparsers(dest="sim_mem_cmd", required=True)
+    s_sim_mem_map = sim_mem_sub.add_parser("map")
+    _add_debug_flag(s_sim_mem_map)
+    add_sim_session_arg(s_sim_mem_map)
+    s_sim_mem_map.add_argument("space")
+    s_sim_mem_map.add_argument("addr")
+    s_sim_mem_map.add_argument("size")
+    s_sim_mem_unmap = sim_mem_sub.add_parser("unmap")
+    _add_debug_flag(s_sim_mem_unmap)
+    add_sim_session_arg(s_sim_mem_unmap)
+    s_sim_mem_unmap.add_argument("space")
+    s_sim_mem_unmap.add_argument("addr")
+    s_sim_mem_read = sim_mem_sub.add_parser("read")
+    _add_debug_flag(s_sim_mem_read)
+    add_sim_session_arg(s_sim_mem_read)
+    s_sim_mem_read.add_argument("space")
+    s_sim_mem_read.add_argument("addr")
+    s_sim_mem_read.add_argument("size")
+    s_sim_mem_write = sim_mem_sub.add_parser("write")
+    _add_debug_flag(s_sim_mem_write)
+    add_sim_session_arg(s_sim_mem_write)
+    s_sim_mem_write.add_argument("space")
+    s_sim_mem_write.add_argument("addr")
+    mem_payload_group = s_sim_mem_write.add_mutually_exclusive_group(required=True)
+    mem_payload_group.add_argument("--hex", dest="hex_data", default=None)
+    mem_payload_group.add_argument("--text", dest="text_data", default=None)
+    mem_payload_group.add_argument("--file", default=None)
+
+    s_sim_invoke = sim_sub.add_parser("invoke", help="Coyote high-level invoke")
+    _add_debug_flag(s_sim_invoke)
+    add_sim_session_arg(s_sim_invoke)
+    s_sim_invoke.add_argument("opcode")
+    s_sim_invoke.add_argument("--addr", default=None)
+    s_sim_invoke.add_argument("--len", dest="length", default=None)
+    s_sim_invoke.add_argument("--stream", default="host")
+    s_sim_invoke.add_argument("--dest", default="0")
+    s_sim_invoke.add_argument("--last", action=argparse.BooleanOptionalAction, default=True)
+    s_sim_invoke.add_argument("--src-addr", default=None)
+    s_sim_invoke.add_argument("--src-len", default=None)
+    s_sim_invoke.add_argument("--src-stream", default="host")
+    s_sim_invoke.add_argument("--src-dest", default="0")
+    s_sim_invoke.add_argument("--dst-addr", default=None)
+    s_sim_invoke.add_argument("--dst-len", default=None)
+    s_sim_invoke.add_argument("--dst-stream", default="host")
+    s_sim_invoke.add_argument("--dst-dest", default="0")
+
+    s_sim_completed = sim_sub.add_parser("completed", help="Coyote completion counters")
+    _add_debug_flag(s_sim_completed)
+    add_sim_session_arg(s_sim_completed)
+    s_sim_completed.add_argument("opcode")
+    s_sim_completed.add_argument("--count", type=int, default=None)
+    s_sim_completed.add_argument("--timeout", type=float, default=None)
+
+    s_sim_clear_completed = sim_sub.add_parser("clear-completed")
+    _add_debug_flag(s_sim_clear_completed)
+    add_sim_session_arg(s_sim_clear_completed)
+
+    s_sim_irq = sim_sub.add_parser("irq", help="Coyote IRQ handling")
+    _add_debug_flag(s_sim_irq)
+    sim_irq_sub = s_sim_irq.add_subparsers(dest="sim_irq_cmd", required=True)
+    s_sim_irq_wait = sim_irq_sub.add_parser("wait")
+    _add_debug_flag(s_sim_irq_wait)
+    add_sim_session_arg(s_sim_irq_wait)
+    s_sim_irq_wait.add_argument("--timeout", type=float, default=None)
+
+    s_sim_coyote_status = sim_sub.add_parser("coyote-status")
+    _add_debug_flag(s_sim_coyote_status)
+    add_sim_session_arg(s_sim_coyote_status)
+
     s_simd = sub.add_parser("_simd", help=argparse.SUPPRESS)
     _add_debug_flag(s_simd)
     s_simd.add_argument("--anchor-dir", required=True)
@@ -543,6 +671,107 @@ def main() -> None:
                 )
             elif args.sim_cmd == "release":
                 _print(release_session(args.session, args.signal, all_forces=args.all))
+            elif args.sim_cmd == "csr" and args.sim_csr_cmd == "read":
+                _print(
+                    coyote_csr_read_session(
+                        args.session,
+                        _parse_int(args.addr, what="CSR address"),
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                    )
+                )
+            elif args.sim_cmd == "csr" and args.sim_csr_cmd == "write":
+                _print(
+                    coyote_csr_write_session(
+                        args.session,
+                        _parse_int(args.addr, what="CSR address"),
+                        _parse_int(args.value, what="CSR value"),
+                    )
+                )
+            elif args.sim_cmd == "mem" and args.sim_mem_cmd == "map":
+                _print(
+                    coyote_mem_map_session(
+                        args.session,
+                        args.space,
+                        _parse_int(args.addr, what="memory address"),
+                        _parse_int(args.size, what="memory size"),
+                    )
+                )
+            elif args.sim_cmd == "mem" and args.sim_mem_cmd == "unmap":
+                _print(
+                    coyote_mem_unmap_session(
+                        args.session,
+                        args.space,
+                        _parse_int(args.addr, what="memory address"),
+                    )
+                )
+            elif args.sim_cmd == "mem" and args.sim_mem_cmd == "write":
+                _print(
+                    coyote_mem_write_session(
+                        args.session,
+                        args.space,
+                        _parse_int(args.addr, what="memory address"),
+                        _resolve_mem_payload(args).hex(),
+                    )
+                )
+            elif args.sim_cmd == "mem" and args.sim_mem_cmd == "read":
+                _print(
+                    coyote_mem_read_session(
+                        args.session,
+                        args.space,
+                        _parse_int(args.addr, what="memory address"),
+                        _parse_int(args.size, what="memory size"),
+                    )
+                )
+            elif args.sim_cmd == "invoke":
+                _print(
+                    coyote_invoke_session(
+                        args.session,
+                        opcode=args.opcode,
+                        addr=None if args.addr is None else _parse_int(args.addr, what="address"),
+                        length=None
+                        if args.length is None
+                        else _parse_int(args.length, what="length"),
+                        stream_name=args.stream,
+                        dest=_parse_int(args.dest, what="destination stream"),
+                        last=bool(args.last),
+                        src_addr=None
+                        if args.src_addr is None
+                        else _parse_int(args.src_addr, what="source address"),
+                        src_length=None
+                        if args.src_len is None
+                        else _parse_int(args.src_len, what="source length"),
+                        src_stream_name=args.src_stream,
+                        src_dest=_parse_int(args.src_dest, what="source destination stream"),
+                        dst_addr=None
+                        if args.dst_addr is None
+                        else _parse_int(args.dst_addr, what="destination address"),
+                        dst_length=None
+                        if args.dst_len is None
+                        else _parse_int(args.dst_len, what="destination length"),
+                        dst_stream_name=args.dst_stream,
+                        dst_dest=_parse_int(args.dst_dest, what="destination stream"),
+                    )
+                )
+            elif args.sim_cmd == "completed":
+                _print(
+                    coyote_completed_session(
+                        args.session,
+                        args.opcode,
+                        target_count=args.count,
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                    )
+                )
+            elif args.sim_cmd == "clear-completed":
+                _print(coyote_clear_completed_session(args.session))
+            elif args.sim_cmd == "irq" and args.sim_irq_cmd == "wait":
+                _print(
+                    coyote_irq_wait_session(
+                        args.session,
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                    )
+                )
+            elif args.sim_cmd == "coyote-status":
+                _print(coyote_status_session(args.session))
             else:
                 p.error("unknown sim command")
             return

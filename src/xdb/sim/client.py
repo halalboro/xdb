@@ -13,20 +13,31 @@ from ..errors import XdbError
 from .protocol import (
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
+    OP_CLEAR_COMPLETED,
     OP_CLOSE,
+    OP_COMPLETED,
+    OP_COYOTE_STATUS,
+    OP_CSR_READ,
+    OP_CSR_WRITE,
+    OP_FORCE,
     OP_GET,
     OP_GET_MANY,
+    OP_INVOKE,
+    OP_IRQ_WAIT,
+    OP_MEM_MAP,
+    OP_MEM_READ,
+    OP_MEM_UNMAP,
+    OP_MEM_WRITE,
     OP_OBJECTS,
+    OP_RELEASE,
     OP_RESTART,
     OP_RUN,
     OP_SCOPES,
-    OP_STATUS,
-    OP_FORCE,
-    OP_RELEASE,
     OP_SOURCE,
+    OP_STATUS,
     OP_STEP,
-    OP_TIME,
     OP_TCL,
+    OP_TIME,
     OP_TOP,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
@@ -419,3 +430,114 @@ def release_session(
     if not signal:
         raise XdbError("missing signal; pass a signal path or --all")
     return _send_request(session_name, make_request(OP_RELEASE, signal=signal, all=False))
+
+
+def coyote_status_session(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_COYOTE_STATUS))
+
+
+def coyote_csr_read_session(
+    session_name: str | None,
+    addr: int,
+    *,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_CSR_READ, addr=addr, timeout_seconds=timeout_seconds),
+    )
+
+
+def coyote_csr_write_session(
+    session_name: str | None,
+    addr: int,
+    value: int,
+) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_CSR_WRITE, addr=addr, value=value))
+
+
+def coyote_mem_map_session(
+    session_name: str | None,
+    space: str,
+    addr: int,
+    size: int,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_MEM_MAP, space=space, addr=addr, size=size),
+    )
+
+
+def coyote_mem_unmap_session(
+    session_name: str | None,
+    space: str,
+    addr: int,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_MEM_UNMAP, space=space, addr=addr),
+    )
+
+
+def coyote_mem_write_session(
+    session_name: str | None,
+    space: str,
+    addr: int,
+    data_hex: str,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_MEM_WRITE, space=space, addr=addr, data_hex=data_hex),
+    )
+
+
+def coyote_mem_read_session(
+    session_name: str | None,
+    space: str,
+    addr: int,
+    size: int,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_MEM_READ, space=space, addr=addr, size=size),
+    )
+
+
+def coyote_invoke_session(
+    session_name: str | None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_INVOKE, **kwargs))
+
+
+def coyote_completed_session(
+    session_name: str | None,
+    opcode: str,
+    *,
+    target_count: int | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(
+            OP_COMPLETED,
+            opcode=opcode,
+            target_count=target_count,
+            timeout_seconds=timeout_seconds,
+        ),
+    )
+
+
+def coyote_clear_completed_session(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_CLEAR_COMPLETED))
+
+
+def coyote_irq_wait_session(
+    session_name: str | None,
+    *,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_IRQ_WAIT, timeout_seconds=timeout_seconds),
+    )

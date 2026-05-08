@@ -12,18 +12,29 @@ from ..errors import XdbError
 from .protocol import (
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
+    OP_CLEAR_COMPLETED,
     OP_CLOSE,
+    OP_COMPLETED,
+    OP_COYOTE_STATUS,
+    OP_CSR_READ,
+    OP_CSR_WRITE,
     OP_FORCE,
     OP_GET,
     OP_GET_MANY,
+    OP_INVOKE,
+    OP_IRQ_WAIT,
+    OP_MEM_MAP,
+    OP_MEM_READ,
+    OP_MEM_UNMAP,
+    OP_MEM_WRITE,
     OP_OBJECTS,
     OP_RELEASE,
+    OP_RESTART,
     OP_RUN,
     OP_SCOPES,
     OP_SOURCE,
     OP_STATUS,
     OP_STEP,
-    OP_RESTART,
     OP_TIME,
     OP_TCL,
     OP_TOP,
@@ -314,6 +325,81 @@ class SimDaemon:
             if not path:
                 raise XdbError("missing Tcl script path")
             return self.driver.source_tcl(path)
+        if op == OP_COYOTE_STATUS:
+            return self.driver.coyote_status()
+        if op == OP_CSR_READ:
+            return self.driver.coyote_csr_read(
+                int(args.get("addr") or 0),
+                timeout_seconds=None
+                if args.get("timeout_seconds") is None
+                else float(args.get("timeout_seconds")),
+            )
+        if op == OP_CSR_WRITE:
+            return self.driver.coyote_csr_write(
+                int(args.get("addr") or 0),
+                int(args.get("value") or 0),
+            )
+        if op == OP_MEM_MAP:
+            return self.driver.coyote_mem_map(
+                str(args.get("space") or "host"),
+                int(args.get("addr") or 0),
+                int(args.get("size") or 0),
+            )
+        if op == OP_MEM_UNMAP:
+            return self.driver.coyote_mem_unmap(
+                str(args.get("space") or "host"),
+                int(args.get("addr") or 0),
+            )
+        if op == OP_MEM_WRITE:
+            data_hex = str(args.get("data_hex") or "")
+            if not data_hex:
+                raise XdbError("missing memory write payload")
+            return self.driver.coyote_mem_write(
+                str(args.get("space") or "host"),
+                int(args.get("addr") or 0),
+                bytes.fromhex(data_hex),
+            )
+        if op == OP_MEM_READ:
+            return self.driver.coyote_mem_read(
+                str(args.get("space") or "host"),
+                int(args.get("addr") or 0),
+                int(args.get("size") or 0),
+            )
+        if op == OP_INVOKE:
+            return self.driver.coyote_invoke(
+                str(args.get("opcode") or ""),
+                addr=None if args.get("addr") is None else int(args.get("addr")),
+                length=None if args.get("length") is None else int(args.get("length")),
+                stream_name=str(args.get("stream_name") or "host"),
+                dest=int(args.get("dest") or 0),
+                last=bool(args.get("last", True)),
+                src_addr=None if args.get("src_addr") is None else int(args.get("src_addr")),
+                src_length=None if args.get("src_length") is None else int(args.get("src_length")),
+                src_stream_name=str(args.get("src_stream_name") or "host"),
+                src_dest=int(args.get("src_dest") or 0),
+                dst_addr=None if args.get("dst_addr") is None else int(args.get("dst_addr")),
+                dst_length=None if args.get("dst_length") is None else int(args.get("dst_length")),
+                dst_stream_name=str(args.get("dst_stream_name") or "host"),
+                dst_dest=int(args.get("dst_dest") or 0),
+            )
+        if op == OP_COMPLETED:
+            return self.driver.coyote_completed(
+                str(args.get("opcode") or ""),
+                target_count=None
+                if args.get("target_count") is None
+                else int(args.get("target_count")),
+                timeout_seconds=None
+                if args.get("timeout_seconds") is None
+                else float(args.get("timeout_seconds")),
+            )
+        if op == OP_CLEAR_COMPLETED:
+            return self.driver.coyote_clear_completed()
+        if op == OP_IRQ_WAIT:
+            return self.driver.coyote_irq_wait(
+                timeout_seconds=None
+                if args.get("timeout_seconds") is None
+                else float(args.get("timeout_seconds")),
+            )
         if op == OP_CLOSE:
             return {"closed": True, "session_id": self.paths.session_id, "_shutdown": True}
         raise XdbError(f"unsupported simulation operation: {op}")

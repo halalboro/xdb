@@ -17,6 +17,7 @@ This repo provides a standalone CLI so ILA debug automation is not tied to any o
 - List ILAs and probe metadata
 - Capture from an ILA and export CSV
 - Persistent XSim/Vivado simulation sessions for packaged runtime-backed flows
+- Coyote-aware simulation commands for CSR access, host memory, invoke/completion, and IRQs
 
 ## Requirements
 
@@ -84,6 +85,17 @@ xdb sim force /tb_top/reset 1
 xdb sim release /tb_top/reset
 xdb sim wave add /tb_top/dut/*
 
+# Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
+xdb sim coyote-status
+xdb sim csr write 0x0 0x1234
+xdb sim csr read 0x0
+xdb sim mem write host 0x1000 --hex deadbeef
+xdb sim mem read host 0x1000 4
+xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
+xdb sim completed local-transfer --count 1 --timeout 5
+xdb sim mem read host 0x2000 4
+xdb sim irq wait --timeout 5
+
 # close the session when done
 xdb sim close
 ```
@@ -128,4 +140,13 @@ xdb sim close
   `--repeat-every`, and `--cancel-after` for common options.
 - `xdb sim release <signal>` releases forces created through `xdb sim force`.
   Use `xdb sim release --all` to clear all forces from the simulator.
+- `xdb sim csr ...`, `xdb sim mem ...`, `xdb sim invoke ...`,
+  `xdb sim completed ...`, `xdb sim clear-completed`, `xdb sim irq wait`, and
+  `xdb sim coyote-status` wrap the Coyote interactive simulation protocol when
+  the runtime bundle contains `lynx_pkg.sv`.
+- Current Coyote support is intentionally limited to the local host-memory
+  protocol implemented by the upstream Coyote simulation target. Remote RDMA and
+  TCP commands are not supported yet.
+- CSR addresses are byte addresses in the simulation protocol.
+- `xdb sim mem write host ...` accepts `--hex`, `--text`, or `--file`.
 - Output is intentionally minimal and script-friendly.
