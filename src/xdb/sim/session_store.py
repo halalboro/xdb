@@ -13,6 +13,8 @@ from ..errors import XdbError
 from .types import SessionMeta
 
 _MATERIALIZED_STAMP = ".xdb-materialized.json"
+_RUNTIME_STAGED_STAMP = ".xdb-runtime-staged.json"
+_RUNTIME_META = "xdb-runtime.json"
 
 
 def _now_iso() -> str:
@@ -417,6 +419,102 @@ def _write_materialization_stamp(
         json.dump(payload, f, indent=2, sort_keys=True)
 
 
+def _runtime_stage_stamp_path(workspace: Path) -> Path:
+    return workspace / _RUNTIME_STAGED_STAMP
+
+
+def _current_runtime_stage_stamp(workspace: Path) -> dict[str, object] | None:
+    stamp_path = _runtime_stage_stamp_path(workspace)
+    if not stamp_path.exists():
+        return None
+    try:
+        with stamp_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _load_runtime_meta(root: Path) -> dict[str, str]:
+    meta_path = root / _RUNTIME_META
+    if not meta_path.is_file():
+        raise XdbError(f"missing packaged simulation runtime metadata: {meta_path}")
+    try:
+        with meta_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        raise XdbError(f"failed to read packaged simulation runtime metadata: {meta_path}") from e
+    if not isinstance(data, dict):
+        raise XdbError(f"invalid packaged simulation runtime metadata: {meta_path}")
+    required = ["work_dir", "compile_script", "elaborate_script", "simulate_script"]
+    missing = [key for key in required if not isinstance(data.get(key), str) or not str(data[key]).strip()]
+    if missing:
+        raise XdbError(
+            f"packaged simulation runtime metadata is missing required field(s) {missing}: {meta_path}"
+        )
+    return {str(k): str(v) for k, v in data.items() if isinstance(v, (str, int, float))}
+
+
+def _resolve_packaged_runtime_layout(package_value: str, workspace_value: str) -> tuple[Path, Path]:
+    package_path = _resolve_path(package_value)
+    workspace = _resolve_path(workspace_value)
+
+    if package_path.is_file():
+        if package_path.name != _RUNTIME_META:
+            raise XdbError(
+                "XDB_SIM_PACKAGE_RUNTIME must point to a runtime directory or xdb-runtime.json"
+            )
+        source_root = package_path.parent.resolve()
+    elif package_path.is_dir():
+        source_root = package_path.resolve()
+    else:
+        raise XdbError(
+            f"packaged simulation runtime not found: {package_path} "
+            "(build the simulation package first)"
+        )
+
+    _load_runtime_meta(source_root)
+    return source_root, workspace.resolve()
+
+
+def _runtime_stage_matches(workspace: Path, *, source_root: Path) -> bool:
+    stamp = _current_runtime_stage_stamp(workspace)
+    if not stamp:
+        return False
+    return (
+        stamp.get("source_root") == str(source_root)
+        and stamp.get("source_fingerprint") == _source_tree_fingerprint(source_root)
+        and (workspace / _RUNTIME_META).is_file()
+    )
+
+
+def _write_runtime_stage_stamp(workspace: Path, *, source_root: Path) -> None:
+    workspace.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "source_root": str(source_root),
+        "source_fingerprint": _source_tree_fingerprint(source_root),
+        "updated_at": _now_iso(),
+    }
+    with _runtime_stage_stamp_path(workspace).open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+
+
+def _stage_runtime_tree(source_root: Path, workspace: Path) -> bool:
+    if _runtime_stage_matches(workspace, source_root=source_root):
+        return False
+
+    if workspace.exists():
+        _make_workspace_tree_user_writable(workspace)
+        shutil.rmtree(workspace)
+    workspace.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source_root, workspace, dirs_exist_ok=True, copy_function=shutil.copyfile)
+    _make_workspace_tree_user_writable(workspace)
+    _write_runtime_stage_stamp(workspace, source_root=source_root)
+    return True
+
+
 def _materialize_project_tree(
     source_root: Path,
     source_project: Path,
@@ -540,3 +638,52 @@ def resolve_launch_project(
         "workspace_reused": False,
         "needs_materialization": False,
     }
+
+
+def resolve_launch_spec(
+    project: str | None,
+    paths: SessionPaths,
+    *,
+    materialize: bool,
+) -> dict[str, str | bool]:
+    runtime_value = _env_value("XDB_SIM_PACKAGE_RUNTIME")
+    if project is None and runtime_value is not None:
+        workspace_value = _env_value("XDB_SIM_WORKSPACE")
+        if workspace_value is None:
+            raise XdbError(
+                "XDB_SIM_PACKAGE_RUNTIME is set but XDB_SIM_WORKSPACE is missing"
+            )
+        source_root, workspace = _resolve_packaged_runtime_layout(runtime_value, workspace_value)
+        needs_stage = not _runtime_stage_matches(workspace, source_root=source_root)
+        did_stage = False
+        runtime_root = workspace
+        if materialize:
+            did_stage = _stage_runtime_tree(source_root, workspace)
+        elif needs_stage:
+            runtime_root = source_root
+
+        meta_root = runtime_root if runtime_root.exists() else source_root
+        runtime_meta = _load_runtime_meta(meta_root)
+        work_dir = (runtime_root / runtime_meta["work_dir"]).resolve()
+        compile_script = (runtime_root / runtime_meta["compile_script"]).resolve()
+        elaborate_script = (runtime_root / runtime_meta["elaborate_script"]).resolve()
+        simulate_script = (runtime_root / runtime_meta["simulate_script"]).resolve()
+
+        return {
+            "launch_kind": "runtime",
+            "package_runtime": str(source_root),
+            "runtime_root": str(runtime_root),
+            "workspace": str(workspace),
+            "project": str(runtime_meta.get("project", "")),
+            "work_dir": str(work_dir),
+            "compile_script": str(compile_script),
+            "elaborate_script": str(elaborate_script),
+            "simulate_script": str(simulate_script),
+            "materialized": did_stage,
+            "workspace_reused": not needs_stage,
+            "needs_materialization": needs_stage,
+        }
+
+    project_info = resolve_launch_project(project, paths, materialize=materialize)
+    project_info["launch_kind"] = "project"
+    return project_info

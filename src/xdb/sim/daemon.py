@@ -33,22 +33,42 @@ class SimDaemon:
     def __init__(
         self,
         paths: SessionPaths,
+        launch_kind: str,
         project: str,
         simset: str,
         mode: str,
         top: str,
+        package_runtime: str = "",
+        runtime_root: str = "",
+        work_dir: str = "",
+        compile_script: str = "",
+        elaborate_script: str = "",
+        simulate_script: str = "",
     ):
         self.paths = paths
+        self.launch_kind = launch_kind
         self.project = project
         self.simset = simset
         self.mode = mode
         self.top = top
+        self.package_runtime = package_runtime
+        self.runtime_root = runtime_root
+        self.work_dir = work_dir
+        self.compile_script = compile_script
+        self.elaborate_script = elaborate_script
+        self.simulate_script = simulate_script
         self.driver = VivadoSimDriver(
+            launch_kind=launch_kind,
             project=project,
             simset=simset,
             mode=mode,
             top=top,
             vivado_log_path=str(paths.vivado_log_path),
+            runtime_root=runtime_root,
+            work_dir=work_dir,
+            compile_script=compile_script,
+            elaborate_script=elaborate_script,
+            simulate_script=simulate_script,
         )
         self._stop = False
         self._server: socket.socket | None = None
@@ -57,10 +77,17 @@ class SimDaemon:
             {
                 "pid": os.getpid(),
                 "cwd": str(Path.cwd()),
+                "launch_kind": self.launch_kind,
                 "project": self.project,
                 "simset": self.simset,
                 "mode": self.mode,
                 "top": self.top,
+                "package_runtime": self.package_runtime,
+                "runtime_root": self.runtime_root,
+                "work_dir": self.work_dir,
+                "compile_script": self.compile_script,
+                "elaborate_script": self.elaborate_script,
+                "simulate_script": self.simulate_script,
                 "state": "starting",
             },
         )
@@ -232,11 +259,31 @@ def run_daemon(
     *,
     anchor_dir: str,
     session_name: str | None,
+    launch_kind: str,
     project: str,
     simset: str,
     mode: str,
     top: str,
+    package_runtime: str = "",
+    runtime_root: str = "",
+    work_dir: str = "",
+    compile_script: str = "",
+    elaborate_script: str = "",
+    simulate_script: str = "",
 ) -> None:
     paths = SessionPaths(Path(anchor_dir), session_name)
-    daemon = SimDaemon(paths=paths, project=project, simset=simset, mode=mode, top=top)
+    daemon = SimDaemon(
+        paths=paths,
+        launch_kind=launch_kind,
+        project=project,
+        simset=simset,
+        mode=mode,
+        top=top,
+        package_runtime=package_runtime,
+        runtime_root=runtime_root,
+        work_dir=work_dir,
+        compile_script=compile_script,
+        elaborate_script=elaborate_script,
+        simulate_script=simulate_script,
+    )
     daemon.run()

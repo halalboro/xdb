@@ -16,7 +16,7 @@ This repo provides a standalone CLI so ILA debug automation is not tied to any o
 - Program bitstream + probes (`.ltx`)
 - List ILAs and probe metadata
 - Capture from an ILA and export CSV
-- Persistent Vivado simulation sessions for project-backed flows
+- Persistent XSim/Vivado simulation sessions for packaged runtime-backed flows
 
 ## Requirements
 
@@ -55,13 +55,10 @@ xdb capture \
   --csv ./ila.csv \
   --samples 2048
 
-# launch a persistent simulation session from a Vivado project
-xdb sim launch --project ./myproj.xpr --top tb_top
-
-# or rely on environment defaults exported by an integration shell
-export XDB_SIM_PACKAGE_PROJECT=/nix/store/.../project/sim/myproj.xpr
+# launch a persistent simulation session from a packaged runtime bundle
+# exported by an integration shell
+export XDB_SIM_PACKAGE_RUNTIME=/nix/store/.../project/sim
 export XDB_SIM_WORKSPACE=$PWD/.build/sim-workspace
-export XDB_SIM_PROJECT=$XDB_SIM_WORKSPACE/sim/myproj.xpr
 export XDB_SIM_SIMSET=sim_1
 export XDB_SIM_TOP=tb_top
 export XDB_SIM_MODE=behavioral
@@ -88,8 +85,15 @@ xdb sim close
 - You can override with `--part-hint`/`--fpga-part-hint`, `--bit`, and `--ltx`.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - Captures are one-shot and blocking (with timeout).
-- `xdb sim` is project-backed in v1: launch from an existing `.xpr` and optional simset/top.
-- `xdb sim launch` resolves missing flags from these environment variables when present: `XDB_SIM_PROJECT`, `XDB_SIM_PACKAGE_PROJECT`, `XDB_SIM_WORKSPACE`, `XDB_SIM_SIMSET`, `XDB_SIM_MODE`, `XDB_SIM_TOP`, `XDB_SIM_SESSION`.
-- When `XDB_SIM_PACKAGE_PROJECT` and `XDB_SIM_WORKSPACE` are set, `xdb sim launch` materializes the packaged project into the writable workspace before opening `XDB_SIM_PROJECT`.
-- `xdb sim launch` starts a persistent background session; later `xdb sim ...` commands talk to that live Vivado process.
+- `xdb sim` currently supports the packaged runtime-backed flow, not the direct
+  project-backed `.xpr` flow.
+- Direct project launch via `xdb sim launch --project ...` is not supported yet.
+- `xdb sim launch` resolves missing flags from these environment variables when
+  present: `XDB_SIM_PACKAGE_RUNTIME`, `XDB_SIM_WORKSPACE`, `XDB_SIM_SIMSET`,
+  `XDB_SIM_MODE`, `XDB_SIM_TOP`, `XDB_SIM_SESSION`.
+- In the runtime-backed flow, `xdb sim launch` stages the packaged simulation
+  runtime into the writable workspace, runs the packaged compile/elaborate
+  scripts there, and then starts a persistent `xsim` session.
+- `xdb sim launch` starts a persistent background session; later
+  `xdb sim ...` commands talk to that live simulator process.
 - Output is intentionally minimal and script-friendly.

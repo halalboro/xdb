@@ -94,17 +94,29 @@ if {![info exists ::xdb_breakpoints]} {
 class VivadoSimDriver:
     def __init__(
         self,
+        launch_kind: str,
         project: str,
         simset: str,
         mode: str,
         top: str,
         vivado_log_path: str,
+        runtime_root: str = "",
+        work_dir: str = "",
+        compile_script: str = "",
+        elaborate_script: str = "",
+        simulate_script: str = "",
     ):
-        self.project = str(Path(project).resolve())
+        self.launch_kind = launch_kind
+        self.project = str(Path(project).resolve()) if project else ""
         self.simset = simset
         self.mode = mode
         self.top = top
         self.vivado_log_path = vivado_log_path
+        self.runtime_root = str(Path(runtime_root).resolve()) if runtime_root else ""
+        self.work_dir = str(Path(work_dir).resolve()) if work_dir else ""
+        self.compile_script = str(Path(compile_script).resolve()) if compile_script else ""
+        self.elaborate_script = str(Path(elaborate_script).resolve()) if elaborate_script else ""
+        self.simulate_script = str(Path(simulate_script).resolve()) if simulate_script else ""
         self.proc: subprocess.Popen[str] | None = None
         self._reader_thread: threading.Thread | None = None
         self._queue: queue.Queue[str] = queue.Queue()
@@ -155,12 +167,20 @@ class VivadoSimDriver:
         return message
 
     def start(self, timeout: int = 300) -> None:
+        Path(self.vivado_log_path).parent.mkdir(parents=True, exist_ok=True)
+        self._log_file = open(self.vivado_log_path, "a", encoding="utf-8", buffering=1)
+
+        if self.launch_kind == "runtime":
+            self._prepare_runtime_bundle()
+            self._start_runtime_simulator()
+            self._send_raw(_HELPERS_TCL)
+            self._wait_for_runtime_prompt(timeout=timeout)
+            return
+
         vivado_bin = os.environ.get("XDB_VIVADO_BIN", "vivado")
         cmd = [vivado_bin, "-mode", "tcl", "-nolog", "-nojournal", "-notrace"]
         resolved_vivado = shutil.which(vivado_bin) if os.path.basename(vivado_bin) == vivado_bin else vivado_bin
 
-        Path(self.vivado_log_path).parent.mkdir(parents=True, exist_ok=True)
-        self._log_file = open(self.vivado_log_path, "a", encoding="utf-8", buffering=1)
         if self._debug_enabled():
             resolved_display = resolved_vivado if resolved_vivado else "<not found in PATH>"
             self._record_debug_line(f"[xdb debug] vivado executable: {vivado_bin}")
@@ -170,11 +190,24 @@ class VivadoSimDriver:
             )
 
         try:
+            self._start_pty_process(cmd)
+        except FileNotFoundError as e:
+            raise XdbError(
+                "vivado executable not found in PATH. Run inside a Xilinx-enabled shell "
+                "or set XDB_VIVADO_BIN."
+            ) from e
+
+        self._send_raw(_HELPERS_TCL)
+        self.launch(timeout=timeout)
+
+    def _start_pty_process(self, cmd: list[str], *, cwd: str | None = None) -> None:
+        try:
             master_fd, slave_fd = pty.openpty()
             tty.setraw(slave_fd)
             self._pty_master_fd = master_fd
             self.proc = subprocess.Popen(
                 cmd,
+                cwd=cwd,
                 stdin=slave_fd,
                 stdout=slave_fd,
                 stderr=slave_fd,
@@ -182,11 +215,6 @@ class VivadoSimDriver:
                 close_fds=True,
             )
             os.close(slave_fd)
-        except FileNotFoundError as e:
-            raise XdbError(
-                "vivado executable not found in PATH. Run inside a Xilinx-enabled shell "
-                "or set XDB_VIVADO_BIN."
-            ) from e
         except Exception:
             if self._pty_master_fd is not None:
                 try:
@@ -198,8 +226,91 @@ class VivadoSimDriver:
 
         self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._reader_thread.start()
-        self._send_raw(_HELPERS_TCL)
-        self.launch(timeout=timeout)
+
+    def _run_script(self, script_path: str, *, cwd: str) -> None:
+        cmd = ["bash", script_path]
+        if self._debug_enabled():
+            self._record_debug_line(
+                "[xdb debug] runtime script: " + " ".join(shlex.quote(arg) for arg in cmd)
+            )
+            self._record_debug_line(f"[xdb debug] runtime cwd: {cwd}")
+        try:
+            subprocess.run(
+                cmd,
+                cwd=cwd,
+                check=True,
+                stdout=self._log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise XdbError(
+                self._format_exit_diagnostics(
+                    f"runtime preparation script failed: {script_path}"
+                )
+            ) from e
+
+    def _prepare_runtime_bundle(self) -> None:
+        if not self.work_dir:
+            raise XdbError("missing runtime work directory")
+        if not self.compile_script or not self.elaborate_script or not self.simulate_script:
+            raise XdbError("runtime launch metadata is incomplete")
+        self._run_script(self.compile_script, cwd=self.work_dir)
+        self._run_script(self.elaborate_script, cwd=self.work_dir)
+
+    def _runtime_simulate_command(self) -> list[str]:
+        simulate_path = Path(self.simulate_script)
+        try:
+            lines = simulate_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as e:
+            raise XdbError(f"failed to read simulate script: {simulate_path}") from e
+        for line in lines:
+            stripped = line.strip()
+            if not stripped.startswith("xsim "):
+                continue
+            tokens = shlex.split(stripped)
+            out: list[str] = []
+            skip_next = False
+            for idx, token in enumerate(tokens):
+                if skip_next:
+                    skip_next = False
+                    continue
+                if token == "-tclbatch":
+                    skip_next = True
+                    continue
+                out.append(token)
+            return out
+        raise XdbError(f"failed to determine xsim launch command from {simulate_path}")
+
+    def _start_runtime_simulator(self) -> None:
+        cmd = self._runtime_simulate_command()
+        if self._debug_enabled():
+            self._record_debug_line(
+                "[xdb debug] xsim argv: " + " ".join(shlex.quote(arg) for arg in cmd)
+            )
+            self._record_debug_line(f"[xdb debug] xsim cwd: {self.work_dir}")
+        try:
+            self._start_pty_process(cmd, cwd=self.work_dir)
+        except FileNotFoundError as e:
+            raise XdbError(
+                "xsim executable not found in PATH. Run inside a Xilinx-enabled shell or set PATH accordingly."
+            ) from e
+
+    def _wait_for_runtime_prompt(self, timeout: int) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.proc is not None and self.proc.poll() is not None:
+                raise XdbError(
+                    self._format_exit_diagnostics(
+                        "xsim process exited while starting runtime simulation"
+                    )
+                )
+            try:
+                self.time()
+                return
+            except XdbError:
+                time.sleep(0.2)
+        raise XdbError("timed out waiting for xsim runtime session to become ready")
 
     def _reader_loop(self) -> None:
         assert self._pty_master_fd is not None
@@ -308,7 +419,19 @@ if {{[catch {{
 
     def launch(self, timeout: int = 300, top: str | None = None) -> dict:
         effective_top = self.top if top is None else top
-        body = f'''
+        if self.launch_kind == "runtime":
+            if top is not None and top != self.top:
+                raise XdbError("changing top module is not supported for runtime-backed simulation sessions")
+            time_info = self.time()
+            return {
+                "project": self.project,
+                "simset": self.simset,
+                "mode": self.mode,
+                "top": effective_top,
+                "time": str(time_info.get("time", "")),
+            }
+
+        body = fr'''
 set __xdb_project {_tcl_string(self.project)}
 set __xdb_simset {_tcl_string(self.simset)}
 set __xdb_mode {_tcl_string(self.mode)}
@@ -352,7 +475,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"time\":[xdb_json_string $__xdb_time]"
         return self.request(body)
 
     def run(self, tokens: list[str]) -> dict:
-        body = f'''
+        body = fr'''
 set __xdb_before [current_time]
 set __xdb_args {_tcl_list(tokens)}
 if {{[llength $__xdb_args] == 0}} {{
@@ -376,7 +499,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_b
         return self.request(body)
 
     def get_signal(self, signal: str) -> dict:
-        body = f'''
+        body = fr'''
 set __xdb_signal {_tcl_string(signal)}
 set __xdb_value [get_value $__xdb_signal]
 xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"value\":[xdb_json_string $__xdb_value]"
@@ -384,7 +507,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal
         return self.request(body)
 
     def get_many(self, pattern: str) -> dict:
-        body = f'''
+        body = fr'''
 set __xdb_pattern {_tcl_string(pattern)}
 set __xdb_items [get_objects $__xdb_pattern]
 xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_pattern],\"signals\":[xdb_json_signal_values $__xdb_items]"
@@ -393,7 +516,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_patte
 
     def scopes(self, scope: str | None) -> dict:
         pattern = "*" if not scope else f"{scope}/*"
-        body = f'''
+        body = fr'''
 set __xdb_scope {_tcl_string(scope or "")}
 set __xdb_pattern {_tcl_string(pattern)}
 set __xdb_scopes [get_scopes $__xdb_pattern]
@@ -402,7 +525,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],
         return self.request(body)
 
     def objects(self, scope: str) -> dict:
-        body = f'''
+        body = fr'''
 set __xdb_scope {_tcl_string(scope)}
 set __xdb_pattern [format "%s/*" $__xdb_scope]
 set __xdb_objects [get_objects $__xdb_pattern]
@@ -412,11 +535,11 @@ xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],
 
     def set_top(self, top: str, timeout: int = 300) -> dict:
         data = self.launch(timeout=timeout, top=top)
-        data["relaunched"] = True
+        data["relaunched"] = self.launch_kind != "runtime"
         return data
 
     def add_wave(self, pattern: str) -> dict:
-        body = f'''
+        body = fr'''
 set __xdb_pattern {_tcl_string(pattern)}
 set __xdb_objects [get_objects $__xdb_pattern]
 foreach __xdb_object $__xdb_objects {{
@@ -430,7 +553,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_patte
 
     def step(self, count: int | None = None, time_tokens: list[str] | None = None) -> dict:
         if time_tokens:
-            body = f'''
+            body = fr'''
 set __xdb_before [current_time]
 set __xdb_args {_tcl_list(time_tokens)}
 eval [linsert $__xdb_args 0 run]
@@ -441,7 +564,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_b
             return self.request(body)
 
         step_count = count or 1
-        body = f'''
+        body = fr'''
 set __xdb_count {step_count}
 set __xdb_before [current_time]
 for {{set __xdb_i 0}} {{$__xdb_i < $__xdb_count}} {{incr __xdb_i}} {{
@@ -453,7 +576,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_b
         return self.request(body)
 
     def add_breakpoint(self, condition: str) -> dict:
-        body = f'''
+        body = fr'''
 set __xdb_condition {_tcl_string(condition)}
 set __xdb_id [when $__xdb_condition {{stop}}]
 lappend ::xdb_breakpoints $__xdb_id
@@ -478,7 +601,10 @@ xdb_reply_ok_fields $__xdb_request_id "\"cleared\":$__xdb_cleared"
         if self.proc is None:
             return
         try:
-            self._send_raw("catch {close_sim -force}\ncatch {close_project}\nexit\n")
+            if self.launch_kind == "runtime":
+                self._send_raw("catch {quit -force}\nexit\n")
+            else:
+                self._send_raw("catch {close_sim -force}\ncatch {close_project}\nexit\n")
         except XdbError:
             pass
         try:

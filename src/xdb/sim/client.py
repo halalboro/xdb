@@ -33,7 +33,7 @@ from .session_store import (
     pid_is_alive,
     remove_session,
     require_live_meta,
-    resolve_launch_project,
+    resolve_launch_spec,
     resolve_mode_arg,
     resolve_simset_arg,
     resolve_top_arg,
@@ -75,9 +75,19 @@ def _recv_all(sock: socket.socket) -> bytes:
     return b"".join(chunks)
 
 
-def _config_matches(meta: dict[str, Any], project: str, simset: str, mode: str, top: str) -> bool:
+def _config_matches(meta: dict[str, Any], launch_spec: dict[str, Any], simset: str, mode: str, top: str) -> bool:
+    launch_kind = str(launch_spec.get("launch_kind") or "project")
+    if str(meta.get("launch_kind") or "project") != launch_kind:
+        return False
+    if launch_kind == "runtime":
+        return (
+            str(meta.get("package_runtime") or "") == str(launch_spec.get("package_runtime") or "")
+            and str(meta.get("simset") or "") == simset
+            and str(meta.get("mode") or "") == mode
+            and str(meta.get("top") or "") == top
+        )
     return (
-        str(meta.get("project") or "") == project
+        str(meta.get("project") or "") == str(launch_spec.get("project") or "")
         and str(meta.get("simset") or "") == simset
         and str(meta.get("mode") or "") == mode
         and str(meta.get("top") or "") == top
@@ -88,7 +98,7 @@ def _spawn_daemon(
     *,
     session_name: str | None,
     anchor_dir: str,
-    project: str,
+    launch_spec: dict[str, Any],
     simset: str,
     mode: str,
     top: str,
@@ -103,8 +113,10 @@ def _spawn_daemon(
         "_simd",
         "--anchor-dir",
         anchor_dir,
+        "--launch-kind",
+        str(launch_spec.get("launch_kind") or "project"),
         "--project",
-        project,
+        str(launch_spec.get("project") or ""),
         "--simset",
         simset,
         "--mode",
@@ -114,6 +126,11 @@ def _spawn_daemon(
     ]
     if session_name:
         cmd.extend(["--session", session_name])
+    if str(launch_spec.get("launch_kind") or "project") == "runtime":
+        for name in ("package_runtime", "runtime_root", "work_dir", "compile_script", "elaborate_script", "simulate_script"):
+            value = launch_spec.get(name)
+            if value:
+                cmd.extend([f"--{name.replace('_', '-')}", str(value)])
     debug_env = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
     if debug_env and debug_env.strip().lower() not in {"", "0", "false", "no", "off"}:
         cmd.append("--debug")
@@ -173,8 +190,7 @@ def launch_session(
     effective_simset = resolve_simset_arg(simset)
     effective_mode = resolve_mode_arg(mode)
     effective_top = resolve_top_arg(top, live_meta)
-    project_info = resolve_launch_project(project, paths, materialize=False)
-    effective_project = str(project_info["project"])
+    launch_spec = resolve_launch_spec(project, paths, materialize=False)
 
     if live_meta and Path(str(live_meta.get("socket_path", ""))).exists() and pid_is_alive(int(live_meta.get("pid", 0) or 0)):
         if replace:
@@ -190,31 +206,43 @@ def launch_session(
                 _wait_until_stopped(session_name, timeout=2.0)
             cleanup_stale_session(paths)
         else:
-            if bool(project_info.get("needs_materialization")):
+            if bool(launch_spec.get("needs_materialization")):
                 raise XdbError(
-                    "the packaged simulation project changed and the writable workspace needs "
+                    "the packaged simulation input changed and the writable workspace needs "
                     "to be refreshed; use --replace or close the current session first"
                 )
-            if _config_matches(live_meta, effective_project, effective_simset, effective_mode, effective_top):
+            if _config_matches(live_meta, launch_spec, effective_simset, effective_mode, effective_top):
                 status = _send_request(session_name, make_request(OP_STATUS))
                 status["reused"] = True
-                for key in ("project", "package_project", "workspace", "materialized", "workspace_reused"):
-                    if key in project_info:
-                        status[key] = project_info[key]
+                for key in (
+                    "launch_kind",
+                    "project",
+                    "package_project",
+                    "package_runtime",
+                    "runtime_root",
+                    "workspace",
+                    "work_dir",
+                    "compile_script",
+                    "elaborate_script",
+                    "simulate_script",
+                    "materialized",
+                    "workspace_reused",
+                ):
+                    if key in launch_spec:
+                        status[key] = launch_spec[key]
                 return status
             raise XdbError(
                 "a live simulation session already exists with different configuration; "
                 "use --replace or choose another --session"
             )
 
-    project_info = resolve_launch_project(project, paths, materialize=True)
-    effective_project = str(project_info["project"])
+    launch_spec = resolve_launch_spec(project, paths, materialize=True)
 
     remove_session(paths)
     proc = _spawn_daemon(
         session_name=session_name,
         anchor_dir=str(paths.anchor_dir),
-        project=effective_project,
+        launch_spec=launch_spec,
         simset=effective_simset,
         mode=effective_mode,
         top=effective_top,
@@ -227,9 +255,22 @@ def launch_session(
             terminate_session({"pid": proc.pid, "socket_path": ""}, force=True)
         raise
     status["reused"] = False
-    for key in ("project", "package_project", "workspace", "materialized", "workspace_reused"):
-        if key in project_info:
-            status[key] = project_info[key]
+    for key in (
+        "launch_kind",
+        "project",
+        "package_project",
+        "package_runtime",
+        "runtime_root",
+        "workspace",
+        "work_dir",
+        "compile_script",
+        "elaborate_script",
+        "simulate_script",
+        "materialized",
+        "workspace_reused",
+    ):
+        if key in launch_spec:
+            status[key] = launch_spec[key]
     return status
 
 

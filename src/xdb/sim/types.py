@@ -13,10 +13,17 @@ class SessionMeta(TypedDict, total=False):
     vivado_log: str
     anchor_dir: str
     cwd: str
+    launch_kind: str
     project: str
     simset: str
     mode: str
     top: str
+    package_runtime: str
+    runtime_root: str
+    work_dir: str
+    compile_script: str
+    elaborate_script: str
+    simulate_script: str
     created_at: str
     updated_at: str
     state: str

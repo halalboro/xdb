@@ -290,10 +290,17 @@ def main() -> None:
     _add_debug_flag(s_simd)
     s_simd.add_argument("--anchor-dir", required=True)
     s_simd.add_argument("--session", default=None)
-    s_simd.add_argument("--project", required=True)
+    s_simd.add_argument("--launch-kind", choices=["project", "runtime"], default="project")
+    s_simd.add_argument("--project", default="")
     s_simd.add_argument("--simset", required=True)
     s_simd.add_argument("--mode", required=True)
     s_simd.add_argument("--top", default="")
+    s_simd.add_argument("--package-runtime", default="")
+    s_simd.add_argument("--runtime-root", default="")
+    s_simd.add_argument("--work-dir", default="")
+    s_simd.add_argument("--compile-script", default="")
+    s_simd.add_argument("--elaborate-script", default="")
+    s_simd.add_argument("--simulate-script", default="")
 
     args = p.parse_args()
     _configure_diagnostics(bool(args.debug))
@@ -303,10 +310,17 @@ def main() -> None:
             run_daemon(
                 anchor_dir=args.anchor_dir,
                 session_name=args.session,
+                launch_kind=args.launch_kind,
                 project=args.project,
                 simset=args.simset,
                 mode=args.mode,
                 top=args.top,
+                package_runtime=args.package_runtime,
+                runtime_root=args.runtime_root,
+                work_dir=args.work_dir,
+                compile_script=args.compile_script,
+                elaborate_script=args.elaborate_script,
+                simulate_script=args.simulate_script,
             )
             return
 
