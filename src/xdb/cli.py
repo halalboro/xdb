@@ -29,6 +29,8 @@ from .sim.client import (
     step_session,
     time_session,
     tcl_session,
+    wait_until_session,
+    wait_until_signal_session,
 )
 from .sim.daemon import run_daemon
 
@@ -147,6 +149,14 @@ def _env_debug_enabled() -> bool:
     return False
 
 
+def _resolve_sim_step_tokens(values: list[str] | None) -> list[str]:
+    if not values:
+        raise XdbError("missing step duration")
+    tokens = [value.strip() for value in values if value.strip()]
+    if not tokens:
+        raise XdbError("missing step duration")
+    return tokens
+
 
 def _configure_diagnostics(debug: bool) -> None:
     effective_debug = debug or _env_debug_enabled()
@@ -158,10 +168,8 @@ def _configure_diagnostics(debug: bool) -> None:
         os.environ.pop("XDB_VERBOSE", None)
 
 
-
 def _print_error(message: str) -> None:
     print(f"error: {message}", file=sys.stderr)
-
 
 
 def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
@@ -172,7 +180,6 @@ def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="print tracebacks and detailed Vivado diagnostics on failure",
     )
-
 
 
 def main() -> None:
@@ -297,6 +304,19 @@ def main() -> None:
     add_sim_session_arg(s_sim_step)
     s_sim_step.add_argument("arg", nargs="*", default=[])
 
+    s_sim_until = sim_sub.add_parser("until")
+    _add_debug_flag(s_sim_until)
+    add_sim_session_arg(s_sim_until)
+    s_sim_until.add_argument("--step", nargs="+", default=["10", "ns"])
+    s_sim_until.add_argument("expr", nargs="+")
+
+    s_sim_until_signal = sim_sub.add_parser("until-signal")
+    _add_debug_flag(s_sim_until_signal)
+    add_sim_session_arg(s_sim_until_signal)
+    s_sim_until_signal.add_argument("--step", nargs="+", default=["10", "ns"])
+    s_sim_until_signal.add_argument("signal")
+    s_sim_until_signal.add_argument("value")
+
     s_sim_breakpoint = sim_sub.add_parser("breakpoint")
     _add_debug_flag(s_sim_breakpoint)
     sim_bp_sub = s_sim_breakpoint.add_subparsers(dest="sim_bp_cmd", required=True)
@@ -404,6 +424,23 @@ def main() -> None:
                 _print(add_wave(args.session, args.pattern))
             elif args.sim_cmd == "step":
                 _print(step_session(args.session, _join_tokens(args.arg)))
+            elif args.sim_cmd == "until":
+                _print(
+                    wait_until_session(
+                        args.session,
+                        _join_tokens(args.expr) or "",
+                        _resolve_sim_step_tokens(args.step),
+                    )
+                )
+            elif args.sim_cmd == "until-signal":
+                _print(
+                    wait_until_signal_session(
+                        args.session,
+                        args.signal,
+                        args.value,
+                        _resolve_sim_step_tokens(args.step),
+                    )
+                )
             elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "add":
                 _print(add_breakpoint(args.session, _join_tokens(args.condition) or ""))
             elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "clear":

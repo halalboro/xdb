@@ -17,6 +17,8 @@ from .client import (
     step_session,
     tcl_session,
     time_session,
+    wait_until_session,
+    wait_until_signal_session,
 )
 
 __all__ = [
@@ -38,4 +40,6 @@ __all__ = [
     "step_session",
     "tcl_session",
     "time_session",
+    "wait_until_session",
+    "wait_until_signal_session",
 ]

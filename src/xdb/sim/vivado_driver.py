@@ -518,6 +518,64 @@ xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_b
 '''
         return self.request(body)
 
+    def wait_until(self, expr: str, *, step_tokens: list[str]) -> dict:
+        body = fr'''
+set __xdb_expr {_tcl_string(expr)}
+set __xdb_step_args {_tcl_list(step_tokens)}
+set __xdb_time_before [current_time]
+set __xdb_iterations 0
+while {{1}} {{
+  if {{[uplevel #0 [list expr $__xdb_expr]]}} {{
+    break
+  }}
+  set __xdb_prev_time [current_time]
+  eval [linsert $__xdb_step_args 0 run]
+  incr __xdb_iterations
+  set __xdb_current_time [current_time]
+  if {{$__xdb_current_time eq $__xdb_prev_time}} {{
+    if {{[uplevel #0 [list expr $__xdb_expr]]}} {{
+      break
+    }}
+    error "condition not met and simulation did not advance while waiting"
+  }}
+}}
+set __xdb_time_after [current_time]
+set __xdb_step [join $__xdb_step_args " "]
+xdb_reply_ok_fields $__xdb_request_id "\"expr\":[xdb_json_string $__xdb_expr],\"step\":[xdb_json_string $__xdb_step],\"iterations\":$__xdb_iterations,\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after]"
+'''
+        return self.request(body, timeout=86400)
+
+    def wait_until_signal(self, signal: str, value: str, *, step_tokens: list[str]) -> dict:
+        body = fr'''
+set __xdb_signal {_tcl_string(signal)}
+set __xdb_expected {_tcl_string(value)}
+set __xdb_step_args {_tcl_list(step_tokens)}
+set __xdb_time_before [current_time]
+set __xdb_iterations 0
+while {{1}} {{
+  set __xdb_value [get_value $__xdb_signal]
+  if {{$__xdb_value eq $__xdb_expected}} {{
+    break
+  }}
+  set __xdb_prev_time [current_time]
+  eval [linsert $__xdb_step_args 0 run]
+  incr __xdb_iterations
+  set __xdb_current_time [current_time]
+  if {{$__xdb_current_time eq $__xdb_prev_time}} {{
+    set __xdb_value [get_value $__xdb_signal]
+    if {{$__xdb_value eq $__xdb_expected}} {{
+      break
+    }}
+    error "signal did not reach expected value and simulation did not advance while waiting"
+  }}
+}}
+set __xdb_time_after [current_time]
+set __xdb_value [get_value $__xdb_signal]
+set __xdb_step [join $__xdb_step_args " "]
+xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"value\":[xdb_json_string $__xdb_value],\"expected\":[xdb_json_string $__xdb_expected],\"step\":[xdb_json_string $__xdb_step],\"iterations\":$__xdb_iterations,\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after]"
+'''
+        return self.request(body, timeout=86400)
+
     def add_breakpoint(self, condition: str) -> dict:
         body = fr'''
 set __xdb_condition {_tcl_string(condition)}

@@ -27,6 +27,8 @@ from .protocol import (
     OP_TIME,
     OP_TCL,
     OP_TOP,
+    OP_UNTIL,
+    OP_UNTIL_SIGNAL,
     OP_WAVE_ADD,
 )
 from .session_store import SessionPaths, ensure_session_dir, write_meta
@@ -253,6 +255,25 @@ class SimDaemon:
             if count <= 0:
                 raise XdbError("step count must be > 0")
             return self.driver.step(count=count)
+        if op == OP_UNTIL:
+            expr = str(args.get("expr") or "")
+            step_tokens = [str(v) for v in list(args.get("step_tokens") or [])]
+            if not expr:
+                raise XdbError("missing Tcl expression")
+            if not step_tokens:
+                raise XdbError("missing step duration")
+            return self.driver.wait_until(expr, step_tokens=step_tokens)
+        if op == OP_UNTIL_SIGNAL:
+            signal_name = str(args.get("signal") or "")
+            value = str(args.get("value") or "")
+            step_tokens = [str(v) for v in list(args.get("step_tokens") or [])]
+            if not signal_name:
+                raise XdbError("missing signal")
+            if value == "":
+                raise XdbError("missing expected signal value")
+            if not step_tokens:
+                raise XdbError("missing step duration")
+            return self.driver.wait_until_signal(signal_name, value, step_tokens=step_tokens)
         if op == OP_BREAKPOINT_ADD:
             condition = str(args.get("condition") or "")
             if not condition:

@@ -28,6 +28,8 @@ from .protocol import (
     OP_TIME,
     OP_TCL,
     OP_TOP,
+    OP_UNTIL,
+    OP_UNTIL_SIGNAL,
     OP_WAVE_ADD,
     make_request,
 )
@@ -317,6 +319,34 @@ def step_session(session_name: str | None, arg: str | None) -> dict[str, Any]:
     if not tokens:
         raise XdbError("missing step argument")
     return _send_request(session_name, make_request(OP_STEP, time_tokens=tokens))
+
+
+def wait_until_session(
+    session_name: str | None,
+    expr: str,
+    step_tokens: list[str],
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_UNTIL, expr=expr, step_tokens=step_tokens),
+    )
+
+
+def wait_until_signal_session(
+    session_name: str | None,
+    signal: str,
+    value: str,
+    step_tokens: list[str],
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(
+            OP_UNTIL_SIGNAL,
+            signal=signal,
+            value=value,
+            step_tokens=step_tokens,
+        ),
+    )
 
 
 def add_breakpoint(session_name: str | None, condition: str) -> dict[str, Any]:

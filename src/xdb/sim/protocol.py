@@ -17,6 +17,8 @@ OP_OBJECTS = "objects"
 OP_TOP = "top"
 OP_WAVE_ADD = "wave_add"
 OP_STEP = "step"
+OP_UNTIL = "until"
+OP_UNTIL_SIGNAL = "until_signal"
 OP_BREAKPOINT_ADD = "breakpoint_add"
 OP_BREAKPOINT_CLEAR = "breakpoint_clear"
 OP_TCL = "tcl"
@@ -38,6 +40,8 @@ ALL_OPERATIONS = {
     OP_TOP,
     OP_WAVE_ADD,
     OP_STEP,
+    OP_UNTIL,
+    OP_UNTIL_SIGNAL,
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
     OP_TCL,
