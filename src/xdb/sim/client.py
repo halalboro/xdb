@@ -325,10 +325,19 @@ def wait_until_session(
     session_name: str | None,
     expr: str,
     step_tokens: list[str],
+    *,
+    timeout_seconds: float | None = None,
+    max_iterations: int | None = None,
 ) -> dict[str, Any]:
     return _send_request(
         session_name,
-        make_request(OP_UNTIL, expr=expr, step_tokens=step_tokens),
+        make_request(
+            OP_UNTIL,
+            expr=expr,
+            step_tokens=step_tokens,
+            timeout_seconds=timeout_seconds,
+            max_iterations=max_iterations,
+        ),
     )
 
 
@@ -337,6 +346,9 @@ def wait_until_signal_session(
     signal: str,
     value: str,
     step_tokens: list[str],
+    *,
+    timeout_seconds: float | None = None,
+    max_iterations: int | None = None,
 ) -> dict[str, Any]:
     return _send_request(
         session_name,
@@ -345,6 +357,8 @@ def wait_until_signal_session(
             signal=signal,
             value=value,
             step_tokens=step_tokens,
+            timeout_seconds=timeout_seconds,
+            max_iterations=max_iterations,
         ),
     )
 

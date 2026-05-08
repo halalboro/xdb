@@ -158,6 +158,22 @@ def _resolve_sim_step_tokens(values: list[str] | None) -> list[str]:
     return tokens
 
 
+def _validate_positive_timeout_seconds(value: float | None) -> float | None:
+    if value is None:
+        return None
+    if value <= 0:
+        raise XdbError("--timeout must be > 0")
+    return value
+
+
+def _validate_positive_iteration_limit(value: int | None) -> int | None:
+    if value is None:
+        return None
+    if value <= 0:
+        raise XdbError("--max-iterations must be > 0")
+    return value
+
+
 def _configure_diagnostics(debug: bool) -> None:
     effective_debug = debug or _env_debug_enabled()
     if effective_debug:
@@ -310,8 +326,9 @@ def main() -> None:
         help="run in steps until a Tcl expression becomes true",
         description=(
             "Run the simulator in repeated time steps until the given Tcl expression "
-            "evaluates true. The default step is '10 ns'. Example: "
-            "xdb sim until '{[get_value /tb_top/done] eq \"1\"}'"
+            "evaluates true. The default step is '10 ns'. Use --timeout and/or "
+            "--max-iterations to bound the wait. Example: xdb sim until "
+            "'{[get_value /tb_top/done] eq \"1\"}'"
         ),
     )
     _add_debug_flag(s_sim_until)
@@ -322,6 +339,18 @@ def main() -> None:
         default=["10", "ns"],
         metavar="STEP",
         help="simulation time step between condition checks, default: 10 ns",
+    )
+    s_sim_until.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="maximum wall-clock seconds to wait before failing",
+    )
+    s_sim_until.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="maximum number of run/check iterations before failing",
     )
     s_sim_until.add_argument(
         "expr",
@@ -336,8 +365,9 @@ def main() -> None:
         help="run in steps until a signal reaches an exact value",
         description=(
             "Run the simulator in repeated time steps until get_value <signal> equals "
-            "the expected value exactly. The default step is '10 ns'. Example: "
-            "xdb sim until-signal /tb_top/done 1"
+            "the expected value exactly. The default step is '10 ns'. Use --timeout "
+            "and/or --max-iterations to bound the wait. Example: xdb sim until-signal "
+            "/tb_top/done 1"
         ),
     )
     _add_debug_flag(s_sim_until_signal)
@@ -348,6 +378,18 @@ def main() -> None:
         default=["10", "ns"],
         metavar="STEP",
         help="simulation time step between value checks, default: 10 ns",
+    )
+    s_sim_until_signal.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="maximum wall-clock seconds to wait before failing",
+    )
+    s_sim_until_signal.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="maximum number of run/check iterations before failing",
     )
     s_sim_until_signal.add_argument("signal", help="hierarchical signal path")
     s_sim_until_signal.add_argument("value", help="exact expected get_value result")
@@ -465,6 +507,8 @@ def main() -> None:
                         args.session,
                         _join_tokens(args.expr) or "",
                         _resolve_sim_step_tokens(args.step),
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                        max_iterations=_validate_positive_iteration_limit(args.max_iterations),
                     )
                 )
             elif args.sim_cmd in {"until-signal", "wait-signal", "wait-on-signal"}:
@@ -474,6 +518,8 @@ def main() -> None:
                         args.signal,
                         args.value,
                         _resolve_sim_step_tokens(args.step),
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                        max_iterations=_validate_positive_iteration_limit(args.max_iterations),
                     )
                 )
             elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "add":

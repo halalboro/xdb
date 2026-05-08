@@ -258,22 +258,45 @@ class SimDaemon:
         if op == OP_UNTIL:
             expr = str(args.get("expr") or "")
             step_tokens = [str(v) for v in list(args.get("step_tokens") or [])]
+            timeout_seconds = args.get("timeout_seconds")
+            max_iterations = args.get("max_iterations")
             if not expr:
                 raise XdbError("missing Tcl expression")
             if not step_tokens:
                 raise XdbError("missing step duration")
-            return self.driver.wait_until(expr, step_tokens=step_tokens)
+            if timeout_seconds is not None and float(timeout_seconds) <= 0:
+                raise XdbError("timeout_seconds must be > 0")
+            if max_iterations is not None and int(max_iterations) <= 0:
+                raise XdbError("max_iterations must be > 0")
+            return self.driver.wait_until(
+                expr,
+                step_tokens=step_tokens,
+                timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
+                max_iterations=None if max_iterations is None else int(max_iterations),
+            )
         if op == OP_UNTIL_SIGNAL:
             signal_name = str(args.get("signal") or "")
             value = str(args.get("value") or "")
             step_tokens = [str(v) for v in list(args.get("step_tokens") or [])]
+            timeout_seconds = args.get("timeout_seconds")
+            max_iterations = args.get("max_iterations")
             if not signal_name:
                 raise XdbError("missing signal")
             if value == "":
                 raise XdbError("missing expected signal value")
             if not step_tokens:
                 raise XdbError("missing step duration")
-            return self.driver.wait_until_signal(signal_name, value, step_tokens=step_tokens)
+            if timeout_seconds is not None and float(timeout_seconds) <= 0:
+                raise XdbError("timeout_seconds must be > 0")
+            if max_iterations is not None and int(max_iterations) <= 0:
+                raise XdbError("max_iterations must be > 0")
+            return self.driver.wait_until_signal(
+                signal_name,
+                value,
+                step_tokens=step_tokens,
+                timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
+                max_iterations=None if max_iterations is None else int(max_iterations),
+            )
         if op == OP_BREAKPOINT_ADD:
             condition = str(args.get("condition") or "")
             if not condition:
