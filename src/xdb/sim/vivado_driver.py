@@ -72,6 +72,177 @@ proc xdb_json_signal_values {items} {
   return "\[[join $parts ,]\]"
 }
 
+proc xdb_json_nullable_string {s} {
+  if {$s eq ""} {
+    return "null"
+  }
+  return [xdb_json_string $s]
+}
+
+proc xdb_safe_get_property {prop item} {
+  if {[catch {set value [get_property $prop $item]}]} {
+    return ""
+  }
+  return [string trim $value]
+}
+
+proc xdb_parent_scope {path} {
+  set normalized [string trim $path]
+  if {$normalized eq ""} {
+    return ""
+  }
+  set last_sep [string last "/" $normalized]
+  if {$last_sep <= 0} {
+    return ""
+  }
+  return [string range $normalized 0 [expr {$last_sep - 1}]]
+}
+
+proc xdb_normalize_kind {raw_kind default_kind} {
+  set raw [string tolower [string trim $raw_kind]]
+  if {$raw eq ""} {
+    return $default_kind
+  }
+  if {[string match "*parameter*" $raw]} {
+    return "parameter"
+  }
+  if {[string match "*interface*" $raw]} {
+    return "interface"
+  }
+  if {[string match "*module*" $raw] || [string match "*scope*" $raw]} {
+    return "module"
+  }
+  if {[string match "*reg*" $raw]} {
+    return "reg"
+  }
+  if {[string match "*net*" $raw] || [string match "*wire*" $raw]} {
+    return "net"
+  }
+  if {
+    [string match "*signal*" $raw] ||
+    [string match "*logic*" $raw] ||
+    [string match "*variable*" $raw] ||
+    [string match "*port*" $raw]
+  } {
+    return "signal"
+  }
+  return $raw
+}
+
+proc xdb_infer_radix {value} {
+  set trimmed [string trim $value]
+  if {$trimmed eq ""} {
+    return ""
+  }
+  if {[regexp {^0x[0-9a-fA-F]+$} $trimmed]} {
+    return "hex"
+  }
+  if {[regexp {^0b[01xXzZ_]+$} $trimmed]} {
+    return "bin"
+  }
+  if {[regexp {^0o[0-7_]+$} $trimmed]} {
+    return "oct"
+  }
+  if {[regexp {^0d[0-9_]+$} $trimmed]} {
+    return "dec"
+  }
+  if {[regexp {^[0-9]+'([bBoOdDhH])} $trimmed -> radix]} {
+    switch -nocase -- $radix {
+      b { return "bin" }
+      o { return "oct" }
+      d { return "dec" }
+      h { return "hex" }
+    }
+  }
+  if {[regexp {^[0-9_]+$} $trimmed]} {
+    return "dec"
+  }
+  return ""
+}
+
+proc xdb_object_width {item} {
+  foreach prop {SIZE WIDTH BIT_WIDTH BUS_WIDTH} {
+    set value [xdb_safe_get_property $prop $item]
+    if {$value ne "" && [string is integer -strict $value]} {
+      return $value
+    }
+  }
+
+  set left [xdb_safe_get_property LEFT $item]
+  set right [xdb_safe_get_property RIGHT $item]
+  if {
+    $left ne "" &&
+    $right ne "" &&
+    [string is integer -strict $left] &&
+    [string is integer -strict $right]
+  } {
+    return [expr {abs($left - $right) + 1}]
+  }
+
+  if {![catch {set value [get_value -radix bin $item]}]} {
+    set normalized [string map {_ ""} [string trim $value]]
+    if {[regexp {^[01xXzZ]+$} $normalized]} {
+      return [string length $normalized]
+    }
+    if {[regexp {^[0-9]+'[bB]([01xXzZ]+)$} $normalized -> bits]} {
+      return [string length $bits]
+    }
+  }
+
+  return ""
+}
+
+proc xdb_json_object_metadata {item default_kind include_value} {
+  set path [string trim $item]
+  set raw_kind ""
+  foreach prop {TYPE CLASS OBJECT_CLASS OBJECT_TYPE} {
+    set candidate [xdb_safe_get_property $prop $item]
+    if {$candidate ne ""} {
+      set raw_kind $candidate
+      break
+    }
+  }
+  set kind [xdb_normalize_kind $raw_kind $default_kind]
+  set width [xdb_object_width $item]
+  set parent_scope [xdb_parent_scope $path]
+  set value ""
+  set value_radix ""
+  set has_value 0
+  if {$include_value} {
+    if {![catch {set value [get_value $item]}]} {
+      set has_value 1
+      set value_radix [xdb_infer_radix $value]
+    }
+  }
+
+  set fields {}
+  lappend fields "\"path\":[xdb_json_string $path]"
+  lappend fields "\"kind\":[xdb_json_string $kind]"
+  lappend fields "\"raw_kind\":[xdb_json_nullable_string $raw_kind]"
+  if {$width eq ""} {
+    lappend fields "\"width\":null"
+  } else {
+    lappend fields "\"width\":$width"
+  }
+  lappend fields "\"parent_scope\":[xdb_json_nullable_string $parent_scope]"
+  if {$include_value && $has_value} {
+    lappend fields "\"value\":[xdb_json_string $value]"
+    lappend fields "\"value_radix\":[xdb_json_nullable_string $value_radix]"
+  } else {
+    lappend fields "\"value\":null"
+    lappend fields "\"value_radix\":null"
+  }
+  return "\{[join $fields ,]\}"
+}
+
+proc xdb_json_object_metadata_array {items default_kind include_value} {
+  set parts {}
+  foreach item $items {
+    lappend parts [xdb_json_object_metadata $item $default_kind $include_value]
+  }
+  return "\[[join $parts ,]\]"
+}
+
 proc xdb_reply_json {request_id payload} {
   puts "__XDB_BEGIN__ $request_id"
   puts $payload
@@ -502,7 +673,8 @@ xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_b
         body = fr'''
 set __xdb_signal {_tcl_string(signal)}
 set __xdb_value [get_value $__xdb_signal]
-xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"value\":[xdb_json_string $__xdb_value]"
+set __xdb_object_json [xdb_json_object_metadata $__xdb_signal "signal" 1]
+xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal],\"value\":[xdb_json_string $__xdb_value],\"object\":$__xdb_object_json"
 '''
         return self.request(body)
 
@@ -510,7 +682,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"signal\":[xdb_json_string $__xdb_signal
         body = fr'''
 set __xdb_pattern {_tcl_string(pattern)}
 set __xdb_items [get_objects $__xdb_pattern]
-xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_pattern],\"signals\":[xdb_json_signal_values $__xdb_items]"
+xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_pattern],\"signals\":[xdb_json_signal_values $__xdb_items],\"objects\":[xdb_json_object_metadata_array $__xdb_items \"signal\" 1]"
 '''
         return self.request(body)
 
@@ -520,7 +692,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"pattern\":[xdb_json_string $__xdb_patte
 set __xdb_scope {_tcl_string(scope or "")}
 set __xdb_pattern {_tcl_string(pattern)}
 set __xdb_scopes [get_scopes $__xdb_pattern]
-xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"scopes\":[xdb_json_array_strings $__xdb_scopes]"
+xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"scopes\":[xdb_json_array_strings $__xdb_scopes],\"metadata\":[xdb_json_object_metadata_array $__xdb_scopes \"module\" 0]"
 '''
         return self.request(body)
 
@@ -529,7 +701,7 @@ xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],
 set __xdb_scope {_tcl_string(scope)}
 set __xdb_pattern [format "%s/*" $__xdb_scope]
 set __xdb_objects [get_objects $__xdb_pattern]
-xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"objects\":[xdb_json_array_strings $__xdb_objects]"
+xdb_reply_ok_fields $__xdb_request_id "\"scope\":[xdb_json_string $__xdb_scope],\"objects\":[xdb_json_array_strings $__xdb_objects],\"metadata\":[xdb_json_object_metadata_array $__xdb_objects \"signal\" 1]"
 '''
         return self.request(body)
 

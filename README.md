@@ -136,6 +136,9 @@ xdb sim close
 - `xdb sim source <file.tcl>` loads a Tcl file into the live simulator session
   with Tcl `source`, preserving file-based error locations and proc
   definitions.
+- `xdb sim get`, `xdb sim get-many`, `xdb sim objects`, and `xdb sim scopes`
+  now include richer machine-readable metadata such as `kind`, `width`,
+  `parent_scope`, and `value` where applicable.
 - `xdb sim force <signal> <value...>` wraps `add_force`; use `--radix`,
   `--repeat-every`, and `--cancel-after` for common options.
 - `xdb sim release <signal>` releases forces created through `xdb sim force`.
