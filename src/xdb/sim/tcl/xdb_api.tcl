@@ -307,15 +307,15 @@ proc xdb_api_time {} {
   return "\"time\":[xdb_json_string $__xdb_time]"
 }
 
-proc xdb_api_run {args} {
+proc xdb_api_run {run_args} {
   set __xdb_before [current_time]
-  if {[llength $args] == 0} {
+  if {[llength $run_args] == 0} {
     run
   } else {
-    eval [linsert $args 0 run]
+    eval [linsert $run_args 0 run]
   }
   set __xdb_after [current_time]
-  set __xdb_joined [join $args " "]
+  set __xdb_joined [join $run_args " "]
   return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined]"
 }
 
@@ -326,12 +326,12 @@ proc xdb_api_restart {} {
   return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after]"
 }
 
-proc xdb_api_step_time {args} {
+proc xdb_api_step_time {step_args} {
   set __xdb_before [current_time]
-  eval [linsert $args 0 run]
+  eval [linsert $step_args 0 run]
   set __xdb_after [current_time]
-  set __xdb_joined [join $args " "]
-  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined],\"step_mode\":[xdb_json_string \"time\"]"
+  set __xdb_joined [join $step_args " "]
+  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined],\"step_mode\":[xdb_json_string time]"
 }
 
 proc xdb_api_step_count {count} {
@@ -340,7 +340,7 @@ proc xdb_api_step_count {count} {
     step
   }
   set __xdb_after [current_time]
-  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"count\":$count,\"step_mode\":[xdb_json_string \"count\"]"
+  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"count\":$count,\"step_mode\":[xdb_json_string count]"
 }
 
 proc xdb_api_wait_until {expr_text step_args timeout_seconds max_iterations} {
@@ -426,11 +426,17 @@ proc xdb_api_describe {top_name} {
   if {$__xdb_top_scope eq "" && [llength $__xdb_root_scopes] == 1} {
     set __xdb_top_scope [lindex $__xdb_root_scopes 0]
   }
+  if {$__xdb_top_scope eq "" && [llength $__xdb_root_scopes] > 0} {
+    set __xdb_top_scope [xdb_parent_scope [lindex $__xdb_root_scopes 0]]
+  }
   if {$__xdb_top_scope eq ""} {
     set __xdb_top_scope $top_name
   }
   set __xdb_child_scopes {}
   catch {set __xdb_child_scopes [get_scopes [format "%s/*" $__xdb_top_scope]]}
+  if {[llength $__xdb_child_scopes] == 0 && [llength $__xdb_root_scopes] > 0} {
+    set __xdb_child_scopes $__xdb_root_scopes
+  }
   set __xdb_objects [xdb_collect_snapshot_value_objects $__xdb_top_scope]
   return "\"top\":[xdb_json_string $top_name],\"top_scope\":[xdb_json_string $__xdb_top_scope],\"time\":[xdb_json_string $__xdb_time],\"root_scopes\":[xdb_json_array_strings $__xdb_root_scopes],\"child_scopes\":[xdb_json_array_strings $__xdb_child_scopes],\"child_scope_metadata\":[xdb_json_object_metadata_array $__xdb_child_scopes \"module\" 0],\"objects\":[xdb_json_object_metadata_array $__xdb_objects \"signal\" 1]"
 }
@@ -480,10 +486,10 @@ proc xdb_api_add_wave {pattern} {
 proc xdb_api_vcd_start {path scope} {
   open_vcd $path
   if {$scope eq ""} {
-    log_vcd -r /*
+    log_vcd *
   } else {
     set __xdb_pattern [format "%s/*" $scope]
-    log_vcd -r $__xdb_pattern
+    log_vcd $__xdb_pattern
   }
   set __xdb_time [current_time]
   return "\"file\":[xdb_json_string $path],\"scope\":[xdb_json_nullable_string $scope],\"time\":[xdb_json_string $__xdb_time],\"active\":true"
@@ -501,7 +507,7 @@ proc xdb_api_assert_signal {signal expected} {
   if {$__xdb_actual ne $expected} {
     error [format "assert-signal failed at %s: %s expected %s got %s" $__xdb_time $signal $expected $__xdb_actual]
   }
-  return "\"passed\":true,\"kind\":[xdb_json_string \"assert-signal\"],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"value\":[xdb_json_string $__xdb_actual],\"time\":[xdb_json_string $__xdb_time]"
+  return "\"passed\":true,\"kind\":[xdb_json_string assert-signal],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"value\":[xdb_json_string $__xdb_actual],\"time\":[xdb_json_string $__xdb_time]"
 }
 
 proc xdb_api_assert_tcl {expr_text} {
@@ -510,14 +516,14 @@ proc xdb_api_assert_tcl {expr_text} {
   if {![uplevel #0 [list expr $__xdb_expr]]} {
     error [format "assert-tcl failed at %s: %s" $__xdb_time $__xdb_expr]
   }
-  return "\"passed\":true,\"kind\":[xdb_json_string \"assert-tcl\"],\"expr\":[xdb_json_string $__xdb_expr],\"time\":[xdb_json_string $__xdb_time]"
+  return "\"passed\":true,\"kind\":[xdb_json_string assert-tcl],\"expr\":[xdb_json_string $__xdb_expr],\"time\":[xdb_json_string $__xdb_time]"
 }
 
 proc xdb_api_expect_signal {signal expected within_args} {
   set __xdb_time_before [current_time]
   set __xdb_initial [get_value $signal]
   if {$__xdb_initial eq $expected} {
-    return "\"passed\":true,\"kind\":[xdb_json_string \"expect-signal\"],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_initial],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_before],\"iterations\":0"
+    return "\"passed\":true,\"kind\":[xdb_json_string expect-signal],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_initial],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_before],\"iterations\":0"
   }
   set ::xdb_expect_signal_hit 0
   set __xdb_condition [xdb_signal_eq_expr $signal $expected]
@@ -529,7 +535,7 @@ proc xdb_api_expect_signal {signal expected within_args} {
   if {!$::xdb_expect_signal_hit && $__xdb_actual ne $expected} {
     error [format "expect-signal failed: %s did not reach %s within %s (start=%s end=%s time_before=%s time_after=%s)" $signal $expected [join $within_args \" \" ] $__xdb_initial $__xdb_actual $__xdb_time_before $__xdb_time_after]
   }
-  return "\"passed\":true,\"kind\":[xdb_json_string \"expect-signal\"],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"iterations\":1"
+  return "\"passed\":true,\"kind\":[xdb_json_string expect-signal],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"iterations\":1"
 }
 
 proc xdb_api_expect_change {signal within_args} {
@@ -545,7 +551,7 @@ proc xdb_api_expect_change {signal within_args} {
   if {!$::xdb_expect_change_hit && $__xdb_actual eq $__xdb_initial} {
     error [format "expect-change failed: %s did not change within %s (value=%s time_before=%s time_after=%s)" $signal [join $within_args \" \" ] $__xdb_initial $__xdb_time_before $__xdb_time_after]
   }
-  return "\"passed\":true,\"kind\":[xdb_json_string \"expect-change\"],\"signal\":[xdb_json_string $signal],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"changed\":true"
+  return "\"passed\":true,\"kind\":[xdb_json_string expect-change],\"signal\":[xdb_json_string $signal],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"changed\":true"
 }
 
 proc xdb_api_breakpoint_add {condition} {
