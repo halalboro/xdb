@@ -84,6 +84,20 @@ proc xdb_reply_error {request_id msg} {
   xdb_reply_json $request_id "{\"ok\":false,\"error\":[xdb_json_string $msg]}"
 }
 
+proc xdb_normalize_expr {expr_text} {
+  set normalized [string trim $expr_text]
+  if {[string length $normalized] >= 4 && [string range $normalized 0 3] eq "expr"} {
+    set rest [string trim [string range $normalized 4 end]]
+    if {$rest ne ""} {
+      set normalized $rest
+    }
+  }
+  if {[string length $normalized] >= 2 && [string index $normalized 0] eq "{" && [string index $normalized end] eq "}"} {
+    set normalized [string range $normalized 1 end-1]
+  }
+  return [string trim $normalized]
+}
+
 if {![info exists ::xdb_breakpoints]} {
   set ::xdb_breakpoints {}
 }
@@ -528,7 +542,8 @@ xdb_reply_ok_fields $__xdb_request_id "\"time_before\":[xdb_json_string $__xdb_b
     ) -> dict:
         request_timeout = 86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
         body = fr'''
-set __xdb_expr {_tcl_string(expr)}
+set __xdb_expr_raw {_tcl_string(expr)}
+set __xdb_expr [xdb_normalize_expr $__xdb_expr_raw]
 set __xdb_step_args {_tcl_list(step_tokens)}
 set __xdb_timeout_seconds {_tcl_string("" if timeout_seconds is None else str(timeout_seconds))}
 set __xdb_max_iterations {_tcl_string("" if max_iterations is None else str(max_iterations))}
