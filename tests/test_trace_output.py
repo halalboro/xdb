@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb.cli import _emit_text, _format_with_trace_ndjson, _format_with_trace_summary
-from xdb.sim.daemon import _correlate_trace
+from xdb.sim.trace_correlation import correlate_trace
 
 
 class TraceOutputTests(unittest.TestCase):
@@ -66,7 +66,7 @@ class TraceOutputTests(unittest.TestCase):
         self.assertIn("tx=invoke:local-transfer axis=/axis beat 0", summary)
 
     def test_correlation_window_and_mode_filter_links_expected_records(self) -> None:
-        result = _correlate_trace(
+        result = correlate_trace(
             {
                 "events": [
                     {
