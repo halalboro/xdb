@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 import unittest
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -51,6 +53,24 @@ class _FakeWithTraceDriver:
 
     def trace_events_get(self) -> dict[str, Any]:
         return {"event_count": 0, "events": []}
+
+    @contextmanager
+    def sim_advance_hook(self, hook: Callable[[str, str], None]) -> Iterator[None]:
+        previous = self._sim_advance_hook
+        self._sim_advance_hook = hook
+        try:
+            yield
+        finally:
+            self._sim_advance_hook = previous
+
+    @contextmanager
+    def coyote_trace_context(
+        self,
+        _provider: Callable[[], dict[str, object]],
+        *,
+        enabled: bool = True,
+    ) -> Iterator[bool]:
+        yield False and enabled
 
 
 class WithTraceTests(unittest.TestCase):

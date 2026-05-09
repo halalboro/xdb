@@ -12,6 +12,8 @@ import time
 import tty
 import uuid
 from collections import deque
+from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Callable, TextIO, cast
 
@@ -409,6 +411,33 @@ if {{[catch {{
             ),
             timeout=request_timeout,
         )
+
+    @contextmanager
+    def sim_advance_hook(self, hook: Callable[[str, str], None]) -> Iterator[None]:
+        previous = self._sim_advance_hook
+        self._sim_advance_hook = hook
+        try:
+            yield
+        finally:
+            self._sim_advance_hook = previous
+
+    @contextmanager
+    def coyote_trace_context(
+        self,
+        provider: Callable[[], dict[str, object]],
+        *,
+        enabled: bool = True,
+    ) -> Iterator[bool]:
+        previous: Callable[[], dict[str, object]] | None = None
+        controller = self._coyote
+        active = enabled and controller is not None
+        if active and controller is not None:
+            previous = controller.set_trace_context_provider(provider)
+        try:
+            yield active
+        finally:
+            if active and controller is not None:
+                controller.set_trace_context_provider(previous)
 
     def _notify_sim_advance(self, result: dict[str, Any]) -> None:
         if self._sim_advance_hook is None:

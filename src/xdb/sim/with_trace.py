@@ -120,20 +120,16 @@ class WithTraceRunner:
         if transactions:
             self.driver.trace_events_clear()
         axis_sampler.sample(time_before)
-        previous_hook = self.driver._sim_advance_hook
-        previous_context_provider: Callable[[], dict[str, object]] | None = None
-        if transactions and self.driver._coyote is not None:
-            previous_context_provider = self.driver._coyote.set_trace_context_provider(
-                lambda: {"time": current_trace_time, "time_source": "last_sample"}
-            )
 
         def handle_sim_advance(_before: str, after: str) -> None:
             nonlocal current_trace_time
             current_trace_time = after
             axis_sampler.sample(after)
 
-        self.driver._sim_advance_hook = handle_sim_advance
-        try:
+        with self.driver.coyote_trace_context(
+            lambda: {"time": current_trace_time, "time_source": "last_sample"},
+            enabled=transactions,
+        ), self.driver.sim_advance_hook(handle_sim_advance):
             action_result = self._with_trace_action(action_op, action_args, step_tokens)
             observation_result = self._run_duration_sampled(
                 duration_tokens,
@@ -142,10 +138,6 @@ class WithTraceRunner:
             )
             iterations = int(observation_result.get("sample_iterations") or 0)
             time_after = str(observation_result.get("time_after") or self.driver.time().get("time") or "")
-        finally:
-            self.driver._sim_advance_hook = previous_hook
-            if transactions and self.driver._coyote is not None:
-                self.driver._coyote.set_trace_context_provider(previous_context_provider)
 
         result: dict[str, Any] = {
             "action": {
