@@ -73,7 +73,13 @@ class DebugBackend(Protocol):
     def program(self, bit: str, ltx: str | None, part_hint: str, timeout: int = 300) -> ProgramResult:
         ...
 
-    def list_ilas(self, part_hint: str, timeout: int = 180) -> ListIlasResult:
+    def list_ilas(
+        self,
+        part_hint: str,
+        timeout: int = 180,
+        *,
+        ltx: str | None = None,
+    ) -> ListIlasResult:
         ...
 
     def capture(
@@ -83,6 +89,8 @@ class DebugBackend(Protocol):
         csv_path: str,
         samples: int,
         timeout: int = 120,
+        *,
+        ltx: str | None = None,
     ) -> CaptureResult:
         ...
 

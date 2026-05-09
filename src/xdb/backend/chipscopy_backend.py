@@ -67,14 +67,20 @@ class ChipScoPyBackend:
         finally:
             self._delete_session(session)
 
-    def list_ilas(self, part_hint: str, timeout: int = 180) -> ListIlasResult:
+    def list_ilas(
+        self,
+        part_hint: str,
+        timeout: int = 180,
+        *,
+        ltx: str | None = None,
+    ) -> ListIlasResult:
         del timeout
         session = self._create_session(require_cs=True)
         try:
             dev = self._select_device(session, part_hint)
-            ltx = self._ltx_from_env()
-            if ltx:
-                dev.discover_and_setup_cores(ltx_file=ltx)
+            resolved_ltx = self._ltx_from_env(ltx)
+            if resolved_ltx:
+                dev.discover_and_setup_cores(ltx_file=resolved_ltx)
             else:
                 dev.discover_and_setup_cores()
 
@@ -122,13 +128,15 @@ class ChipScoPyBackend:
         csv_path: str,
         samples: int,
         timeout: int = 120,
+        *,
+        ltx: str | None = None,
     ) -> CaptureResult:
         session = self._create_session(require_cs=True)
         try:
             dev = self._select_device(session, part_hint)
-            ltx = self._ltx_from_env()
-            if ltx:
-                dev.discover_and_setup_cores(ltx_file=ltx)
+            resolved_ltx = self._ltx_from_env(ltx)
+            if resolved_ltx:
+                dev.discover_and_setup_cores(ltx_file=resolved_ltx)
             else:
                 dev.discover_and_setup_cores()
 
@@ -192,8 +200,8 @@ class ChipScoPyBackend:
         return {"create_session": create_session}
 
     @staticmethod
-    def _ltx_from_env() -> str | None:
-        ltx = os.environ.get("FPGA_LTX")
+    def _ltx_from_env(override: str | None = None) -> str | None:
+        ltx = override or os.environ.get("FPGA_LTX")
         if ltx and os.path.isfile(ltx):
             return ltx
         return None

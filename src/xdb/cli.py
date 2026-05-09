@@ -220,12 +220,19 @@ def _resolve_bitstream(cli_value: str | None) -> str:
     return bit
 
 
-def _resolve_ltx(cli_value: str | None) -> str:
+def _resolve_optional_ltx(cli_value: str | None) -> str | None:
     ltx = cli_value or os.environ.get("FPGA_LTX")
     if not ltx:
-        raise XdbError("missing ltx: pass --ltx or set FPGA_LTX")
+        return None
     if not os.path.isfile(ltx):
         raise XdbError(f"ltx not found: {ltx}")
+    return ltx
+
+
+def _resolve_ltx(cli_value: str | None) -> str:
+    ltx = _resolve_optional_ltx(cli_value)
+    if not ltx:
+        raise XdbError("missing ltx: pass --ltx or set FPGA_LTX")
     return ltx
 
 
@@ -414,6 +421,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_ilas = sub.add_parser("ilas")
     _add_debug_flag(s_ilas)
     s_ilas.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
+    s_ilas.add_argument("--ltx", default=None)
     s_ilas.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
     s_ilas.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
     s_ilas.add_argument("--timeout", type=int, default=180)
@@ -421,6 +429,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_capture = sub.add_parser("capture")
     _add_debug_flag(s_capture)
     s_capture.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
+    s_capture.add_argument("--ltx", default=None)
     s_capture.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
     s_capture.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
     s_capture.add_argument("--ila", required=True)
@@ -1273,7 +1282,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 operation="ilas",
                 target_hint=part_hint,
             )
-            _print(backend.list_ilas(part_hint, timeout=args.timeout))
+            _print(
+                backend.list_ilas(
+                    part_hint,
+                    timeout=args.timeout,
+                    ltx=_resolve_optional_ltx(args.ltx),
+                )
+            )
         elif args.cmd == "capture":
             part_hint = _require_part_hint(args.part_hint)
             _require_capability(
@@ -1289,6 +1304,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     args.csv,
                     _validate_samples(args.samples),
                     timeout=args.timeout,
+                    ltx=_resolve_optional_ltx(args.ltx),
                 )
             )
         elif args.cmd == "instruments" and args.instruments_cmd == "list":

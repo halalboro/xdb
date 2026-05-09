@@ -41,8 +41,14 @@ class VivadoBackend:
     ) -> ProgramResult:
         return program(bit, ltx, part_hint, timeout=timeout)
 
-    def list_ilas(self, part_hint: str, timeout: int = 180) -> ListIlasResult:
-        return list_ilas(part_hint, timeout=timeout)
+    def list_ilas(
+        self,
+        part_hint: str,
+        timeout: int = 180,
+        *,
+        ltx: str | None = None,
+    ) -> ListIlasResult:
+        return list_ilas(part_hint, timeout=timeout, ltx=ltx)
 
     def capture(
         self,
@@ -51,8 +57,10 @@ class VivadoBackend:
         csv_path: str,
         samples: int,
         timeout: int = 120,
+        *,
+        ltx: str | None = None,
     ) -> CaptureResult:
-        return capture(part_hint, ila_name, csv_path, samples, timeout=timeout)
+        return capture(part_hint, ila_name, csv_path, samples, timeout=timeout, ltx=ltx)
 
     def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult:
         ilas = self.list_ilas(part_hint, timeout=timeout)
@@ -202,9 +210,10 @@ exit 0
     return cast(ProgramResult, _extract_json(res.stdout))
 
 
-def list_ilas(part_hint: str, timeout: int = 180) -> ListIlasResult:
+def list_ilas(part_hint: str, timeout: int = 180, *, ltx: str | None = None) -> ListIlasResult:
     tcl = r'''
 set part_hint [lindex $argv 0]
+set ltx [lindex $argv 1]
 open_hw_manager
 connect_hw_server
 set chosen ""
@@ -225,6 +234,7 @@ current_hw_target $chosen
 open_hw_target $chosen
 set dev [lindex [get_hw_devices] 0]
 current_hw_device $dev
+if {$ltx ne ""} { set_property PROBES.FILE $ltx $dev }
 refresh_hw_device $dev
 set ilas [get_hw_ilas]
 set out "{\"target\":\"$chosen\",\"part\":\"[get_property PART $dev]\",\"ilas\":"
@@ -252,18 +262,25 @@ puts $out
 puts "XDB_JSON_END"
 exit 0
 '''
-    res = _run_vivado_tcl(tcl, [part_hint], timeout=timeout)
+    res = _run_vivado_tcl(tcl, [part_hint, ltx or ""], timeout=timeout)
     return cast(ListIlasResult, _extract_json(res.stdout))
 
 
 def capture(
-    part_hint: str, ila_name: str, csv_path: str, samples: int, timeout: int = 120
+    part_hint: str,
+    ila_name: str,
+    csv_path: str,
+    samples: int,
+    timeout: int = 120,
+    *,
+    ltx: str | None = None,
 ) -> CaptureResult:
     tcl = r'''
 set part_hint [lindex $argv 0]
 set ila_name [lindex $argv 1]
 set csv_path [lindex $argv 2]
 set samples [lindex $argv 3]
+set ltx [lindex $argv 4]
 
 open_hw_manager
 connect_hw_server
@@ -285,6 +302,7 @@ current_hw_target $chosen
 open_hw_target $chosen
 set dev [lindex [get_hw_devices] 0]
 current_hw_device $dev
+if {$ltx ne ""} { set_property PROBES.FILE $ltx $dev }
 refresh_hw_device $dev
 set ila [get_hw_ilas $ila_name]
 if {[llength $ila] == 0} { error "ILA not found: $ila_name" }
@@ -300,5 +318,9 @@ puts $out
 puts "XDB_JSON_END"
 exit 0
 '''
-    res = _run_vivado_tcl(tcl, [part_hint, ila_name, csv_path, str(samples)], timeout=timeout)
+    res = _run_vivado_tcl(
+        tcl,
+        [part_hint, ila_name, csv_path, str(samples), ltx or ""],
+        timeout=timeout,
+    )
     return cast(CaptureResult, _extract_json(res.stdout))

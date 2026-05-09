@@ -47,10 +47,10 @@ xdb targets
 # program board (uses FPGA_BITSTREAM/FPGA_LTX by default)
 xdb program
 
-# list ILAs
+# list ILAs (uses FPGA_LTX by default when set; override with --ltx)
 xdb ilas
 
-# capture
+# capture (uses FPGA_LTX by default when set; override with --ltx)
 xdb capture \
   --ila hw_ila_1 \
   --csv ./ila.csv \
@@ -137,6 +137,8 @@ xdb sim close
   Matching is done against `PART=` from `get_property NAME`.
 - `FPGA_BITSTREAM` and `FPGA_LTX` are used by default for `xdb program`.
 - You can override with `--part-hint`/`--fpga-part-hint`, `--bit`, and `--ltx`.
+  `xdb program`, `xdb ilas`, and `xdb capture` apply the selected LTX before
+  refreshing the hardware device.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - Captures are one-shot and blocking (with timeout).
 - `xdb sim` currently supports the packaged runtime-backed flow, not the direct
