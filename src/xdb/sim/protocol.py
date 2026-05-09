@@ -53,6 +53,7 @@ OP_EXPECT_CHANGE = "expect_change"
 OP_TRACE_TRANSACTIONS = "trace_transactions"
 OP_TRACE_EVENTS_CLEAR = "trace_events_clear"
 OP_TRACE_EVENTS_GET = "trace_events_get"
+OP_WITH_TRACE = "with_trace"
 
 
 ALL_OPERATIONS = {
@@ -104,6 +105,7 @@ ALL_OPERATIONS = {
     OP_TRACE_TRANSACTIONS,
     OP_TRACE_EVENTS_CLEAR,
     OP_TRACE_EVENTS_GET,
+    OP_WITH_TRACE,
 }
 
 

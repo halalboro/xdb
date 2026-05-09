@@ -13,7 +13,7 @@ import tty
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import Any, TextIO, cast
+from typing import Any, Callable, TextIO, cast
 
 from ..errors import XdbError
 from .coyote import CoyoteSimController
@@ -57,6 +57,7 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
         self._coyote: CoyoteSimController | None = None
         self._snapshots: dict[str, dict[str, Any]] = {}
         self._vcd_state: dict[str, Any] | None = None
+        self._sim_advance_hook: Callable[[str, str], None] | None = None
 
     def _debug_enabled(self) -> bool:
         value = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
@@ -346,18 +347,26 @@ if {{[catch {{
         return self.request(build_proc_request("xdb_api_time"))
 
     def run(self, tokens: list[str]) -> dict[str, Any]:
-        return self.request(build_proc_request("xdb_api_run", tokens))
+        result = self.request(build_proc_request("xdb_api_run", tokens))
+        self._notify_sim_advance(result)
+        return result
 
     def restart(self) -> dict[str, Any]:
-        return self.request(build_proc_request("xdb_api_restart"))
+        result = self.request(build_proc_request("xdb_api_restart"))
+        self._notify_sim_advance(result)
+        return result
 
     def step(
         self, count: int | None = None, time_tokens: list[str] | None = None
     ) -> dict[str, Any]:
         if time_tokens:
-            return self.request(build_proc_request("xdb_api_step_time", time_tokens))
+            result = self.request(build_proc_request("xdb_api_step_time", time_tokens))
+            self._notify_sim_advance(result)
+            return result
         step_count = count or 1
-        return self.request(build_proc_request("xdb_api_step_count", step_count))
+        result = self.request(build_proc_request("xdb_api_step_count", step_count))
+        self._notify_sim_advance(result)
+        return result
 
     def wait_until(
         self,
@@ -400,6 +409,14 @@ if {{[catch {{
             ),
             timeout=request_timeout,
         )
+
+    def _notify_sim_advance(self, result: dict[str, Any]) -> None:
+        if self._sim_advance_hook is None:
+            return
+        before = str(result.get("time_before") or "")
+        after = str(result.get("time_after") or "")
+        if before and after and before != after:
+            self._sim_advance_hook(before, after)
 
     def shutdown(self) -> None:
         try:

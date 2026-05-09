@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping, cast
 
 from ..errors import XdbError
+from .coyote import parse_hex_bytes
 from .protocol import (
     OP_ASSERT_SIGNAL,
     OP_ASSERT_TCL,
@@ -55,6 +57,7 @@ from .protocol import (
     OP_TRACE_EVENTS_GET,
     OP_TRACE_TRANSACTIONS,
     OP_UNTIL,
+    OP_WITH_TRACE,
     OP_UNTIL_SIGNAL,
     OP_VCD_START,
     OP_VCD_STATUS,
@@ -1091,17 +1094,164 @@ def trace_events_get_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_TRACE_EVENTS_GET))
 
 
-def _normalize_with_trace_command(command: list[str]) -> list[str]:
+def _parse_with_trace_command(command: list[str]) -> SimRequest:
     if not command:
         raise XdbError("missing command after '--'")
-    normalized = list(command)
-    if normalized and normalized[0] == "--":
-        normalized = normalized[1:]
-    if not normalized:
-        raise XdbError("missing command after '--'")
-    if normalized[0] == "xdb":
-        return [sys.executable, "-m", "xdb.cli", *normalized[1:]]
-    return normalized
+    tokens = list(command)
+    if tokens and tokens[0] == "--":
+        tokens = tokens[1:]
+    if tokens[:2] == ["xdb", "sim"]:
+        tokens = tokens[2:]
+    elif tokens[:1] == ["sim"]:
+        tokens = tokens[1:]
+    else:
+        raise XdbError("with-trace currently only supports wrapped 'xdb sim ...' commands")
+    if not tokens:
+        raise XdbError("missing wrapped 'xdb sim' subcommand")
+
+    subcommand, rest = tokens[0], tokens[1:]
+    if subcommand == "coyote-status":
+        if rest:
+            raise XdbError("xdb sim coyote-status does not accept extra arguments in with-trace")
+        return make_request(OP_COYOTE_STATUS)
+    if subcommand == "clear-completed":
+        if rest:
+            raise XdbError("xdb sim clear-completed does not accept extra arguments in with-trace")
+        return make_request(OP_CLEAR_COMPLETED)
+    if subcommand == "invoke":
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument("opcode")
+        parser.add_argument("--addr", default=None)
+        parser.add_argument("--len", dest="length", default=None)
+        parser.add_argument("--stream", default="host")
+        parser.add_argument("--dest", default="0")
+        parser.add_argument("--last", default=True)
+        parser.add_argument("--src-addr", default=None)
+        parser.add_argument("--src-len", default=None)
+        parser.add_argument("--src-stream", default="host")
+        parser.add_argument("--src-dest", default="0")
+        parser.add_argument("--dst-addr", default=None)
+        parser.add_argument("--dst-len", default=None)
+        parser.add_argument("--dst-stream", default="host")
+        parser.add_argument("--dst-dest", default="0")
+        ns = parser.parse_args(rest)
+        return make_request(
+            OP_INVOKE,
+            opcode=ns.opcode,
+            addr=None if ns.addr is None else int(ns.addr, 0),
+            length=None if ns.length is None else int(ns.length, 0),
+            stream_name=ns.stream,
+            dest=int(ns.dest, 0),
+            last=bool(ns.last),
+            src_addr=None if ns.src_addr is None else int(ns.src_addr, 0),
+            src_length=None if ns.src_len is None else int(ns.src_len, 0),
+            src_stream_name=ns.src_stream,
+            src_dest=int(ns.src_dest, 0),
+            dst_addr=None if ns.dst_addr is None else int(ns.dst_addr, 0),
+            dst_length=None if ns.dst_len is None else int(ns.dst_len, 0),
+            dst_stream_name=ns.dst_stream,
+            dst_dest=int(ns.dst_dest, 0),
+        )
+    if subcommand == "completed":
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument("opcode")
+        parser.add_argument("--count", type=int, default=None)
+        parser.add_argument("--timeout", type=float, default=None)
+        ns = parser.parse_args(rest)
+        return make_request(
+            OP_COMPLETED,
+            opcode=ns.opcode,
+            target_count=ns.count,
+            timeout_seconds=ns.timeout,
+        )
+    if subcommand == "irq" and rest[:1] == ["wait"]:
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument("wait")
+        parser.add_argument("--timeout", type=float, default=None)
+        ns = parser.parse_args(rest)
+        return make_request(OP_IRQ_WAIT, timeout_seconds=ns.timeout)
+    if subcommand == "csr":
+        if not rest:
+            raise XdbError("missing xdb sim csr subcommand")
+        csr_sub = rest[0]
+        parser = argparse.ArgumentParser(add_help=False)
+        if csr_sub == "read":
+            parser.add_argument("read")
+            parser.add_argument("addr")
+            parser.add_argument("--timeout", type=float, default=None)
+            ns = parser.parse_args(rest)
+            return make_request(
+                OP_CSR_READ,
+                addr=int(ns.addr, 0),
+                timeout_seconds=ns.timeout,
+            )
+        if csr_sub == "write":
+            parser.add_argument("write")
+            parser.add_argument("addr")
+            parser.add_argument("value")
+            ns = parser.parse_args(rest)
+            return make_request(OP_CSR_WRITE, addr=int(ns.addr, 0), value=int(ns.value, 0))
+        raise XdbError(f"unsupported xdb sim csr subcommand for with-trace: {csr_sub}")
+    if subcommand == "mem":
+        if not rest:
+            raise XdbError("missing xdb sim mem subcommand")
+        mem_sub = rest[0]
+        parser = argparse.ArgumentParser(add_help=False)
+        if mem_sub == "map":
+            parser.add_argument("map")
+            parser.add_argument("space")
+            parser.add_argument("addr")
+            parser.add_argument("size")
+            ns = parser.parse_args(rest)
+            return make_request(OP_MEM_MAP, space=ns.space, addr=int(ns.addr, 0), size=int(ns.size, 0))
+        if mem_sub == "unmap":
+            parser.add_argument("unmap")
+            parser.add_argument("space")
+            parser.add_argument("addr")
+            ns = parser.parse_args(rest)
+            return make_request(OP_MEM_UNMAP, space=ns.space, addr=int(ns.addr, 0))
+        if mem_sub == "list":
+            parser.add_argument("list")
+            parser.add_argument("space", nargs="?", default="host")
+            ns = parser.parse_args(rest)
+            return make_request(OP_MEM_LIST, space=ns.space)
+        if mem_sub == "reset":
+            parser.add_argument("reset")
+            parser.add_argument("space", nargs="?", default="host")
+            ns = parser.parse_args(rest)
+            return make_request(OP_MEM_RESET, space=ns.space)
+        if mem_sub == "read":
+            parser.add_argument("read")
+            parser.add_argument("space")
+            parser.add_argument("addr")
+            parser.add_argument("size")
+            ns = parser.parse_args(rest)
+            return make_request(OP_MEM_READ, space=ns.space, addr=int(ns.addr, 0), size=int(ns.size, 0))
+        if mem_sub == "write":
+            parser.add_argument("write")
+            parser.add_argument("space")
+            parser.add_argument("addr")
+            parser.add_argument("--hex", dest="hex_data", default=None)
+            parser.add_argument("--text", dest="text_data", default=None)
+            parser.add_argument("--file", default=None)
+            ns = parser.parse_args(rest)
+            data_bytes = b""
+            if ns.hex_data is not None:
+                data_bytes = parse_hex_bytes(ns.hex_data)
+            elif ns.text_data is not None:
+                data_bytes = ns.text_data.encode("utf-8")
+            elif ns.file is not None:
+                data_bytes = Path(ns.file).expanduser().read_bytes()
+            else:
+                raise XdbError("xdb sim mem write requires --hex, --text, or --file")
+            return make_request(
+                OP_MEM_WRITE,
+                space=ns.space,
+                addr=int(ns.addr, 0),
+                data_hex=data_bytes.hex(),
+            )
+        raise XdbError(f"unsupported xdb sim mem subcommand for with-trace: {mem_sub}")
+    raise XdbError(f"unsupported wrapped xdb sim subcommand for with-trace: {subcommand}")
 
 
 def with_trace_session(
@@ -1120,72 +1270,22 @@ def with_trace_session(
     axis_paths = list(axis_paths or [])
     if not transactions and not axis_paths:
         raise XdbError("with-trace requires at least one trace mode")
-
-    argv = _normalize_with_trace_command(command)
-    session_meta = require_live_meta(session_paths(session_name))
-    cwd = str(session_meta.get("anchor_dir") or Path.cwd())
-
-    if transactions:
-        trace_events_clear_session(session_name)
-
-    started_at = time.time()
-    try:
-        completed = subprocess.run(
-            argv,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError as e:
-        raise XdbError(f"command not found: {argv[0]}") from e
-    finished_at = time.time()
-
-    axis_result: dict[str, Any] | None = None
-    observation_result: dict[str, Any] | None = None
-    if axis_paths:
-        axis_result = _axis_trace_collect(
-            session_name,
-            axis_paths,
-            duration_tokens,
+    action_request = _parse_with_trace_command(command)
+    return _send_request(
+        session_name,
+        make_request(
+            OP_WITH_TRACE,
+            action_request=action_request,
+            duration_tokens=duration_tokens,
             step_tokens=step_tokens,
+            transactions=transactions,
+            axis_paths=axis_paths,
             decode_bytes=decode_bytes,
             lane_order=lane_order,
             include_idle=include_idle,
             only_handshakes=only_handshakes,
-        )
-    elif transactions:
-        run_result = run_session(session_name, duration_tokens)
-        observation_result = {
-            "time_before": str(run_result.get("time_before") or ""),
-            "time_after": str(run_result.get("time_after") or ""),
-            "duration": " ".join(duration_tokens),
-        }
-
-    result: dict[str, Any] = {
-        "command": {
-            "argv": argv,
-            "cwd": cwd,
-            "exit_code": int(completed.returncode),
-            "ok": completed.returncode == 0,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-            "started_at": started_at,
-            "finished_at": finished_at,
-            "duration_seconds": max(0.0, finished_at - started_at),
-        },
-        "duration": " ".join(duration_tokens),
-        "step": " ".join(step_tokens),
-        "transactions_enabled": bool(transactions),
-        "axis_interfaces": axis_paths,
-    }
-    if transactions:
-        result["transactions"] = trace_events_get_session(session_name)
-    if axis_result is not None:
-        result["axis"] = axis_result
-    if observation_result is not None:
-        result["observation"] = observation_result
-    return result
+        ),
+    )
 
 
 def snapshot_session(

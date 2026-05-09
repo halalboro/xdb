@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import signal
 import socket
 import traceback
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
@@ -51,6 +54,7 @@ from .protocol import (
     OP_TRACE_EVENTS_GET,
     OP_TRACE_TRANSACTIONS,
     OP_UNTIL,
+    OP_WITH_TRACE,
     OP_UNTIL_SIGNAL,
     OP_VCD_START,
     OP_VCD_STATUS,
@@ -76,6 +80,62 @@ def _arg_optional_int(args: dict[str, Any], name: str) -> int | None:
 def _arg_optional_float(args: dict[str, Any], name: str) -> float | None:
     value = args.get(name)
     return None if value is None else float(value)
+
+
+_SIM_TIME_UNITS = {
+    "fs": Decimal("1e-15"),
+    "ps": Decimal("1e-12"),
+    "ns": Decimal("1e-9"),
+    "us": Decimal("1e-6"),
+    "ms": Decimal("1e-3"),
+    "s": Decimal("1"),
+}
+
+_AXIS_REQUIRED_SIGNALS = ("tvalid", "tready", "tdata")
+_AXIS_OPTIONAL_SIGNALS = ("tkeep", "tlast", "tid")
+
+
+def _parse_sim_time(text: str) -> Decimal:
+    normalized = text.strip()
+    match = re.match(r"^([0-9]+(?:\.[0-9]*)?)\s*([a-zA-Z]+)$", normalized)
+    if not match:
+        raise XdbError(f"unsupported simulation time format: {text!r}")
+    value = Decimal(match.group(1))
+    unit = match.group(2).lower()
+    if unit not in _SIM_TIME_UNITS:
+        raise XdbError(f"unsupported simulation time unit: {unit!r}")
+    return value * _SIM_TIME_UNITS[unit]
+
+
+def _parse_duration_tokens(tokens: list[str]) -> tuple[str, Decimal]:
+    joined = " ".join(token.strip() for token in tokens if token.strip())
+    if not joined:
+        raise XdbError("missing duration")
+    return joined, _parse_sim_time(joined)
+
+
+def _parse_logic_int(value: str) -> tuple[int | None, int | None]:
+    normalized = value.strip().replace("_", "")
+    if not normalized:
+        return None, None
+    sized = re.match(r"^([0-9]+)'([bBoOdDhH])([0-9a-fA-FxXzZ]+)$", normalized)
+    if sized:
+        width = int(sized.group(1))
+        radix = sized.group(2).lower()
+        digits = sized.group(3)
+        if re.search(r"[xXzZ]", digits):
+            return None, width
+        base = {"b": 2, "o": 8, "d": 10, "h": 16}[radix]
+        return int(digits, base), width
+    if re.search(r"[xXzZ]", normalized):
+        return None, None
+    if re.fullmatch(r"[01]+", normalized):
+        return int(normalized, 2), len(normalized)
+    if re.fullmatch(r"[0-9]+", normalized):
+        return int(normalized, 10), None
+    if re.fullmatch(r"[0-9a-fA-F]+", normalized):
+        return int(normalized, 16), None
+    return None, None
 
 
 class SimDaemon:
@@ -228,6 +288,236 @@ class SimDaemon:
                 break
             chunks.append(data)
         return b"".join(chunks)
+
+    def _axis_child_signal_map(self, interface_path: str) -> dict[str, dict[str, Any]]:
+        result = self.driver.objects(interface_path)
+        metadata = [
+            cast(dict[str, Any], item)
+            for item in list(result.get("metadata") or [])
+            if isinstance(item, dict)
+        ]
+        signal_map: dict[str, dict[str, Any]] = {}
+        for item in metadata:
+            path = str(item.get("path") or "")
+            base = path.rsplit("/", 1)[-1].lower()
+            if base in {*_AXIS_REQUIRED_SIGNALS, *_AXIS_OPTIONAL_SIGNALS}:
+                signal_map[base] = item
+        missing = [name for name in _AXIS_REQUIRED_SIGNALS if name not in signal_map]
+        if missing:
+            raise XdbError(
+                f"AXIS interface {interface_path!r} is missing required signals: {', '.join(missing)}"
+            )
+        return signal_map
+
+    @staticmethod
+    def _axis_signal_value_map(
+        signal_metadata: dict[str, dict[str, Any]],
+        sampled_signals: list[dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        by_path = {
+            str(item.get("path") or ""): item
+            for item in sampled_signals
+            if isinstance(item, dict) and item.get("path")
+        }
+        return {
+            name: cast(dict[str, Any], by_path.get(str(meta.get("path") or ""), meta))
+            for name, meta in signal_metadata.items()
+        }
+
+    @staticmethod
+    def _axis_decode_bytes(
+        signal_values: dict[str, dict[str, Any]], lane_order: str
+    ) -> tuple[list[str] | None, list[str] | None, int | None]:
+        tdata = signal_values.get("tdata") or {}
+        tkeep = signal_values.get("tkeep") or {}
+        data_value, parsed_data_width = _parse_logic_int(str(tdata.get("value") or ""))
+        keep_value, parsed_keep_width = _parse_logic_int(str(tkeep.get("value") or ""))
+        meta_data_width = tdata.get("width")
+        data_width = int(meta_data_width) if isinstance(meta_data_width, int) else parsed_data_width
+        lane_count = None
+        if isinstance(data_width, int) and data_width > 0:
+            lane_count = max(1, math.ceil(data_width / 8))
+        elif isinstance(parsed_keep_width, int) and parsed_keep_width > 0:
+            lane_count = parsed_keep_width
+        if lane_count is None or lane_count <= 0 or data_value is None:
+            return None, None, data_width
+        bytes_low_to_high = [f"{(data_value >> (8 * i)) & 0xFF:02x}" for i in range(lane_count)]
+        keep_bits_low_to_high = [
+            True if keep_value is None else bool((keep_value >> i) & 1) for i in range(lane_count)
+        ]
+        if lane_order == "high-to-low":
+            ordered_bytes = list(reversed(bytes_low_to_high))
+            ordered_keep = list(reversed(keep_bits_low_to_high))
+        else:
+            ordered_bytes = bytes_low_to_high
+            ordered_keep = keep_bits_low_to_high
+        valid_bytes = [byte for byte, keep in zip(ordered_bytes, ordered_keep) if keep]
+        return ordered_bytes, valid_bytes, data_width
+
+    def _axis_record(
+        self,
+        *,
+        interface_path: str,
+        time_text: str,
+        signal_values: dict[str, dict[str, Any]],
+        beat_index: int | None,
+        lane_order: str,
+        decode_bytes: bool,
+    ) -> dict[str, Any]:
+        tvalid = str((signal_values.get("tvalid") or {}).get("value") or "")
+        tready = str((signal_values.get("tready") or {}).get("value") or "")
+        record: dict[str, Any] = {
+            "interface": interface_path,
+            "time": time_text,
+            "handshake": tvalid == "1" and tready == "1",
+            "tvalid": tvalid,
+            "tready": tready,
+            "tdata": str((signal_values.get("tdata") or {}).get("value") or ""),
+            "tkeep": str((signal_values.get("tkeep") or {}).get("value") or ""),
+            "tlast": str((signal_values.get("tlast") or {}).get("value") or ""),
+            "tid": str((signal_values.get("tid") or {}).get("value") or ""),
+        }
+        if beat_index is not None:
+            record["beat_index"] = beat_index
+        if decode_bytes:
+            decoded_bytes, valid_bytes, width_bits = self._axis_decode_bytes(signal_values, lane_order)
+            record["lane_order"] = lane_order
+            record["data_width_bits"] = width_bits
+            record["bytes"] = decoded_bytes
+            record["valid_bytes"] = valid_bytes
+        return record
+
+    def _with_trace(self, args: dict[str, Any]) -> dict[str, Any]:
+        action_request = cast(dict[str, Any], args.get("action_request") or {})
+        action_op = str(action_request.get("op") or "")
+        action_args = cast(dict[str, Any], action_request.get("args") or {})
+        if action_op not in {
+            OP_INVOKE,
+            OP_MEM_MAP,
+            OP_MEM_UNMAP,
+            OP_MEM_LIST,
+            OP_MEM_RESET,
+            OP_MEM_WRITE,
+            OP_MEM_READ,
+            OP_CSR_READ,
+            OP_CSR_WRITE,
+            OP_COMPLETED,
+            OP_CLEAR_COMPLETED,
+            OP_IRQ_WAIT,
+            OP_COYOTE_STATUS,
+        }:
+            raise XdbError(
+                f"with-trace currently supports a limited set of 'xdb sim' commands; unsupported op: {action_op}"
+            )
+
+        duration_tokens = [str(v) for v in list(args.get("duration_tokens") or []) if str(v)]
+        step_tokens = [str(v) for v in list(args.get("step_tokens") or []) if str(v)]
+        if not duration_tokens:
+            raise XdbError("missing trace duration")
+        if not step_tokens:
+            raise XdbError("missing trace step")
+        _duration_text, duration_value = _parse_duration_tokens(duration_tokens)
+        _step_text, step_value = _parse_duration_tokens(step_tokens)
+        if duration_value <= 0 or step_value <= 0:
+            raise XdbError("trace duration and step must be > 0")
+
+        transactions = bool(args.get("transactions"))
+        axis_paths = [str(v) for v in list(args.get("axis_paths") or []) if str(v)]
+        decode_bytes = bool(args.get("decode_bytes"))
+        lane_order = str(args.get("lane_order") or "low-to-high")
+        include_idle = bool(args.get("include_idle"))
+        only_handshakes = bool(args.get("only_handshakes"))
+
+        axis_interfaces = {path: self._axis_child_signal_map(path) for path in axis_paths}
+        axis_signal_paths = [
+            str(meta.get("path") or "")
+            for signal_map in axis_interfaces.values()
+            for meta in signal_map.values()
+            if str(meta.get("path") or "")
+        ]
+        axis_records: list[dict[str, Any]] = []
+        beat_counts = {path: 0 for path in axis_paths}
+
+        def sample_axis(time_text: str) -> None:
+            if not axis_paths:
+                return
+            sampled = self.driver.read_signals(axis_signal_paths)
+            sampled_signals = [
+                cast(dict[str, Any], item)
+                for item in list(sampled.get("signals") or [])
+                if isinstance(item, dict)
+            ]
+            for interface_path, signal_map in axis_interfaces.items():
+                signal_values = self._axis_signal_value_map(signal_map, sampled_signals)
+                tvalid = str((signal_values.get("tvalid") or {}).get("value") or "")
+                tready = str((signal_values.get("tready") or {}).get("value") or "")
+                handshake = tvalid == "1" and tready == "1"
+                if only_handshakes and not handshake:
+                    continue
+                if not include_idle and not handshake:
+                    continue
+                beat_index = None
+                if handshake:
+                    beat_index = beat_counts[interface_path]
+                    beat_counts[interface_path] += 1
+                axis_records.append(
+                    self._axis_record(
+                        interface_path=interface_path,
+                        time_text=time_text,
+                        signal_values=signal_values,
+                        beat_index=beat_index,
+                        lane_order=lane_order,
+                        decode_bytes=decode_bytes,
+                    )
+                )
+
+        time_before = str(self.driver.time().get("time") or "")
+        current_time_value = _parse_sim_time(time_before)
+        end_time_value = current_time_value + duration_value
+        if transactions:
+            self.driver.trace_events_clear()
+        sample_axis(time_before)
+        previous_hook = self.driver._sim_advance_hook
+        self.driver._sim_advance_hook = lambda _before, after: sample_axis(after)
+        try:
+            action_result = self._dispatch(action_op, action_args)
+            iterations = 0
+            while current_time_value < end_time_value:
+                run_result = self.driver.run(step_tokens)
+                current_time_text = str(run_result.get("time_after") or "")
+                current_time_value = _parse_sim_time(current_time_text)
+                iterations += 1
+            time_after = str(self.driver.time().get("time") or "")
+        finally:
+            self.driver._sim_advance_hook = previous_hook
+
+        result: dict[str, Any] = {
+            "action": {
+                "op": action_op,
+                "args": action_args,
+                "result": action_result,
+            },
+            "duration": " ".join(duration_tokens),
+            "step": " ".join(step_tokens),
+            "time_before": time_before,
+            "time_after": time_after,
+        }
+        if transactions:
+            result["transactions"] = self.driver.trace_events_get()
+        if axis_paths:
+            result["axis"] = {
+                "interfaces": axis_paths,
+                "duration": " ".join(duration_tokens),
+                "step": " ".join(step_tokens),
+                "time_before": time_before,
+                "time_after": time_after,
+                "decode_bytes": decode_bytes,
+                "lane_order": lane_order,
+                "include_idle": include_idle,
+                "only_handshakes": only_handshakes,
+                "records": axis_records,
+            }
+        return result
 
     def _dispatch(self, op: str, args: dict[str, Any]) -> dict[str, Any]:
         if op == OP_STATUS:
@@ -474,6 +764,8 @@ class SimDaemon:
             return self.driver.trace_events_clear()
         if op == OP_TRACE_EVENTS_GET:
             return self.driver.trace_events_get()
+        if op == OP_WITH_TRACE:
+            return self._with_trace(args)
         if op == OP_TRACE_TRANSACTIONS:
             duration_tokens = [str(v) for v in list(args.get("duration_tokens") or [])]
             if not duration_tokens:

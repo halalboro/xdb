@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -10,34 +9,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb.errors import XdbError
 from xdb.sim.client import with_trace_session
+from xdb.sim.protocol import OP_INVOKE, OP_MEM_WRITE, OP_WITH_TRACE
 
 
 class WithTraceTests(unittest.TestCase):
-    def test_with_trace_wraps_xdb_command_and_collects_axis_and_transactions(self) -> None:
-        completed = subprocess.CompletedProcess(
-            ["xdb", "sim", "invoke"],
-            0,
-            stdout="issued\n",
-            stderr="",
-        )
-        with (
-            patch("xdb.sim.client.session_paths", return_value=object()),
-            patch("xdb.sim.client.require_live_meta", return_value={"anchor_dir": "/repo"}),
-            patch("xdb.sim.client.trace_events_clear_session") as clear_trace,
-            patch(
-                "xdb.sim.client.trace_events_get_session",
-                return_value={"event_count": 1, "events": [{"type": "invoke"}]},
-            ),
-            patch(
-                "xdb.sim.client._axis_trace_collect",
-                return_value={"records": [{"time": "1 ns", "handshake": True}]},
-            ) as axis_collect,
-            patch("xdb.sim.client.subprocess.run", return_value=completed) as run_cmd,
-            patch("xdb.sim.client.time.time", side_effect=[10.0, 10.25]),
-        ):
+    def test_with_trace_wraps_xdb_sim_command_into_daemon_request(self) -> None:
+        with patch(
+            "xdb.sim.client._send_request",
+            return_value={"ok": True, "transactions": {"event_count": 1}},
+        ) as send_request:
             result = with_trace_session(
                 None,
-                ["xdb", "sim", "invoke", "local-transfer"],
+                ["xdb", "sim", "invoke", "local-transfer", "--src-addr", "0x1000", "--dst-addr", "0x2000", "--len", "4"],
                 ["10", "ns"],
                 step_tokens=["1", "ns"],
                 transactions=True,
@@ -45,55 +28,42 @@ class WithTraceTests(unittest.TestCase):
                 decode_bytes=True,
             )
 
-        clear_trace.assert_called_once_with(None)
-        axis_collect.assert_called_once()
-        run_cmd.assert_called_once_with(
-            [sys.executable, "-m", "xdb.cli", "sim", "invoke", "local-transfer"],
-            cwd="/repo",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(result["command"]["exit_code"], 0)
-        self.assertEqual(result["command"]["stdout"], "issued\n")
-        self.assertAlmostEqual(result["command"]["duration_seconds"], 0.25)
-        self.assertEqual(result["transactions"]["event_count"], 1)
-        self.assertIn("axis", result)
-        self.assertEqual(result["axis"]["records"][0]["time"], "1 ns")
+        self.assertTrue(result["ok"])
+        request = send_request.call_args.args[1]
+        self.assertEqual(request["op"], OP_WITH_TRACE)
+        self.assertEqual(request["args"]["duration_tokens"], ["10", "ns"])
+        self.assertEqual(request["args"]["step_tokens"], ["1", "ns"])
+        self.assertTrue(request["args"]["transactions"])
+        self.assertEqual(request["args"]["axis_paths"], ["/tb_top/dut/axis_host_recv[0]"])
+        action_request = request["args"]["action_request"]
+        self.assertEqual(action_request["op"], OP_INVOKE)
+        self.assertEqual(action_request["args"]["opcode"], "local-transfer")
+        self.assertEqual(action_request["args"]["src_addr"], 0x1000)
+        self.assertEqual(action_request["args"]["dst_addr"], 0x2000)
+        self.assertEqual(action_request["args"]["length"], 4)
 
-    def test_with_trace_transactions_only_runs_observation_window(self) -> None:
-        completed = subprocess.CompletedProcess(["echo", "ok"], 0, stdout="ok\n", stderr="")
-        with (
-            patch("xdb.sim.client.session_paths", return_value=object()),
-            patch("xdb.sim.client.require_live_meta", return_value={"anchor_dir": "/repo"}),
-            patch("xdb.sim.client.trace_events_clear_session"),
-            patch(
-                "xdb.sim.client.trace_events_get_session",
-                return_value={"event_count": 0, "events": []},
-            ),
-            patch(
-                "xdb.sim.client.run_session",
-                return_value={"time_before": "5 ns", "time_after": "15 ns"},
-            ) as run_session,
-            patch("xdb.sim.client.subprocess.run", return_value=completed),
-            patch("xdb.sim.client.time.time", side_effect=[20.0, 20.1]),
-        ):
-            result = with_trace_session(
+    def test_with_trace_supports_mem_write_payload_parsing(self) -> None:
+        with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
+            with_trace_session(
                 None,
-                ["echo", "ok"],
-                ["10", "ns"],
+                ["xdb", "sim", "mem", "write", "host", "0x1000", "--hex", "deadbeef"],
+                ["5", "ns"],
                 step_tokens=["1", "ns"],
                 transactions=True,
             )
 
-        run_session.assert_called_once_with(None, ["10", "ns"])
-        self.assertNotIn("axis", result)
-        self.assertEqual(result["observation"]["time_before"], "5 ns")
-        self.assertEqual(result["observation"]["time_after"], "15 ns")
+        request = send_request.call_args.args[1]
+        self.assertEqual(request["op"], OP_WITH_TRACE)
+        self.assertEqual(request["args"]["action_request"]["op"], OP_MEM_WRITE)
+        self.assertEqual(request["args"]["action_request"]["args"]["data_hex"], "deadbeef")
+
+    def test_with_trace_rejects_non_xdb_sim_commands(self) -> None:
+        with self.assertRaises(XdbError):
+            with_trace_session(None, ["echo", "ok"], ["10", "ns"], step_tokens=["1", "ns"], transactions=True)
 
     def test_with_trace_requires_a_trace_mode(self) -> None:
         with self.assertRaises(XdbError):
-            with_trace_session(None, ["echo", "ok"], ["10", "ns"], step_tokens=["1", "ns"])
+            with_trace_session(None, ["xdb", "sim", "coyote-status"], ["10", "ns"], step_tokens=["1", "ns"])
 
 
 if __name__ == "__main__":
