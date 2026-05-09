@@ -107,14 +107,17 @@
           xdb = {
             type = "app";
             program = "${ultrascaleEnv}/bin/xdb";
+            meta.description = "Run xdb with the default Ultrascale simulation/debug dependencies";
           };
           xdb-ultrascale = {
             type = "app";
             program = "${ultrascaleEnv}/bin/xdb";
+            meta.description = "Run xdb with Ultrascale simulation/debug dependencies";
           };
           xdb-versal = {
             type = "app";
             program = "${versalEnv}/bin/xdb";
+            meta.description = "Run xdb with Versal simulation/debug dependencies";
           };
         };
 
