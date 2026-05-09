@@ -4,6 +4,7 @@ import json
 import os
 import signal
 import socket
+import threading
 import traceback
 from pathlib import Path
 from typing import Any, cast
@@ -201,6 +202,8 @@ class SimDaemon:
                 raise
             with conn:
                 response = self._handle_connection(conn)
+                if bool(response.get("_streamed_response")):
+                    continue
                 conn.sendall(json.dumps(response).encode("utf-8"))
                 if bool((response.get("result") or {}).get("_shutdown")):
                     self._stop = True
@@ -210,10 +213,12 @@ class SimDaemon:
         try:
             payload = self._recv_all(conn)
             req = cast(dict[str, Any], json.loads(payload.decode("utf-8")))
-            result = self._dispatch(
-                str(req.get("op") or ""),
-                cast(dict[str, Any], req.get("args") or {}),
-            )
+            op = str(req.get("op") or "")
+            args = cast(dict[str, Any], req.get("args") or {})
+            if op == OP_WITH_TRACE and bool(args.get("exec_stream_output")):
+                self._handle_streaming_with_trace(conn, args)
+                return {"_streamed_response": True}
+            result = self._dispatch(op, args)
             return {"ok": True, "result": result}
         except Exception as e:
             return {
@@ -221,6 +226,36 @@ class SimDaemon:
                 "error": str(e),
                 "traceback": traceback.format_exc(),
             }
+
+    def _handle_streaming_with_trace(self, conn: socket.socket, args: dict[str, Any]) -> None:
+        send_lock = threading.Lock()
+
+        def send_frame(frame: dict[str, Any]) -> None:
+            with send_lock:
+                conn.sendall((json.dumps(frame) + "\n").encode("utf-8"))
+
+        def stream_callback(stream_name: str, data: str) -> None:
+            send_frame({"type": "stream", "stream": stream_name, "data": data})
+
+        try:
+            result = WithTraceRunner(
+                self.driver,
+                self._dispatch,
+                meta=self.meta,
+                stream_callback=stream_callback,
+            ).run(args)
+            send_frame({"type": "response", "response": {"ok": True, "result": result}})
+        except Exception as e:
+            send_frame(
+                {
+                    "type": "response",
+                    "response": {
+                        "ok": False,
+                        "error": str(e),
+                        "traceback": traceback.format_exc(),
+                    },
+                }
+            )
 
     @staticmethod
     def _recv_all(conn: socket.socket) -> bytes:

@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
-import tempfile
+import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Mapping, cast
+from typing import IO, Any, Callable, Mapping, cast
 
 from xdb.errors import XdbError
 from xdb.sim.axis_trace import AxisTraceSampler
@@ -87,10 +87,12 @@ class WithTraceRunner:
         dispatch: Callable[[str, dict[str, Any]], dict[str, Any]],
         *,
         meta: Mapping[str, object] | None = None,
+        stream_callback: Callable[[str, str], None] | None = None,
     ):
         self.driver = driver
         self.dispatch = dispatch
         self.meta = meta or {}
+        self.stream_callback = stream_callback
 
     def run(self, args: dict[str, Any]) -> dict[str, Any]:
         exec_command = [str(v) for v in list(args.get("exec_command") or []) if str(v)]
@@ -167,6 +169,7 @@ class WithTraceRunner:
                     expect_exit_code=int(args.get("exec_expect_exit_code") or 0),
                     clean_env=bool(args.get("exec_clean_env")),
                     base_env=cast(Mapping[str, object], args.get("exec_base_env") or {}),
+                    stream_output=bool(args.get("exec_stream_output")),
                 )
             else:
                 action_result = self._with_trace_action(action_op, action_args, step_tokens)
@@ -222,6 +225,27 @@ class WithTraceRunner:
             )
         return result
 
+    def _start_exec_stream_reader(
+        self,
+        pipe: IO[str],
+        stream_name: str,
+        chunks: list[str],
+        *,
+        stream_output: bool,
+    ) -> threading.Thread:
+        def read_pipe() -> None:
+            try:
+                for line in pipe:
+                    chunks.append(line)
+                    if stream_output and self.stream_callback is not None:
+                        self.stream_callback(stream_name, line)
+            finally:
+                pipe.close()
+
+        thread = threading.Thread(target=read_pipe, daemon=True)
+        thread.start()
+        return thread
+
     def _with_trace_exec_action(
         self,
         command: list[str],
@@ -233,6 +257,7 @@ class WithTraceRunner:
         expect_exit_code: int,
         clean_env: bool,
         base_env: Mapping[str, object],
+        stream_output: bool = False,
     ) -> dict[str, Any]:
         session_name = str(self.meta.get("session_name") or "default")
         session_env = derive_sim_exec_env(self.meta, session_name)
@@ -245,47 +270,57 @@ class WithTraceRunner:
         started_seconds = time.time()
         timed_out = False
         exit_code: int | None = None
-        stdout = ""
-        stderr = ""
-        with (
-            tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stdout_file,
-            tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file,
-        ):
-            try:
-                proc = subprocess.Popen(
-                    command,
-                    cwd=run_cwd,
-                    env=run_env,
-                    stdout=stdout_file,
-                    stderr=stderr_file,
-                    text=True,
-                    start_new_session=True,
-                )
-            except FileNotFoundError as e:
-                raise XdbError(f"command not found: {command[0]}") from e
-            try:
-                while proc.poll() is None:
-                    if timeout_seconds is not None and time.time() - started_seconds >= timeout_seconds:
-                        timed_out = True
-                        _terminate_process_group(proc)
-                        proc.wait(timeout=5)
-                        break
-                    self.driver.run(step_tokens)
-                if proc.poll() is None:
-                    proc.wait()
-            except BaseException:
-                if proc.poll() is None:
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+        try:
+            proc = subprocess.Popen(
+                command,
+                cwd=run_cwd,
+                env=run_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+        except FileNotFoundError as e:
+            raise XdbError(f"command not found: {command[0]}") from e
+        assert proc.stdout is not None
+        assert proc.stderr is not None
+        stdout_thread = self._start_exec_stream_reader(
+            proc.stdout,
+            "stdout",
+            stdout_chunks,
+            stream_output=stream_output,
+        )
+        stderr_thread = self._start_exec_stream_reader(
+            proc.stderr,
+            "stderr",
+            stderr_chunks,
+            stream_output=stream_output,
+        )
+        try:
+            while proc.poll() is None:
+                if timeout_seconds is not None and time.time() - started_seconds >= timeout_seconds:
+                    timed_out = True
                     _terminate_process_group(proc)
-                    try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                raise
-            exit_code = int(proc.returncode) if proc.returncode is not None else None
-            stdout_file.seek(0)
-            stderr_file.seek(0)
-            stdout = stdout_file.read()
-            stderr = stderr_file.read()
+                    proc.wait(timeout=5)
+                    break
+                self.driver.run(step_tokens)
+            if proc.poll() is None:
+                proc.wait()
+        except BaseException:
+            if proc.poll() is None:
+                _terminate_process_group(proc)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            raise
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+        exit_code = int(proc.returncode) if proc.returncode is not None else None
+        stdout = "".join(stdout_chunks)
+        stderr = "".join(stderr_chunks)
         finished_seconds = time.time()
         return {
             "kind": "exec",
@@ -299,6 +334,7 @@ class WithTraceRunner:
             "stdout": stdout,
             "stderr": stderr,
             "duration_seconds": max(0.0, finished_seconds - started_seconds),
+            "streamed": stream_output,
         }
 
     def _run_duration_sampled(

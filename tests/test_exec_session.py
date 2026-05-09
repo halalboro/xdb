@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import subprocess
+import json
+import os
 import sys
 import tempfile
 import unittest
@@ -33,66 +34,64 @@ class ExecSessionTests(unittest.TestCase):
                 "mode": "behavioral",
                 "state": "ready",
             }
-            completed = subprocess.CompletedProcess(
-                ["host-test", "--input", "0102"],
-                0,
-                stdout="ok\n",
-                stderr="",
-            )
             old_cwd = Path.cwd()
             try:
-                import os
-
                 os.chdir(repo)
                 with (
                     patch("xdb.sim.client.require_live_meta", return_value=meta),
-                    patch("xdb.sim.client.subprocess.run", return_value=completed) as run_cmd,
                     patch("xdb.sim.client.time.time", side_effect=[10.0, 10.25]),
                     patch("xdb.sim.client._now_iso", side_effect=["start", "finish"]),
                 ):
                     result = exec_session(
                         "versal",
-                        ["--", "host-test", "--input", "0102"],
+                        [
+                            sys.executable,
+                            "-c",
+                            (
+                                "import json, os; "
+                                "print(json.dumps({k: os.environ[k] for k in "
+                                "['XDB_SIM_SESSION', 'XDB_SIM_RUNTIME_ROOT', "
+                                "'XDB_SIM_WORK_DIR', 'COYOTE_SIM_DIR', 'EXTRA']}))"
+                            ),
+                        ],
                         env_overrides=["EXTRA=1"],
                     )
             finally:
                 os.chdir(old_cwd)
 
-        run_kwargs = run_cmd.call_args.kwargs
-        self.assertEqual(run_cmd.call_args.args[0], ["host-test", "--input", "0102"])
-        self.assertEqual(run_kwargs["cwd"], str(repo))
-        self.assertEqual(run_kwargs["env"]["XDB_SIM_SESSION"], "versal")
-        self.assertEqual(run_kwargs["env"]["XDB_SIM_RUNTIME_ROOT"], str(runtime_root))
-        self.assertEqual(run_kwargs["env"]["XDB_SIM_WORK_DIR"], str(work_dir))
-        self.assertEqual(run_kwargs["env"]["COYOTE_SIM_DIR"], str(runtime_root))
-        self.assertEqual(run_kwargs["env"]["EXTRA"], "1")
+        env = json.loads(result["stdout"])
+        self.assertEqual(env["XDB_SIM_SESSION"], "versal")
+        self.assertEqual(env["XDB_SIM_RUNTIME_ROOT"], str(runtime_root))
+        self.assertEqual(env["XDB_SIM_WORK_DIR"], str(work_dir))
+        self.assertEqual(env["COYOTE_SIM_DIR"], str(runtime_root))
+        self.assertEqual(env["EXTRA"], "1")
         self.assertTrue(result["ok"])
         self.assertEqual(result["exit_code"], 0)
-        self.assertEqual(result["stdout"], "ok\n")
         self.assertEqual(result["duration_seconds"], 0.25)
         self.assertEqual(result["env"]["EXTRA"], "1")
         self.assertEqual(result["session"]["name"], "versal")
+        self.assertFalse(result["streamed"])
 
     def test_exec_session_timeout_returns_structured_failure(self) -> None:
-        with (
-            patch(
-                "xdb.sim.client.require_live_meta",
-                return_value={"anchor_dir": "/repo", "runtime_root": "/runtime", "state": "ready"},
-            ),
-            patch(
-                "xdb.sim.client.subprocess.run",
-                side_effect=subprocess.TimeoutExpired(["host"], 1.0, output="partial", stderr="late"),
-            ),
-            patch("xdb.sim.client.time.time", side_effect=[1.0, 2.5]),
-            patch("xdb.sim.client._now_iso", side_effect=["start", "finish"]),
-        ):
-            result = exec_session(None, ["host"], timeout_seconds=1.0)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch(
+                    "xdb.sim.client.require_live_meta",
+                    return_value={"anchor_dir": tmpdir, "runtime_root": "/runtime", "state": "ready"},
+                ),
+                patch("xdb.sim.client.time.time", side_effect=[1.0, 2.5]),
+                patch("xdb.sim.client._now_iso", side_effect=["start", "finish"]),
+            ):
+                result = exec_session(
+                    None,
+                    [sys.executable, "-c", "import time; print('partial', flush=True); time.sleep(5)"],
+                    timeout_seconds=0.1,
+                )
 
         self.assertFalse(result["ok"])
         self.assertTrue(result["timed_out"])
         self.assertIsNone(result["exit_code"])
-        self.assertEqual(result["stdout"], "partial")
-        self.assertEqual(result["stderr"], "late")
+        self.assertEqual(result["stdout"], "partial\n")
 
     def test_exec_session_rejects_bad_env_override(self) -> None:
         with patch("xdb.sim.client.require_live_meta", return_value={"anchor_dir": "/repo"}):

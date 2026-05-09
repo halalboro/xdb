@@ -752,6 +752,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_exec.add_argument("--timeout", type=float, default=None, help="wall-clock timeout in seconds")
     s_sim_exec.add_argument("--expect-exit-code", type=int, default=0)
     s_sim_exec.add_argument("--clean-env", action="store_true", help="do not inherit the current process environment")
+    s_sim_exec.add_argument("--stream", action="store_true", help="stream host stdout/stderr live to stderr while still capturing final JSON")
     s_sim_exec.add_argument("command", nargs=argparse.REMAINDER)
 
     s_sim_with_trace = sim_sub.add_parser("with-trace", help="run a command with scoped tracing")
@@ -766,6 +767,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_with_trace.add_argument("--timeout", type=float, default=None, help="wall-clock timeout for --exec command")
     s_sim_with_trace.add_argument("--expect-exit-code", type=int, default=0)
     s_sim_with_trace.add_argument("--clean-env", action="store_true", help="do not inherit current environment for --exec command")
+    s_sim_with_trace.add_argument("--stream", action="store_true", help="with --exec, stream host stdout/stderr live to stderr while tracing")
     s_sim_with_trace.add_argument("--for", dest="duration", nargs="+")
     s_sim_with_trace.add_argument("--step", nargs="+", default=["1", "ns"])
     s_sim_with_trace.add_argument("--decode-bytes", action="store_true")
@@ -1116,6 +1118,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         timeout_seconds=args.timeout,
                         expect_exit_code=args.expect_exit_code,
                         clean_env=bool(args.clean_env),
+                        stream_output=bool(args.stream),
                     )
                 )
             elif args.sim_cmd == "with-trace":
@@ -1143,6 +1146,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     exec_timeout_seconds=args.timeout,
                     exec_expect_exit_code=args.expect_exit_code,
                     exec_clean_env=bool(args.clean_env),
+                    exec_stream_output=bool(args.stream),
                 )
                 if args.ndjson:
                     _emit_text(_format_with_trace_ndjson(result), args.out)

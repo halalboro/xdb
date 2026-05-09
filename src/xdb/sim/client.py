@@ -8,6 +8,7 @@ import re
 import socket
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -134,6 +135,16 @@ def _send_request(
     return result
 
 
+def _emit_stream_line(stream_name: str, data: str) -> None:
+    prefix = f"[host {stream_name}] "
+    lines = data.splitlines(keepends=True) or [""]
+    for line in lines:
+        sys.stderr.write(prefix + line)
+        if line and not line.endswith("\n"):
+            sys.stderr.write("\n")
+    sys.stderr.flush()
+
+
 def _request_timeout_message(session_name: str, op: str, timeout_seconds: float | None) -> str:
     timeout_text = "the configured timeout" if timeout_seconds is None else f"{timeout_seconds:g}s"
     return (
@@ -142,6 +153,57 @@ def _request_timeout_message(session_name: str, op: str, timeout_seconds: float 
         "try 'xdb sim time' to check responsiveness, or recover with "
         "'xdb sim close' / 'xdb sim relaunch --fresh'."
     )
+
+
+def _send_streaming_request(session_name: str | None, request: SimRequest) -> dict[str, Any]:
+    paths = session_paths(session_name)
+    meta = require_live_meta(paths)
+    sock_path = str(meta.get("socket_path") or "")
+    if not sock_path:
+        raise XdbError(
+            f"simulation session socket missing for {paths.session_name!r}; run 'xdb sim launch' again"
+        )
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        try:
+            sock.connect(sock_path)
+            sock.sendall(json.dumps(request).encode("utf-8"))
+            sock.shutdown(socket.SHUT_WR)
+            buffer = ""
+            while True:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                buffer += chunk.decode("utf-8")
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    if not line:
+                        continue
+                    frame = cast(dict[str, Any], json.loads(line))
+                    frame_type = str(frame.get("type") or "")
+                    if frame_type == "stream":
+                        _emit_stream_line(str(frame.get("stream") or "stdout"), str(frame.get("data") or ""))
+                        continue
+                    if frame_type == "response":
+                        response = cast(dict[str, Any], frame.get("response") or {})
+                        if not response.get("ok", False):
+                            raise XdbError(str(response.get("error", "simulation request failed")))
+                        result = dict(response.get("result") or {})
+                        result.pop("_shutdown", None)
+                        return result
+            if buffer.strip():
+                frame = cast(dict[str, Any], json.loads(buffer))
+                if str(frame.get("type") or "") == "response":
+                    response = cast(dict[str, Any], frame.get("response") or {})
+                    if not response.get("ok", False):
+                        raise XdbError(str(response.get("error", "simulation request failed")))
+                    result = dict(response.get("result") or {})
+                    result.pop("_shutdown", None)
+                    return result
+        except FileNotFoundError as e:
+            raise XdbError(
+                f"simulation session socket missing for {paths.session_name!r}; run 'xdb sim launch' again"
+            ) from e
+    raise XdbError("simulation daemon closed streaming connection without a final response")
 
 
 def _recv_all(sock: socket.socket) -> bytes:
@@ -1207,6 +1269,27 @@ def trace_events_get_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_TRACE_EVENTS_GET))
 
 
+def _start_stream_reader(
+    pipe,
+    stream_name: str,
+    chunks: list[str],
+    *,
+    stream_output: bool,
+) -> threading.Thread:
+    def read_pipe() -> None:
+        try:
+            for line in pipe:
+                chunks.append(line)
+                if stream_output:
+                    _emit_stream_line(stream_name, line)
+        finally:
+            pipe.close()
+
+    thread = threading.Thread(target=read_pipe, daemon=True)
+    thread.start()
+    return thread
+
+
 def exec_session(
     session_name: str | None,
     command: list[str],
@@ -1216,6 +1299,7 @@ def exec_session(
     timeout_seconds: float | None = None,
     expect_exit_code: int = 0,
     clean_env: bool = False,
+    stream_output: bool = False,
 ) -> dict[str, Any]:
     argv = normalize_remainder_command(command)
     paths = session_paths(session_name)
@@ -1229,29 +1313,49 @@ def exec_session(
     run_cwd = resolve_exec_cwd(cwd, meta, paths.anchor_dir)
     started_at = _now_iso()
     started_seconds = time.time()
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
     try:
-        completed = subprocess.run(
+        proc = subprocess.Popen(
             argv,
             cwd=run_cwd,
             env=run_env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout_seconds,
-            check=False,
         )
-        finished_seconds = time.time()
-        exit_code: int | None = int(completed.returncode)
-        stdout = completed.stdout
-        stderr = completed.stderr
-        timed_out = False
-    except subprocess.TimeoutExpired as e:
-        finished_seconds = time.time()
-        exit_code = None
-        stdout = e.stdout.decode("utf-8", errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-        stderr = e.stderr.decode("utf-8", errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-        timed_out = True
     except FileNotFoundError as e:
         raise XdbError(f"command not found: {argv[0]}") from e
+    assert proc.stdout is not None
+    assert proc.stderr is not None
+    stdout_thread = _start_stream_reader(
+        proc.stdout,
+        "stdout",
+        stdout_chunks,
+        stream_output=stream_output,
+    )
+    stderr_thread = _start_stream_reader(
+        proc.stderr,
+        "stderr",
+        stderr_chunks,
+        stream_output=stream_output,
+    )
+    timed_out = False
+    try:
+        exit_code: int | None = int(proc.wait(timeout=timeout_seconds))
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        proc.kill()
+        exit_code = None
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+    stdout_thread.join(timeout=5)
+    stderr_thread.join(timeout=5)
+    finished_seconds = time.time()
+    stdout = "".join(stdout_chunks)
+    stderr = "".join(stderr_chunks)
     finished_at = _now_iso()
     ok = (not timed_out) and exit_code == expect_exit_code
     return {
@@ -1267,6 +1371,7 @@ def exec_session(
         "started_at": started_at,
         "finished_at": finished_at,
         "duration_seconds": max(0.0, finished_seconds - started_seconds),
+        "streamed": stream_output,
         "session": {
             "name": paths.session_name,
             "id": paths.session_id,
@@ -1553,6 +1658,7 @@ def with_trace_session(
     exec_timeout_seconds: float | None = None,
     exec_expect_exit_code: int = 0,
     exec_clean_env: bool = False,
+    exec_stream_output: bool = False,
 ) -> dict[str, Any]:
     axis_paths = list(axis_paths or [])
     duration_tokens = list(duration_tokens or [])
@@ -1571,27 +1677,28 @@ def with_trace_session(
             exec_timeout_seconds=exec_timeout_seconds,
             exec_expect_exit_code=exec_expect_exit_code,
             exec_clean_env=exec_clean_env,
+            exec_stream_output=exec_stream_output,
             exec_base_env={} if exec_clean_env else dict(os.environ),
         )
     else:
         request_args["action_request"] = _parse_with_trace_command(command)
-    return _send_request(
-        session_name,
-        make_request(
-            OP_WITH_TRACE,
-            **request_args,
-            duration_tokens=duration_tokens,
-            step_tokens=step_tokens,
-            transactions=transactions,
-            axis_paths=axis_paths,
-            decode_bytes=decode_bytes,
-            lane_order=lane_order,
-            include_idle=include_idle,
-            only_handshakes=only_handshakes,
-            correlate_by=correlate_by,
-            correlate_window_tokens=list(correlate_window_tokens or []),
-        ),
+    request = make_request(
+        OP_WITH_TRACE,
+        **request_args,
+        duration_tokens=duration_tokens,
+        step_tokens=step_tokens,
+        transactions=transactions,
+        axis_paths=axis_paths,
+        decode_bytes=decode_bytes,
+        lane_order=lane_order,
+        include_idle=include_idle,
+        only_handshakes=only_handshakes,
+        correlate_by=correlate_by,
+        correlate_window_tokens=list(correlate_window_tokens or []),
     )
+    if exec_stream_output:
+        return _send_streaming_request(session_name, request)
+    return _send_request(session_name, request)
 
 
 def snapshot_session(

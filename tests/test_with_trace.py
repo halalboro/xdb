@@ -162,8 +162,26 @@ class WithTraceTests(unittest.TestCase):
         self.assertEqual(request["args"]["exec_timeout_seconds"], 2.0)
         self.assertEqual(request["args"]["exec_expect_exit_code"], 3)
         self.assertTrue(request["args"]["exec_clean_env"])
+        self.assertFalse(request["args"]["exec_stream_output"])
         self.assertEqual(request["args"]["exec_base_env"], {})
         self.assertNotIn("action_request", request["args"])
+
+    def test_with_trace_exec_stream_uses_streaming_request(self) -> None:
+        with patch("xdb.sim.client._send_streaming_request", return_value={"ok": True}) as send_request:
+            with_trace_session(
+                None,
+                ["--", "host-test"],
+                ["10", "ns"],
+                step_tokens=["1", "ns"],
+                transactions=True,
+                exec_mode=True,
+                exec_stream_output=True,
+            )
+
+        request = send_request.call_args.args[1]
+        self.assertEqual(request["op"], OP_WITH_TRACE)
+        self.assertTrue(request["args"]["exec_stream_output"])
+        self.assertEqual(request["args"]["exec_command"], ["host-test"])
 
     def test_with_trace_exec_until_exit_sends_external_command_request_without_duration(self) -> None:
         with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
@@ -264,6 +282,39 @@ class WithTraceTests(unittest.TestCase):
         self.assertTrue(result["action"]["result"]["ok"])
         self.assertEqual(result["action"]["result"]["stdout"].strip(), "/tmp/xdb-runtime")
         self.assertGreaterEqual(len(driver.run_tokens), 1)
+
+    def test_with_trace_exec_action_streams_and_captures_output(self) -> None:
+        driver = _FakeWithTraceDriver()
+        streamed: list[tuple[str, str]] = []
+        runner = WithTraceRunner(
+            driver,
+            lambda _op, _args: {},
+            meta={
+                "session_name": "unit",
+                "anchor_dir": str(Path.cwd()),
+                "runtime_root": "/tmp/xdb-runtime",
+                "work_dir": "/tmp/xdb-runtime/work",
+                "socket_path": "/tmp/xdb.sock",
+            },
+            stream_callback=lambda name, data: streamed.append((name, data)),
+        )
+
+        result = runner._with_trace_exec_action(
+            [sys.executable, "-c", "print('hello')"],
+            ["1", "ns"],
+            cwd=None,
+            env_overrides=[],
+            timeout_seconds=None,
+            expect_exit_code=0,
+            clean_env=True,
+            base_env={},
+            stream_output=True,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stdout"], "hello\n")
+        self.assertTrue(result["streamed"])
+        self.assertIn(("stdout", "hello\n"), streamed)
 
     def test_with_trace_exec_action_advances_sim_and_injects_env(self) -> None:
         driver = _FakeWithTraceDriver()

@@ -110,7 +110,7 @@ xdb sim axis trace /tb_top/dut/axis_in --for 100 ns --decode-bytes
 xdb sim trace transactions --for 200 ns
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns -- \
   xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
-xdb sim exec -- ./host-test --input 01020304
+xdb sim exec --stream -- ./host-test --input 01020304
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns --exec -- \
   ./host-test --input 01020304
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --exec-until-exit --exec -- \
@@ -242,7 +242,8 @@ xdb sim close --force
   `XDB_SIM_SOCKET`, and `COYOTE_SIM_DIR=<runtime_root>`, captures
   stdout/stderr/exit code, and returns structured JSON. Use `--cwd <dir>`,
   repeated `--env KEY=VALUE`, `--timeout <seconds>`, `--expect-exit-code <n>`,
-  and `--clean-env` as needed.
+  and `--clean-env` as needed. Use `--stream` to mirror host stdout/stderr live
+  to the terminal on stderr while preserving final JSON on stdout.
 - `xdb sim with-trace -- ...` currently supports a wrapped subset of `xdb sim`
   subcommands, including Coyote operations plus `run`, `step`, `until`, and
   `until-signal`. `xdb sim with-trace --exec -- <command...>` runs an external
@@ -261,7 +262,9 @@ xdb sim close --force
   event/record per line, `--summary` for a compact human-readable report, and
   `--out <file>` to write the chosen format. With `--exec`, the options
   `--cwd`, `--env KEY=VALUE`, `--timeout`, `--expect-exit-code`, and
-  `--clean-env` control the wrapped host command.
+  `--clean-env` control the wrapped host command. Use `--stream` with `--exec`
+  to mirror host stdout/stderr live to the client on stderr while preserving the
+  final trace JSON on stdout.
 - Current Coyote support is intentionally limited to the local host-memory
   protocol implemented by the upstream Coyote simulation target. Remote RDMA and
   TCP commands are not supported yet.
