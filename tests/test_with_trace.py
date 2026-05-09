@@ -26,6 +26,8 @@ class WithTraceTests(unittest.TestCase):
                 transactions=True,
                 axis_paths=["/tb_top/dut/axis_host_recv[0]"],
                 decode_bytes=True,
+                correlate_by="opcode",
+                correlate_window_tokens=["5", "ns"],
             )
 
         self.assertTrue(result["ok"])
@@ -35,6 +37,8 @@ class WithTraceTests(unittest.TestCase):
         self.assertEqual(request["args"]["step_tokens"], ["1", "ns"])
         self.assertTrue(request["args"]["transactions"])
         self.assertEqual(request["args"]["axis_paths"], ["/tb_top/dut/axis_host_recv[0]"])
+        self.assertEqual(request["args"]["correlate_by"], "opcode")
+        self.assertEqual(request["args"]["correlate_window_tokens"], ["5", "ns"])
         action_request = request["args"]["action_request"]
         self.assertEqual(action_request["op"], OP_INVOKE)
         self.assertEqual(action_request["args"]["opcode"], "local-transfer")

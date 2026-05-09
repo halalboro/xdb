@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb.cli import _emit_text, _format_with_trace_ndjson, _format_with_trace_summary
+from xdb.sim.daemon import _correlate_trace
 
 
 class TraceOutputTests(unittest.TestCase):
@@ -63,6 +64,40 @@ class TraceOutputTests(unittest.TestCase):
         self.assertIn("axis: 1 record(s)", summary)
         self.assertIn("correlation links: 1", summary)
         self.assertIn("tx=invoke:local-transfer axis=/axis beat 0", summary)
+
+    def test_correlation_window_and_mode_filter_links_expected_records(self) -> None:
+        result = _correlate_trace(
+            {
+                "events": [
+                    {
+                        "type": "invoke",
+                        "opcode": "local-transfer",
+                        "time": "0 ns",
+                        "wallclock_seconds": 1.0,
+                    },
+                    {
+                        "type": "host_read",
+                        "addr_hex": "0x1000",
+                        "time": "20 ns",
+                        "wallclock_seconds": 2.0,
+                    },
+                ]
+            },
+            {
+                "records": [
+                    {"interface": "/axis", "beat_index": 0, "time": "1 ns", "wallclock_seconds": 1.1},
+                    {"interface": "/axis", "beat_index": 1, "time": "30 ns", "wallclock_seconds": 2.1},
+                ]
+            },
+            correlate_by="opcode",
+            window_tokens=["5", "ns"],
+        )
+
+        self.assertEqual(result["correlate_by"], "opcode")
+        self.assertEqual(result["window"], "5 ns")
+        self.assertEqual(result["link_count"], 1)
+        self.assertEqual(result["skipped_by_mode"], 1)
+        self.assertEqual(result["links"][0]["axis_label"], "/axis beat 0")
 
     def test_emit_text_writes_output_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

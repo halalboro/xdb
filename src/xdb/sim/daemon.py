@@ -146,6 +146,31 @@ def _trace_wallclock(value: dict[str, Any]) -> float | None:
     return None
 
 
+def _trace_sim_time(value: dict[str, Any]) -> Decimal | None:
+    raw = value.get("time")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return _parse_sim_time(raw)
+    except XdbError:
+        return None
+
+
+def _event_has_address(event: dict[str, Any]) -> bool:
+    address_fields = ("addr", "addr_hex", "src_addr", "src_addr_hex", "dst_addr", "dst_addr_hex")
+    return any(field in event for field in address_fields)
+
+
+def _event_matches_correlation_mode(event: dict[str, Any], correlate_by: str) -> bool:
+    if correlate_by == "nearest":
+        return True
+    if correlate_by == "opcode":
+        return event.get("opcode") is not None
+    if correlate_by == "addr":
+        return _event_has_address(event)
+    return True
+
+
 def _transaction_label(event: dict[str, Any]) -> str:
     event_type = str(event.get("type") or "transaction")
     opcode = event.get("opcode")
@@ -166,8 +191,18 @@ def _axis_label(record: dict[str, Any]) -> str:
 
 
 def _correlate_trace(
-    transactions: dict[str, Any], axis: dict[str, Any]
+    transactions: dict[str, Any],
+    axis: dict[str, Any],
+    *,
+    correlate_by: str = "nearest",
+    window_tokens: list[str] | None = None,
 ) -> dict[str, Any]:
+    if correlate_by not in {"nearest", "opcode", "addr"}:
+        raise XdbError(f"unsupported correlation mode: {correlate_by}")
+    window_text = None
+    window_seconds = None
+    if window_tokens:
+        window_text, window_seconds = _parse_duration_tokens(window_tokens)
     tx_events = [
         dict(item)
         for item in list(transactions.get("events") or [])
@@ -211,42 +246,73 @@ def _correlate_trace(
         )
     )
 
-    axis_with_time: list[tuple[int, dict[str, Any], float]] = []
+    axis_with_time: list[tuple[int, dict[str, Any], float, Decimal | None]] = []
     for index, record in enumerate(axis_records):
         wallclock = _trace_wallclock(record)
         if wallclock is not None:
-            axis_with_time.append((index, record, wallclock))
+            axis_with_time.append((index, record, wallclock, _trace_sim_time(record)))
     links: list[dict[str, Any]] = []
+    skipped_by_mode = 0
+    skipped_by_window = 0
     for tx_index, event in enumerate(tx_events):
+        if not _event_matches_correlation_mode(event, correlate_by):
+            skipped_by_mode += 1
+            continue
         maybe_tx_wallclock = _trace_wallclock(event)
         if maybe_tx_wallclock is None or not axis_with_time:
             continue
         tx_wallclock = maybe_tx_wallclock
-        axis_index, axis_record, axis_wallclock = min(
-            axis_with_time,
-            key=lambda item: abs(item[2] - tx_wallclock),
+        tx_sim_time = _trace_sim_time(event)
+
+        candidates: list[tuple[int, dict[str, Any], float, Decimal | None, Decimal | None]] = []
+        for axis_index, axis_record, axis_wallclock, axis_sim_time in axis_with_time:
+            delta_sim_seconds = None
+            if tx_sim_time is not None and axis_sim_time is not None:
+                delta_sim_seconds = axis_sim_time - tx_sim_time
+                if window_seconds is not None and abs(delta_sim_seconds) > window_seconds:
+                    continue
+            candidates.append((axis_index, axis_record, axis_wallclock, axis_sim_time, delta_sim_seconds))
+        if not candidates:
+            skipped_by_window += 1
+            continue
+
+        axis_index, axis_record, axis_wallclock, _axis_sim_time, delta_sim_seconds = min(
+            candidates,
+            key=lambda item: (
+                abs(item[4]) if item[4] is not None else Decimal("Infinity"),
+                abs(item[2] - tx_wallclock),
+            ),
         )
-        links.append(
-            {
-                "transaction_index": tx_index,
-                "transaction_label": _transaction_label(event),
-                "axis_index": axis_index,
-                "axis_label": _axis_label(axis_record),
-                "delta_wallclock_seconds": axis_wallclock - tx_wallclock,
-                "transaction_time": event.get("time"),
-                "axis_time": axis_record.get("time"),
-            }
-        )
+        link: dict[str, Any] = {
+            "transaction_index": tx_index,
+            "transaction_label": _transaction_label(event),
+            "axis_index": axis_index,
+            "axis_label": _axis_label(axis_record),
+            "delta_wallclock_seconds": axis_wallclock - tx_wallclock,
+            "transaction_time": event.get("time"),
+            "axis_time": axis_record.get("time"),
+            "correlate_by": correlate_by,
+        }
+        if delta_sim_seconds is not None:
+            link["delta_sim_seconds"] = float(delta_sim_seconds)
+        links.append(link)
 
     return {
         "transaction_count": len(tx_events),
         "axis_record_count": len(axis_records),
         "timeline_count": len(timeline),
         "link_count": len(links),
+        "correlate_by": correlate_by,
+        "window": window_text,
+        "skipped_by_mode": skipped_by_mode,
+        "skipped_by_window": skipped_by_window,
         "timeline": timeline,
         "links": links,
         "notes": [
             "correlation is ordered by collection wallclock when available",
+            "nearest links prefer simulator-time proximity when both sides have simulator timestamps",
+            "--correlate-by opcode only links transaction events with an opcode field",
+            "--correlate-by addr only links transaction events with address fields",
             "AXIS records are sampled; handshakes shorter than the sampling step can still be missed",
         ],
     }
@@ -542,6 +608,10 @@ class SimDaemon:
         lane_order = str(args.get("lane_order") or "low-to-high")
         include_idle = bool(args.get("include_idle"))
         only_handshakes = bool(args.get("only_handshakes"))
+        correlate_by = str(args.get("correlate_by") or "nearest")
+        correlate_window_tokens = [
+            str(v) for v in list(args.get("correlate_window_tokens") or []) if str(v)
+        ]
 
         axis_interfaces = {path: self._axis_child_signal_map(path) for path in axis_paths}
         axis_signal_paths = [
@@ -651,7 +721,12 @@ class SimDaemon:
             }
             result["axis"] = axis_result
         if transaction_result is not None and axis_result is not None:
-            result["correlation"] = _correlate_trace(transaction_result, axis_result)
+            result["correlation"] = _correlate_trace(
+                transaction_result,
+                axis_result,
+                correlate_by=correlate_by,
+                window_tokens=correlate_window_tokens or None,
+            )
         return result
 
     def _dispatch(self, op: str, args: dict[str, Any]) -> dict[str, Any]:

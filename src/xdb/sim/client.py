@@ -1266,6 +1266,8 @@ def with_trace_session(
     lane_order: str = "low-to-high",
     include_idle: bool = False,
     only_handshakes: bool = False,
+    correlate_by: str = "nearest",
+    correlate_window_tokens: list[str] | None = None,
 ) -> dict[str, Any]:
     axis_paths = list(axis_paths or [])
     if not transactions and not axis_paths:
@@ -1284,6 +1286,8 @@ def with_trace_session(
             lane_order=lane_order,
             include_idle=include_idle,
             only_handshakes=only_handshakes,
+            correlate_by=correlate_by,
+            correlate_window_tokens=list(correlate_window_tokens or []),
         ),
     )
 

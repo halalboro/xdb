@@ -146,6 +146,14 @@ def _format_with_trace_summary(result: dict) -> str:
         f"axis: {len(axis_records)} record(s)",
         f"correlation links: {len(correlation_links)}",
     ]
+    if isinstance(correlation, dict) and correlation:
+        lines.append(
+            "correlation: "
+            f"mode={correlation.get('correlate_by', 'nearest')} "
+            f"window={correlation.get('window') or 'unbounded'} "
+            f"skipped_by_mode={correlation.get('skipped_by_mode', 0)} "
+            f"skipped_by_window={correlation.get('skipped_by_window', 0)}"
+        )
     if tx_events:
         lines.append("transaction events:")
         for index, event in enumerate(tx_events[:10]):
@@ -737,6 +745,18 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     )
     s_sim_with_trace.add_argument("--include-idle", action="store_true")
     s_sim_with_trace.add_argument("--only-handshakes", action="store_true")
+    s_sim_with_trace.add_argument(
+        "--correlate-by",
+        choices=["nearest", "opcode", "addr"],
+        default="nearest",
+        help="focus transaction-to-AXIS correlation links",
+    )
+    s_sim_with_trace.add_argument(
+        "--correlate-window",
+        nargs="+",
+        default=None,
+        help="maximum simulator-time delta for correlation links",
+    )
     s_sim_with_trace_output = s_sim_with_trace.add_mutually_exclusive_group()
     s_sim_with_trace_output.add_argument("--ndjson", action="store_true")
     s_sim_with_trace_output.add_argument("--summary", action="store_true")
@@ -1053,6 +1073,12 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     lane_order=args.lane_order,
                     include_idle=bool(args.include_idle),
                     only_handshakes=bool(args.only_handshakes),
+                    correlate_by=args.correlate_by,
+                    correlate_window_tokens=(
+                        None
+                        if args.correlate_window is None
+                        else _resolve_sim_step_tokens(args.correlate_window)
+                    ),
                 )
                 if args.ndjson:
                     _emit_text(_format_with_trace_ndjson(result), args.out)
