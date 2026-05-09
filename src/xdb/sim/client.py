@@ -94,7 +94,12 @@ from xdb.sim.session_store import (
 from xdb.sim.types import SessionMeta, SimRequest
 
 
-def _send_request(session_name: str | None, request: SimRequest) -> dict[str, Any]:
+def _send_request(
+    session_name: str | None,
+    request: SimRequest,
+    *,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
     paths = session_paths(session_name)
     meta = require_live_meta(paths)
     sock_path = str(meta.get("socket_path") or "")
@@ -102,23 +107,41 @@ def _send_request(session_name: str | None, request: SimRequest) -> dict[str, An
         raise XdbError(
             f"simulation session socket missing for {paths.session_name!r}; run 'xdb sim launch' again"
         )
+    op = str(request.get("op") or "request")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        if timeout_seconds is not None:
+            if timeout_seconds <= 0:
+                raise XdbError("request timeout must be > 0")
+            sock.settimeout(timeout_seconds)
         try:
             sock.connect(sock_path)
+            sock.sendall(json.dumps(request).encode("utf-8"))
+            sock.shutdown(socket.SHUT_WR)
+            response = _recv_all(sock)
         except FileNotFoundError as e:
             raise XdbError(
                 f"simulation session socket missing for {paths.session_name!r}; run 'xdb sim launch' again"
             ) from e
-        sock.sendall(json.dumps(request).encode("utf-8"))
-        sock.shutdown(socket.SHUT_WR)
-        response = _recv_all(sock)
-
+        except TimeoutError as e:
+            raise XdbError(_request_timeout_message(paths.session_name, op, timeout_seconds)) from e
+    if not response:
+        raise XdbError(f"simulation daemon returned an empty response for {op!r}")
     data = cast(dict[str, Any], json.loads(response.decode("utf-8")))
     if not data.get("ok", False):
         raise XdbError(str(data.get("error", "simulation request failed")))
     result = dict(data.get("result") or {})
     result.pop("_shutdown", None)
     return result
+
+
+def _request_timeout_message(session_name: str, op: str, timeout_seconds: float | None) -> str:
+    timeout_text = "the configured timeout" if timeout_seconds is None else f"{timeout_seconds:g}s"
+    return (
+        f"timed out after {timeout_text} waiting for simulation daemon response to {op!r} "
+        f"in session {session_name!r}. The daemon may still be busy or stuck in Vivado; "
+        "try 'xdb sim time' to check responsiveness, or recover with "
+        "'xdb sim close' / 'xdb sim relaunch --fresh'."
+    )
 
 
 def _recv_all(sock: socket.socket) -> bytes:
@@ -743,8 +766,18 @@ def axis_trace_session(
     )
 
 
-def run_session(session_name: str | None, tokens: list[str]) -> dict[str, Any]:
-    return _send_request(session_name, make_request(OP_RUN, tokens=tokens))
+def run_session(
+    session_name: str | None,
+    tokens: list[str],
+    *,
+    timeout_seconds: float | None = 30.0,
+) -> dict[str, Any]:
+    client_timeout = None if timeout_seconds is None else timeout_seconds + 5.0
+    return _send_request(
+        session_name,
+        make_request(OP_RUN, tokens=tokens, timeout_seconds=timeout_seconds),
+        timeout_seconds=client_timeout,
+    )
 
 
 def restart_session(session_name: str | None) -> dict[str, Any]:

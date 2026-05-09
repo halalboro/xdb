@@ -488,6 +488,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_run = sim_sub.add_parser("run")
     _add_debug_flag(s_sim_run)
     add_sim_session_arg(s_sim_run)
+    s_sim_run.add_argument("--timeout", type=float, default=30.0, help="wall-clock daemon response timeout in seconds")
     s_sim_run.add_argument("time", nargs="*")
 
     s_sim_restart = sim_sub.add_parser("restart")
@@ -956,7 +957,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
             elif args.sim_cmd == "provenance":
                 _print(provenance_session(args.session))
             elif args.sim_cmd == "run":
-                _print(run_session(args.session, args.time))
+                _print(
+                    run_session(
+                        args.session,
+                        args.time,
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                    )
+                )
             elif args.sim_cmd == "restart":
                 _print(restart_session(args.session))
             elif args.sim_cmd == "close":

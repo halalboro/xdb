@@ -94,6 +94,7 @@ xdb sim scopes /tb_top
 xdb sim objects /tb_top/dut
 xdb sim snapshot /tb_top/dut --name before
 xdb sim run 100 ns
+xdb sim run --timeout 30 500 ns
 xdb sim snapshot /tb_top/dut --name after
 xdb sim diff-snapshot before after
 xdb sim watch-changes /tb_top/dut --for 100 ns
@@ -152,6 +153,10 @@ xdb sim close
   scripts there, and then starts a persistent `xsim` session.
 - `xdb sim launch` starts a persistent background session; later
   `xdb sim ...` commands talk to that live simulator process.
+- `xdb sim run <duration>` has a wall-clock daemon response timeout, defaulting
+  to 30 seconds. Use `--timeout <seconds>` for slow simulations. If it times
+  out, the daemon may still be busy inside Vivado; check responsiveness with
+  `xdb sim time` or recover with `xdb sim close` / `xdb sim relaunch --fresh`.
 - `xdb sim provenance` reports the current requested runtime inputs, staged
   workspace state, and any live session metadata so you can see whether the
   active session matches the current packaged runtime.

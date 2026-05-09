@@ -247,7 +247,11 @@ class SimDaemon:
         if op == OP_DESCRIBE:
             return self.driver.describe_session()
         if op == OP_RUN:
-            return self.driver.run(list(args.get("tokens") or []))
+            timeout_value = args.get("timeout_seconds")
+            return self.driver.run(
+                list(args.get("tokens") or []),
+                timeout_seconds=None if timeout_value is None else float(timeout_value),
+            )
         if op == OP_RESTART:
             return self.driver.restart()
         if op == OP_FORCE:

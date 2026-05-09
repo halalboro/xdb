@@ -348,8 +348,14 @@ if {{[catch {{
     def time(self) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_time"))
 
-    def run(self, tokens: list[str]) -> dict[str, Any]:
-        result = self.request(build_proc_request("xdb_api_run", tokens))
+    def run(
+        self,
+        tokens: list[str],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        request_timeout = 120 if timeout_seconds is None else max(1, int(timeout_seconds + 0.999))
+        result = self.request(build_proc_request("xdb_api_run", tokens), timeout=request_timeout)
         self._notify_sim_advance(result)
         return result
 
