@@ -1094,6 +1094,48 @@ def trace_events_get_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_TRACE_EVENTS_GET))
 
 
+def _parse_with_trace_wait_args(
+    rest: list[str], *, positional_count: int
+) -> tuple[list[str], float | None, int | None, list[str]]:
+    step_tokens = ["10", "ns"]
+    timeout_seconds: float | None = None
+    max_iterations: int | None = None
+    positionals: list[str] = []
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--timeout":
+            if index + 1 >= len(rest):
+                raise XdbError("--timeout requires a value")
+            timeout_seconds = float(rest[index + 1])
+            index += 2
+            continue
+        if token == "--max-iterations":
+            if index + 1 >= len(rest):
+                raise XdbError("--max-iterations requires a value")
+            max_iterations = int(rest[index + 1])
+            index += 2
+            continue
+        if token == "--step":
+            step_start = index + 1
+            step_end = step_start
+            while step_end < len(rest) and not rest[step_end].startswith("--"):
+                remaining_after = len(rest) - (step_end + 1)
+                if remaining_after < positional_count:
+                    break
+                step_end += 1
+            if step_end == step_start:
+                raise XdbError("--step requires a duration")
+            step_tokens = rest[step_start:step_end]
+            index = step_end
+            continue
+        positionals = rest[index:]
+        break
+    if len(positionals) < positional_count:
+        raise XdbError("missing wrapped wait command argument")
+    return step_tokens, timeout_seconds, max_iterations, positionals
+
+
 def _parse_with_trace_command(command: list[str]) -> SimRequest:
     if not command:
         raise XdbError("missing command after '--'")
@@ -1110,6 +1152,44 @@ def _parse_with_trace_command(command: list[str]) -> SimRequest:
         raise XdbError("missing wrapped 'xdb sim' subcommand")
 
     subcommand, rest = tokens[0], tokens[1:]
+    if subcommand == "run":
+        if not rest:
+            raise XdbError("with-trace wrapped 'xdb sim run' requires an explicit duration")
+        return make_request(OP_RUN, tokens=rest)
+    if subcommand == "step":
+        if not rest:
+            return make_request(OP_STEP, count=1)
+        if len(rest) == 1 and rest[0].isdigit():
+            count = int(rest[0])
+            if count <= 0:
+                raise XdbError("step count must be > 0")
+            return make_request(OP_STEP, count=count)
+        return make_request(OP_STEP, time_tokens=rest)
+    if subcommand in {"until", "wait", "wait-on-condition"}:
+        wait_step, wait_timeout, wait_max_iterations, positionals = _parse_with_trace_wait_args(
+            rest,
+            positional_count=1,
+        )
+        return make_request(
+            OP_UNTIL,
+            expr=" ".join(positionals),
+            step_tokens=wait_step,
+            timeout_seconds=wait_timeout,
+            max_iterations=wait_max_iterations,
+        )
+    if subcommand in {"until-signal", "wait-signal", "wait-on-signal"}:
+        wait_step, wait_timeout, wait_max_iterations, positionals = _parse_with_trace_wait_args(
+            rest,
+            positional_count=2,
+        )
+        return make_request(
+            OP_UNTIL_SIGNAL,
+            signal=positionals[0],
+            value=positionals[1],
+            step_tokens=wait_step,
+            timeout_seconds=wait_timeout,
+            max_iterations=wait_max_iterations,
+        )
     if subcommand == "coyote-status":
         if rest:
             raise XdbError("xdb sim coyote-status does not accept extra arguments in with-trace")

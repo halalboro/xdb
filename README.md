@@ -219,7 +219,8 @@ xdb sim close
   Use `--opcode <name>` to keep only events associated with a specific local
   Coyote opcode and `--out <file>` to write the JSON result.
 - `xdb sim with-trace -- ...` currently supports a wrapped subset of `xdb sim`
-  subcommands and executes them under daemon-side tracing so AXIS and
+  subcommands, including Coyote operations plus `run`, `step`, `until`, and
+  `until-signal`, and executes them under daemon-side tracing so AXIS and
   transaction traces cover the same command-and-observation window. Use
   `--transactions`, repeat `--axis <path>`, and `--for <duration>` to choose
   the collected artifacts. When both modes are enabled, the result includes a

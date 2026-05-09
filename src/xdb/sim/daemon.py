@@ -65,6 +65,7 @@ from .protocol import (
     OP_DIFF_SNAPSHOT,
 )
 from .session_store import SessionPaths, ensure_session_dir, write_meta
+from .tcl_helpers import _tcl_string
 from .vivado_driver import VivadoSimDriver
 
 
@@ -568,11 +569,178 @@ class SimDaemon:
             record["valid_bytes"] = valid_bytes
         return record
 
+    def _run_duration_sampled(
+        self,
+        duration_tokens: list[str],
+        sample_step_tokens: list[str],
+        *,
+        kind: str,
+    ) -> dict[str, Any]:
+        duration_text, duration_value = _parse_duration_tokens(duration_tokens)
+        if duration_value <= 0:
+            raise XdbError(f"{kind} duration must be > 0")
+        time_before = str(self.driver.time().get("time") or "")
+        current_time_value = _parse_sim_time(time_before)
+        end_time_value = current_time_value + duration_value
+        iterations = 0
+        last_result: dict[str, Any] | None = None
+        while current_time_value < end_time_value:
+            previous_time_value = current_time_value
+            last_result = self.driver.run(sample_step_tokens)
+            current_time_text = str(last_result.get("time_after") or "")
+            current_time_value = _parse_sim_time(current_time_text)
+            iterations += 1
+            if current_time_value <= previous_time_value:
+                raise XdbError(f"{kind} did not advance simulation")
+        time_after = str(self.driver.time().get("time") or "")
+        return {
+            "time_before": time_before,
+            "time_after": time_after,
+            "duration": duration_text,
+            "sample_step": " ".join(sample_step_tokens),
+            "sample_iterations": iterations,
+            "last_step": last_result or {},
+        }
+
+    def _eval_tcl_condition(self, expr: str) -> bool:
+        script = f"set __xdb_expr [xdb_normalize_expr {_tcl_string(expr)}]; expr $__xdb_expr"
+        result = self.driver.eval_tcl(script)
+        value = str(result.get("result") or "").strip().lower()
+        return value not in {"", "0", "false", "no"}
+
+    def _with_trace_wait_until(
+        self,
+        expr: str,
+        *,
+        step_tokens: list[str],
+        timeout_seconds: float | None,
+        max_iterations: int | None,
+    ) -> dict[str, Any]:
+        if not expr:
+            raise XdbError("missing Tcl expression")
+        if not step_tokens:
+            raise XdbError("missing step duration")
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise XdbError("timeout_seconds must be > 0")
+        if max_iterations is not None and max_iterations <= 0:
+            raise XdbError("max_iterations must be > 0")
+        time_before = str(self.driver.time().get("time") or "")
+        deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
+        iterations = 0
+        while not self._eval_tcl_condition(expr):
+            if max_iterations is not None and iterations >= max_iterations:
+                raise XdbError(f"condition not met before reaching max iterations ({max_iterations})")
+            if deadline is not None and time.monotonic() >= deadline:
+                raise XdbError(f"timed out after {timeout_seconds} second(s) while waiting for condition")
+            before = str(self.driver.time().get("time") or "")
+            self.driver.run(step_tokens)
+            iterations += 1
+            after = str(self.driver.time().get("time") or "")
+            if after == before and not self._eval_tcl_condition(expr):
+                raise XdbError("condition not met and simulation did not advance while waiting")
+        time_after = str(self.driver.time().get("time") or "")
+        return {
+            "expr": expr,
+            "step": " ".join(step_tokens),
+            "iterations": iterations,
+            "time_before": time_before,
+            "time_after": time_after,
+            "timeout_seconds": timeout_seconds,
+            "max_iterations": max_iterations,
+        }
+
+    def _with_trace_wait_until_signal(
+        self,
+        signal_name: str,
+        expected_value: str,
+        *,
+        step_tokens: list[str],
+        timeout_seconds: float | None,
+        max_iterations: int | None,
+    ) -> dict[str, Any]:
+        if not signal_name:
+            raise XdbError("missing signal")
+        if expected_value == "":
+            raise XdbError("missing expected signal value")
+        if not step_tokens:
+            raise XdbError("missing step duration")
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise XdbError("timeout_seconds must be > 0")
+        if max_iterations is not None and max_iterations <= 0:
+            raise XdbError("max_iterations must be > 0")
+        time_before = str(self.driver.time().get("time") or "")
+        deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
+        iterations = 0
+        value = str(self.driver.get_signal(signal_name).get("value") or "")
+        while value != expected_value:
+            if max_iterations is not None and iterations >= max_iterations:
+                raise XdbError(f"signal did not reach expected value before reaching max iterations ({max_iterations})")
+            if deadline is not None and time.monotonic() >= deadline:
+                raise XdbError(f"timed out after {timeout_seconds} second(s) while waiting for signal")
+            before = str(self.driver.time().get("time") or "")
+            self.driver.run(step_tokens)
+            iterations += 1
+            after = str(self.driver.time().get("time") or "")
+            value = str(self.driver.get_signal(signal_name).get("value") or "")
+            if after == before and value != expected_value:
+                raise XdbError("signal did not reach expected value and simulation did not advance while waiting")
+        time_after = str(self.driver.time().get("time") or "")
+        return {
+            "signal": signal_name,
+            "value": value,
+            "expected": expected_value,
+            "step": " ".join(step_tokens),
+            "iterations": iterations,
+            "time_before": time_before,
+            "time_after": time_after,
+            "timeout_seconds": timeout_seconds,
+            "max_iterations": max_iterations,
+        }
+
+    def _with_trace_action(
+        self,
+        action_op: str,
+        action_args: dict[str, Any],
+        sample_step_tokens: list[str],
+    ) -> dict[str, Any]:
+        if action_op == OP_RUN:
+            run_tokens = [str(v) for v in list(action_args.get("tokens") or []) if str(v)]
+            if not run_tokens:
+                raise XdbError("with-trace wrapped 'xdb sim run' requires an explicit duration")
+            return self._run_duration_sampled(run_tokens, sample_step_tokens, kind="run")
+        if action_op == OP_STEP:
+            time_tokens = [str(v) for v in list(action_args.get("time_tokens") or []) if str(v)]
+            if time_tokens:
+                result = self._run_duration_sampled(time_tokens, sample_step_tokens, kind="step")
+                result["step_mode"] = "time"
+                return result
+            return self._dispatch(action_op, action_args)
+        if action_op == OP_UNTIL:
+            return self._with_trace_wait_until(
+                str(action_args.get("expr") or ""),
+                step_tokens=[str(v) for v in list(action_args.get("step_tokens") or []) if str(v)],
+                timeout_seconds=_arg_optional_float(action_args, "timeout_seconds"),
+                max_iterations=_arg_optional_int(action_args, "max_iterations"),
+            )
+        if action_op == OP_UNTIL_SIGNAL:
+            return self._with_trace_wait_until_signal(
+                str(action_args.get("signal") or ""),
+                str(action_args.get("value") or ""),
+                step_tokens=[str(v) for v in list(action_args.get("step_tokens") or []) if str(v)],
+                timeout_seconds=_arg_optional_float(action_args, "timeout_seconds"),
+                max_iterations=_arg_optional_int(action_args, "max_iterations"),
+            )
+        return self._dispatch(action_op, action_args)
+
     def _with_trace(self, args: dict[str, Any]) -> dict[str, Any]:
         action_request = cast(dict[str, Any], args.get("action_request") or {})
         action_op = str(action_request.get("op") or "")
         action_args = cast(dict[str, Any], action_request.get("args") or {})
         if action_op not in {
+            OP_RUN,
+            OP_STEP,
+            OP_UNTIL,
+            OP_UNTIL_SIGNAL,
             OP_INVOKE,
             OP_MEM_MAP,
             OP_MEM_UNMAP,
@@ -658,8 +826,6 @@ class SimDaemon:
 
         time_before = str(self.driver.time().get("time") or "")
         current_trace_time = time_before
-        current_time_value = _parse_sim_time(time_before)
-        end_time_value = current_time_value + duration_value
         if transactions:
             self.driver.trace_events_clear()
         sample_axis(time_before)
@@ -677,7 +843,10 @@ class SimDaemon:
 
         self.driver._sim_advance_hook = handle_sim_advance
         try:
-            action_result = self._dispatch(action_op, action_args)
+            action_result = self._with_trace_action(action_op, action_args, step_tokens)
+            action_time_after = str(self.driver.time().get("time") or "")
+            current_time_value = _parse_sim_time(action_time_after)
+            end_time_value = current_time_value + duration_value
             iterations = 0
             while current_time_value < end_time_value:
                 run_result = self.driver.run(step_tokens)
@@ -700,6 +869,7 @@ class SimDaemon:
             "step": " ".join(step_tokens),
             "time_before": time_before,
             "time_after": time_after,
+            "observation_iterations": iterations,
         }
         transaction_result: dict[str, Any] | None = None
         axis_result: dict[str, Any] | None = None
