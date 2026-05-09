@@ -40,7 +40,10 @@ from .sim.client import (
     get_signal,
     read_signals,
     launch_session,
+    provenance_session,
+    relaunch_session,
     release_session,
+    restage_session,
     restart_session,
     run_session,
     set_top,
@@ -321,6 +324,27 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_launch.add_argument("--top", default=None)
     s_sim_launch.add_argument("--replace", action="store_true")
     s_sim_launch.add_argument("--timeout", type=int, default=300)
+
+    s_sim_relaunch = sim_sub.add_parser("relaunch")
+    _add_debug_flag(s_sim_relaunch)
+    add_sim_session_arg(s_sim_relaunch)
+    s_sim_relaunch.add_argument("--simset", default=None)
+    s_sim_relaunch.add_argument(
+        "--mode",
+        choices=["behavioral", "post-synth", "post-impl"],
+        default=None,
+    )
+    s_sim_relaunch.add_argument("--top", default=None)
+    s_sim_relaunch.add_argument("--fresh", action="store_true", default=False)
+    s_sim_relaunch.add_argument("--timeout", type=int, default=300)
+
+    s_sim_restage = sim_sub.add_parser("restage")
+    _add_debug_flag(s_sim_restage)
+    add_sim_session_arg(s_sim_restage)
+
+    s_sim_provenance = sim_sub.add_parser("provenance")
+    _add_debug_flag(s_sim_provenance)
+    add_sim_session_arg(s_sim_provenance)
 
     s_sim_run = sim_sub.add_parser("run")
     _add_debug_flag(s_sim_run)
@@ -695,6 +719,21 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         timeout=args.timeout,
                     )
                 )
+            elif args.sim_cmd == "relaunch":
+                _print(
+                    relaunch_session(
+                        simset=args.simset,
+                        mode=args.mode,
+                        top=args.top,
+                        session_name=args.session,
+                        timeout=args.timeout,
+                        fresh=bool(args.fresh),
+                    )
+                )
+            elif args.sim_cmd == "restage":
+                _print(restage_session(args.session))
+            elif args.sim_cmd == "provenance":
+                _print(provenance_session(args.session))
             elif args.sim_cmd == "run":
                 _print(run_session(args.session, args.time))
             elif args.sim_cmd == "restart":

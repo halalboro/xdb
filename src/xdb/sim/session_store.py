@@ -263,6 +263,26 @@ def _current_runtime_stage_stamp(workspace: Path) -> dict[str, object] | None:
     return data
 
 
+def read_runtime_stage_stamp(workspace: str | Path) -> dict[str, object] | None:
+    return _current_runtime_stage_stamp(Path(workspace).expanduser().resolve())
+
+
+def tree_fingerprint(path: str | Path) -> str | None:
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.exists() or not resolved.is_dir():
+        return None
+    return _source_tree_fingerprint(resolved)
+
+
+def remove_workspace_tree(workspace: str | Path) -> bool:
+    resolved = Path(workspace).expanduser().resolve()
+    if not resolved.exists():
+        return False
+    _make_workspace_tree_user_writable(resolved)
+    shutil.rmtree(resolved)
+    return True
+
+
 def _load_runtime_meta(root: Path) -> dict[str, str]:
     meta_path = root / _RUNTIME_META
     if not meta_path.is_file():

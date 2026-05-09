@@ -65,6 +65,13 @@ export XDB_SIM_TOP=tb_top
 export XDB_SIM_MODE=behavioral
 export XDB_SIM_SESSION=myproj
 xdb sim launch
+xdb sim provenance
+
+# refresh the staged workspace without launching a new simulator
+xdb sim restage
+
+# discard the staged workspace and relaunch a fresh simulator session
+xdb sim relaunch --fresh
 
 # query the same live session without relaunching Vivado
 xdb sim time
@@ -134,6 +141,15 @@ xdb sim close
   scripts there, and then starts a persistent `xsim` session.
 - `xdb sim launch` starts a persistent background session; later
   `xdb sim ...` commands talk to that live simulator process.
+- `xdb sim provenance` reports the current requested runtime inputs, staged
+  workspace state, and any live session metadata so you can see whether the
+  active session matches the current packaged runtime.
+- `xdb sim restage` refreshes the writable workspace from the packaged runtime
+  without launching a simulator. It refuses to run while a live simulation
+  session exists for the same repo/session.
+- `xdb sim relaunch --fresh` closes any live session for the current repo and
+  session, discards the staged workspace, stages a fresh copy of the packaged
+  runtime, and launches a new simulator process.
 - `xdb sim until <tcl expr>` runs the simulator in repeated time steps
   (default `10 ns`) until the Tcl expression becomes true.
   Aliases: `xdb sim wait`, `xdb sim wait-on-condition`.

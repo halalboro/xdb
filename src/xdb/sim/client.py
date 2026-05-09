@@ -60,9 +60,12 @@ from .protocol import (
 )
 from .session_store import (
     cleanup_stale_session,
+    is_live_session,
     load_meta,
     pid_is_alive,
+    read_runtime_stage_stamp,
     remove_session,
+    remove_workspace_tree,
     require_live_meta,
     resolve_launch_spec,
     resolve_mode_arg,
@@ -70,6 +73,7 @@ from .session_store import (
     resolve_top_arg,
     session_paths,
     terminate_session,
+    tree_fingerprint,
 )
 from .types import SessionMeta, SimRequest
 
@@ -206,6 +210,51 @@ def _wait_until_stopped(session_name: str | None, timeout: float = 5.0) -> None:
         time.sleep(0.1)
 
 
+def _get_live_meta(session_name: str | None) -> SessionMeta | None:
+    paths = session_paths(session_name)
+    cleanup_stale_session(paths)
+    meta = load_meta(paths)
+    if not is_live_session(meta):
+        return None
+    return meta
+
+
+def _close_live_session(session_name: str | None, meta: SessionMeta) -> None:
+    try:
+        _send_request(session_name, make_request(OP_CLOSE))
+    except XdbError:
+        terminate_session(meta, force=False)
+    _wait_until_stopped(session_name, timeout=5.0)
+    paths = session_paths(session_name)
+    cleanup_stale_session(paths)
+    remaining = load_meta(paths)
+    if remaining and pid_is_alive(int(remaining.get("pid", 0) or 0)):
+        terminate_session(remaining, force=True)
+        _wait_until_stopped(session_name, timeout=2.0)
+    cleanup_stale_session(paths)
+
+
+def _launch_spec_summary(launch_spec: Mapping[str, object]) -> dict[str, Any]:
+    return {
+        key: launch_spec[key]
+        for key in (
+            "launch_kind",
+            "project",
+            "package_runtime",
+            "runtime_root",
+            "workspace",
+            "work_dir",
+            "compile_script",
+            "elaborate_script",
+            "simulate_script",
+            "staged",
+            "workspace_reused",
+            "needs_stage",
+        )
+        if key in launch_spec
+    }
+
+
 def launch_session(
     *,
     simset: str | None,
@@ -225,17 +274,7 @@ def launch_session(
 
     if live_meta and Path(str(live_meta.get("socket_path", ""))).exists() and pid_is_alive(int(live_meta.get("pid", 0) or 0)):
         if replace:
-            try:
-                _send_request(session_name, make_request(OP_CLOSE))
-            except XdbError:
-                terminate_session(live_meta, force=False)
-            _wait_until_stopped(session_name, timeout=5.0)
-            cleanup_stale_session(paths)
-            remaining = load_meta(paths)
-            if remaining and pid_is_alive(int(remaining.get("pid", 0) or 0)):
-                terminate_session(remaining, force=True)
-                _wait_until_stopped(session_name, timeout=2.0)
-            cleanup_stale_session(paths)
+            _close_live_session(session_name, live_meta)
         else:
             if bool(launch_spec.get("needs_stage")):
                 raise XdbError(
@@ -245,21 +284,7 @@ def launch_session(
             if _config_matches(live_meta, launch_spec, effective_simset, effective_mode, effective_top):
                 status = _send_request(session_name, make_request(OP_STATUS))
                 status["reused"] = True
-                for key in (
-                    "launch_kind",
-                    "project",
-                    "package_runtime",
-                    "runtime_root",
-                    "workspace",
-                    "work_dir",
-                    "compile_script",
-                    "elaborate_script",
-                    "simulate_script",
-                    "staged",
-                    "workspace_reused",
-                ):
-                    if key in launch_spec:
-                        status[key] = launch_spec[key]
+                status.update(_launch_spec_summary(launch_spec))
                 return status
             raise XdbError(
                 "a live simulation session already exists with different configuration; "
@@ -285,22 +310,135 @@ def launch_session(
             terminate_session({"pid": proc.pid, "socket_path": ""}, force=True)
         raise
     status["reused"] = False
-    for key in (
-        "launch_kind",
-        "project",
-        "package_runtime",
-        "runtime_root",
-        "workspace",
-        "work_dir",
-        "compile_script",
-        "elaborate_script",
-        "simulate_script",
-        "staged",
-        "workspace_reused",
-    ):
-        if key in launch_spec:
-            status[key] = launch_spec[key]
+    status.update(_launch_spec_summary(launch_spec))
     return status
+
+
+def relaunch_session(
+    *,
+    simset: str | None,
+    mode: str | None,
+    top: str | None,
+    session_name: str | None,
+    timeout: int,
+    fresh: bool = True,
+) -> dict[str, Any]:
+    live_meta = _get_live_meta(session_name)
+    if live_meta is not None:
+        _close_live_session(session_name, live_meta)
+    removed_workspace = False
+    if fresh:
+        launch_spec = resolve_launch_spec(stage=False)
+        removed_workspace = remove_workspace_tree(str(launch_spec.get("workspace") or ""))
+    status = launch_session(
+        simset=simset,
+        mode=mode,
+        top=top,
+        session_name=session_name,
+        replace=True,
+        timeout=timeout,
+    )
+    status["fresh"] = bool(fresh)
+    status["workspace_removed"] = removed_workspace
+    return status
+
+
+def restage_session(session_name: str | None) -> dict[str, Any]:
+    if _get_live_meta(session_name) is not None:
+        raise XdbError(
+            "cannot restage while a live simulation session is running; "
+            "close it first or use 'xdb sim relaunch --fresh'"
+        )
+    launch_spec = resolve_launch_spec(stage=False)
+    removed_workspace = remove_workspace_tree(str(launch_spec.get("workspace") or ""))
+    staged_spec = resolve_launch_spec(stage=True)
+    provenance = provenance_session(session_name)
+    return {
+        "restaged": True,
+        "workspace_removed": removed_workspace,
+        **_launch_spec_summary(staged_spec),
+        "provenance": provenance,
+    }
+
+
+def provenance_session(session_name: str | None) -> dict[str, Any]:
+    paths = session_paths(session_name)
+    cleanup_stale_session(paths)
+    meta = load_meta(paths)
+    live_meta = meta if is_live_session(meta) else None
+
+    requested_simset = resolve_simset_arg(None)
+    requested_mode = resolve_mode_arg(None)
+    requested_top = resolve_top_arg(None, meta)
+
+    result: dict[str, Any] = {
+        "session": paths.session_name,
+        "session_id": paths.session_id,
+        "anchor_dir": str(paths.anchor_dir),
+        "requested": {
+            "simset": requested_simset,
+            "mode": requested_mode,
+            "top": requested_top,
+        },
+        "live_session": {
+            "present": live_meta is not None,
+            "state": None if meta is None else meta.get("state"),
+            "pid": None if live_meta is None else live_meta.get("pid"),
+            "launched_at": None if meta is None else meta.get("created_at"),
+            "updated_at": None if meta is None else meta.get("updated_at"),
+            "package_runtime": None if meta is None else meta.get("package_runtime"),
+            "runtime_root": None if meta is None else meta.get("runtime_root"),
+            "socket_path": None if meta is None else meta.get("socket_path"),
+        },
+    }
+
+    try:
+        launch_spec = resolve_launch_spec(stage=False)
+    except XdbError as e:
+        result["runtime"] = {
+            "available": False,
+            "error": str(e),
+        }
+        return result
+
+    package_runtime = str(launch_spec.get("package_runtime") or "")
+    workspace = str(launch_spec.get("workspace") or "")
+    runtime_root = str(launch_spec.get("runtime_root") or "")
+    package_fingerprint = tree_fingerprint(package_runtime)
+    workspace_fingerprint = tree_fingerprint(workspace)
+    stage_stamp = read_runtime_stage_stamp(workspace)
+
+    result["runtime"] = {
+        "available": True,
+        **_launch_spec_summary(launch_spec),
+        "package_fingerprint": package_fingerprint,
+        "workspace_fingerprint": workspace_fingerprint,
+        "workspace_exists": Path(workspace).exists(),
+        "staged_at": None if stage_stamp is None else stage_stamp.get("updated_at"),
+        "stage_source_root": None if stage_stamp is None else stage_stamp.get("source_root"),
+        "stage_source_matches_package": None
+        if stage_stamp is None
+        else stage_stamp.get("source_root") == package_runtime,
+        "stage_fingerprint_matches_package": None
+        if stage_stamp is None
+        else stage_stamp.get("source_fingerprint") == package_fingerprint,
+    }
+    result["comparisons"] = {
+        "live_session_matches_request": None
+        if live_meta is None
+        else _config_matches(
+            live_meta,
+            launch_spec,
+            requested_simset,
+            requested_mode,
+            requested_top,
+        ),
+        "live_session_uses_workspace": None
+        if live_meta is None
+        else str(live_meta.get("runtime_root") or "") == workspace,
+        "runtime_root_matches_workspace": runtime_root == workspace,
+    }
+    return result
 
 
 def run_session(session_name: str | None, tokens: list[str]) -> dict[str, Any]:
