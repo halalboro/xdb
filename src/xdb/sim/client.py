@@ -1433,7 +1433,7 @@ def _parse_with_trace_command(command: list[str]) -> SimRequest:
 def with_trace_session(
     session_name: str | None,
     command: list[str],
-    duration_tokens: list[str],
+    duration_tokens: list[str] | None,
     *,
     step_tokens: list[str],
     transactions: bool = False,
@@ -1445,6 +1445,7 @@ def with_trace_session(
     correlate_by: str = "nearest",
     correlate_window_tokens: list[str] | None = None,
     exec_mode: bool = False,
+    exec_until_exit: bool = False,
     exec_cwd: str | None = None,
     exec_env_overrides: list[str] | None = None,
     exec_timeout_seconds: float | None = None,
@@ -1452,9 +1453,14 @@ def with_trace_session(
     exec_clean_env: bool = False,
 ) -> dict[str, Any]:
     axis_paths = list(axis_paths or [])
+    duration_tokens = list(duration_tokens or [])
     if not transactions and not axis_paths:
         raise XdbError("with-trace requires at least one trace mode")
-    request_args: dict[str, Any] = {}
+    if exec_until_exit and not exec_mode:
+        raise XdbError("--exec-until-exit requires --exec")
+    if not duration_tokens and not exec_until_exit:
+        raise XdbError("with-trace requires --for unless --exec-until-exit is used with --exec")
+    request_args: dict[str, Any] = {"exec_until_exit": exec_until_exit}
     if exec_mode:
         request_args.update(
             exec_command=normalize_remainder_command(command),

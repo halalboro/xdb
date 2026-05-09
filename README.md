@@ -112,6 +112,8 @@ xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns -- \
 xdb sim exec -- ./host-test --input 01020304
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns --exec -- \
   ./host-test --input 01020304
+xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --exec-until-exit --exec -- \
+  ./host-test --input 01020304
 
 # Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
 xdb sim coyote-status
@@ -235,7 +237,9 @@ xdb sim close
   execute under daemon-side tracing so AXIS and transaction traces cover the
   same command-and-observation window. Use
   `--transactions`, repeat `--axis <path>`, and `--for <duration>` to choose
-  the collected artifacts. When both modes are enabled, the result includes a
+  the collected artifacts. With `--exec`, use `--exec-until-exit` to trace while
+  advancing the simulator until the host command exits without requiring
+  `--for`. When both modes are enabled, the result includes a
   `correlation` section with an ordered transaction/AXIS timeline and nearest
   transaction-to-AXIS links. Use `--correlate-window <duration>` to discard
   links outside a simulator-time window, and `--correlate-by nearest|opcode|addr`

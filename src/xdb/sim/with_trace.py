@@ -105,14 +105,20 @@ class WithTraceRunner:
 
         duration_tokens = [str(v) for v in list(args.get("duration_tokens") or []) if str(v)]
         step_tokens = [str(v) for v in list(args.get("step_tokens") or []) if str(v)]
-        if not duration_tokens:
+        exec_until_exit = bool(args.get("exec_until_exit"))
+        if exec_until_exit and not exec_command:
+            raise XdbError("--exec-until-exit requires --exec")
+        if not duration_tokens and not exec_until_exit:
             raise XdbError("missing trace duration")
         if not step_tokens:
             raise XdbError("missing trace step")
-        _duration_text, duration_value = parse_duration_tokens(duration_tokens)
+        if duration_tokens:
+            _duration_text, duration_value = parse_duration_tokens(duration_tokens)
+            if duration_value <= 0:
+                raise XdbError("trace duration must be > 0")
         _step_text, step_value = parse_duration_tokens(step_tokens)
-        if duration_value <= 0 or step_value <= 0:
-            raise XdbError("trace duration and step must be > 0")
+        if step_value <= 0:
+            raise XdbError("trace step must be > 0")
 
         transactions = bool(args.get("transactions"))
         axis_paths = [str(v) for v in list(args.get("axis_paths") or []) if str(v)]
@@ -164,11 +170,13 @@ class WithTraceRunner:
                 )
             else:
                 action_result = self._with_trace_action(action_op, action_args, step_tokens)
-            observation_result = self._run_duration_sampled(
-                duration_tokens,
-                step_tokens,
-                kind="observation",
-            )
+            observation_result: dict[str, Any] = {}
+            if duration_tokens:
+                observation_result = self._run_duration_sampled(
+                    duration_tokens,
+                    step_tokens,
+                    kind="observation",
+                )
             iterations = int(observation_result.get("sample_iterations") or 0)
             time_after = str(observation_result.get("time_after") or self.driver.time().get("time") or "")
 
@@ -178,7 +186,8 @@ class WithTraceRunner:
                 "args": action_args,
                 "result": action_result,
             },
-            "duration": " ".join(duration_tokens),
+            "duration": " ".join(duration_tokens) if duration_tokens else None,
+            "trace_until": "exec_exit" if exec_until_exit else "duration",
             "step": " ".join(step_tokens),
             "time_before": time_before,
             "time_after": time_after,
@@ -192,7 +201,8 @@ class WithTraceRunner:
         if axis_paths:
             axis_result = {
                 "interfaces": axis_paths,
-                "duration": " ".join(duration_tokens),
+                "duration": " ".join(duration_tokens) if duration_tokens else None,
+                "trace_until": "exec_exit" if exec_until_exit else "duration",
                 "step": " ".join(step_tokens),
                 "time_before": time_before,
                 "time_after": time_after,

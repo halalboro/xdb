@@ -165,6 +165,35 @@ class WithTraceTests(unittest.TestCase):
         self.assertEqual(request["args"]["exec_base_env"], {})
         self.assertNotIn("action_request", request["args"])
 
+    def test_with_trace_exec_until_exit_sends_external_command_request_without_duration(self) -> None:
+        with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
+            with_trace_session(
+                None,
+                ["--", "host-test", "--input", "0102"],
+                [],
+                step_tokens=["1", "ns"],
+                transactions=True,
+                exec_mode=True,
+                exec_until_exit=True,
+            )
+
+        request = send_request.call_args.args[1]
+        self.assertEqual(request["op"], OP_WITH_TRACE)
+        self.assertEqual(request["args"]["duration_tokens"], [])
+        self.assertTrue(request["args"]["exec_until_exit"])
+        self.assertEqual(request["args"]["exec_command"], ["host-test", "--input", "0102"])
+
+    def test_with_trace_rejects_missing_duration_without_exec_until_exit(self) -> None:
+        with self.assertRaises(XdbError):
+            with_trace_session(
+                None,
+                ["--", "host-test"],
+                [],
+                step_tokens=["1", "ns"],
+                transactions=True,
+                exec_mode=True,
+            )
+
     def test_with_trace_supports_mem_write_payload_parsing(self) -> None:
         with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
             with_trace_session(
@@ -198,6 +227,43 @@ class WithTraceTests(unittest.TestCase):
         self.assertEqual(result["time_after"], "6 ns")
         self.assertEqual(result["action"]["result"]["sample_iterations"], 1)
         self.assertEqual(result["observation_iterations"], 1)
+
+    def test_with_trace_exec_until_exit_runs_without_observation_duration(self) -> None:
+        driver = _FakeWithTraceDriver()
+        runner = WithTraceRunner(
+            driver,
+            lambda _op, _args: {},
+            meta={
+                "session_name": "unit",
+                "anchor_dir": str(Path.cwd()),
+                "runtime_root": "/tmp/xdb-runtime",
+                "work_dir": "/tmp/xdb-runtime/work",
+                "socket_path": "/tmp/xdb.sock",
+            },
+        )
+
+        result = runner.run(
+            {
+                "exec_command": [
+                    sys.executable,
+                    "-c",
+                    "import os,time; print(os.environ['COYOTE_SIM_DIR']); time.sleep(0.02)",
+                ],
+                "duration_tokens": [],
+                "step_tokens": ["1", "ns"],
+                "transactions": True,
+                "axis_paths": [],
+                "exec_clean_env": True,
+                "exec_until_exit": True,
+            }
+        )
+
+        self.assertEqual(result["trace_until"], "exec_exit")
+        self.assertIsNone(result["duration"])
+        self.assertEqual(result["observation_iterations"], 0)
+        self.assertTrue(result["action"]["result"]["ok"])
+        self.assertEqual(result["action"]["result"]["stdout"].strip(), "/tmp/xdb-runtime")
+        self.assertGreaterEqual(len(driver.run_tokens), 1)
 
     def test_with_trace_exec_action_advances_sim_and_injects_env(self) -> None:
         driver = _FakeWithTraceDriver()
