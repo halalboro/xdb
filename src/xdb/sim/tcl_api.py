@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .tcl_helpers import _tcl_list, _tcl_string
+from xdb.sim.tcl_helpers import _tcl_list, _tcl_string
 
 
 class TclRaw:

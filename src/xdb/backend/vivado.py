@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from ..errors import XdbError
-from .base import (
+from xdb.errors import XdbError
+from xdb.backend.base import (
     Capability,
     CaptureResult,
     InstrumentsResult,

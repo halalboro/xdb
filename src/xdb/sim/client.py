@@ -13,9 +13,9 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping, NoReturn, cast
 
-from ..errors import XdbError
-from .coyote import parse_hex_bytes
-from .protocol import (
+from xdb.errors import XdbError
+from xdb.sim.coyote import parse_hex_bytes
+from xdb.sim.protocol import (
     OP_ASSERT_SIGNAL,
     OP_ASSERT_TCL,
     OP_BREAKPOINT_ADD,
@@ -67,7 +67,7 @@ from .protocol import (
     OP_DIFF_SNAPSHOT,
     make_request,
 )
-from .session_store import (
+from xdb.sim.session_store import (
     cleanup_stale_session,
     is_live_session,
     load_meta,
@@ -84,7 +84,7 @@ from .session_store import (
     terminate_session,
     tree_fingerprint,
 )
-from .types import SessionMeta, SimRequest
+from xdb.sim.types import SessionMeta, SimRequest
 
 
 def _send_request(session_name: str | None, request: SimRequest) -> dict[str, Any]:

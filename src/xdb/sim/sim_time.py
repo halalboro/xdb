@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from ..errors import XdbError
+from xdb.errors import XdbError
 
 SIM_TIME_UNITS = {
     "fs": Decimal("1e-15"),

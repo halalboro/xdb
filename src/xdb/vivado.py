@@ -1,4 +1,4 @@
-from .backend.vivado import (  # noqa: F401
+from xdb.backend.vivado import (  # noqa: F401
     VivadoBackend,
     VivadoError,
     VivadoResult,

@@ -7,11 +7,11 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import __version__
-from .backend.base import Capability
-from .backend.select import select_backend
-from .errors import UnsupportedOperationError, XdbError
-from .sim.client import (
+from xdb import __version__
+from xdb.backend.base import Capability
+from xdb.backend.select import select_backend
+from xdb.errors import UnsupportedOperationError, XdbError
+from xdb.sim.client import (
     add_breakpoint,
     add_wave,
     axis_trace_session,
@@ -64,8 +64,8 @@ from .sim.client import (
     diff_snapshot_session,
     watch_changes_session,
 )
-from .sim.coyote import parse_hex_bytes
-from .sim.daemon import run_daemon
+from xdb.sim.coyote import parse_hex_bytes
+from xdb.sim.daemon import run_daemon
 
 
 def _json_text(data: dict) -> str:

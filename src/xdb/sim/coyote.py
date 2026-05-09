@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from ..errors import XdbError
+from xdb.errors import XdbError
 
 _INPUT_SET_CSR = 0
 _INPUT_GET_CSR = 1

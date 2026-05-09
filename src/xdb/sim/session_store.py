@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
-from ..errors import XdbError
-from .types import SessionMeta
+from xdb.errors import XdbError
+from xdb.sim.types import SessionMeta
 
 _RUNTIME_STAGED_STAMP = ".xdb-runtime-staged.json"
 _RUNTIME_META = "xdb-runtime.json"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .types import SimRequest
+from xdb.sim.types import SimRequest
 
 
 OP_STATUS = "status"

@@ -5,8 +5,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Protocol, TypeVar
 
-from ..errors import XdbError
-from .coyote import (
+from xdb.errors import XdbError
+from xdb.sim.coyote import (
     CoyoteSimController,
     MAX_TRANSFER_SIZE,
     ensure_supported_local_opcode,

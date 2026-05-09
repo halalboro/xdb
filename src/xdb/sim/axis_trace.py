@@ -5,7 +5,7 @@ import re
 import time
 from typing import Any, Protocol, cast
 
-from ..errors import XdbError
+from xdb.errors import XdbError
 
 _AXIS_REQUIRED_SIGNALS = ("tvalid", "tready", "tdata")
 _AXIS_OPTIONAL_SIGNALS = ("tkeep", "tlast", "tid")

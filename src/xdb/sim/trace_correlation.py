@@ -3,8 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from ..errors import XdbError
-from .sim_time import parse_duration_tokens, parse_sim_time
+from xdb.errors import XdbError
+from xdb.sim.sim_time import parse_duration_tokens, parse_sim_time
 
 
 def _trace_wallclock(value: dict[str, Any]) -> float | None:

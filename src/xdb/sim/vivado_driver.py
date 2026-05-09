@@ -15,13 +15,13 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Callable, TextIO, cast
 
-from ..errors import XdbError
-from .coyote import CoyoteSimController
-from .tcl_api import build_proc_request
-from .tcl_helpers import _tcl_string, load_tcl_library
-from .vivado_coyote_runtime import VivadoCoyoteMixin
-from .vivado_debug import VivadoDebugMixin
-from .vivado_queries import VivadoQueryMixin
+from xdb.errors import XdbError
+from xdb.sim.coyote import CoyoteSimController
+from xdb.sim.tcl_api import build_proc_request
+from xdb.sim.tcl_helpers import _tcl_string, load_tcl_library
+from xdb.sim.vivado_coyote_runtime import VivadoCoyoteMixin
+from xdb.sim.vivado_debug import VivadoDebugMixin
+from xdb.sim.vivado_queries import VivadoQueryMixin
 
 
 class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):

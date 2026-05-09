@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import os
 
-from ..errors import XdbError
-from .base import DebugBackend
-from .chipscopy_backend import ChipScoPyBackend
-from .vivado import VivadoBackend
+from xdb.errors import XdbError
+from xdb.backend.base import DebugBackend
+from xdb.backend.chipscopy_backend import ChipScoPyBackend
+from xdb.backend.vivado import VivadoBackend
 
 
 def select_backend(name: str | None = None) -> DebugBackend:

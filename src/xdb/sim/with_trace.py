@@ -3,9 +3,9 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, cast
 
-from ..errors import XdbError
-from .axis_trace import AxisTraceSampler
-from .protocol import (
+from xdb.errors import XdbError
+from xdb.sim.axis_trace import AxisTraceSampler
+from xdb.sim.protocol import (
     OP_CLEAR_COMPLETED,
     OP_COMPLETED,
     OP_COYOTE_STATUS,
@@ -24,9 +24,9 @@ from .protocol import (
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
 )
-from .sim_time import parse_duration_tokens, parse_sim_time
-from .tcl_helpers import _tcl_string
-from .trace_correlation import correlate_trace
+from xdb.sim.sim_time import parse_duration_tokens, parse_sim_time
+from xdb.sim.tcl_helpers import _tcl_string
+from xdb.sim.trace_correlation import correlate_trace
 
 
 _SUPPORTED_WITH_TRACE_OPS = {

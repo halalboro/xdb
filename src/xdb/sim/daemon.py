@@ -8,8 +8,8 @@ import traceback
 from pathlib import Path
 from typing import Any, cast
 
-from ..errors import XdbError
-from .protocol import (
+from xdb.errors import XdbError
+from xdb.sim.protocol import (
     OP_ASSERT_SIGNAL,
     OP_ASSERT_TCL,
     OP_BREAKPOINT_ADD,
@@ -60,9 +60,9 @@ from .protocol import (
     OP_WAVE_ADD,
     OP_DIFF_SNAPSHOT,
 )
-from .session_store import SessionPaths, ensure_session_dir, write_meta
-from .vivado_driver import VivadoSimDriver
-from .with_trace import WithTraceRunner
+from xdb.sim.session_store import SessionPaths, ensure_session_dir, write_meta
+from xdb.sim.vivado_driver import VivadoSimDriver
+from xdb.sim.with_trace import WithTraceRunner
 
 
 def _arg_int(args: dict[str, Any], name: str, default: int = 0) -> int:

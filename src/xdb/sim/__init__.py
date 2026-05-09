@@ -1,4 +1,4 @@
-from .client import (
+from xdb.sim.client import (
     add_breakpoint,
     add_wave,
     clear_breakpoints,

@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..errors import XdbError
-from .tcl_api import build_proc_request
+from xdb.errors import XdbError
+from xdb.sim.tcl_api import build_proc_request
 
 
 class _VivadoDebugHost(Protocol):

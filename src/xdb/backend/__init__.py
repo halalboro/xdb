@@ -1,8 +1,8 @@
-from ..errors import UnsupportedOperationError, XdbError
-from .base import Capability, DebugBackend
-from .chipscopy_backend import ChipScoPyBackend
-from .select import select_backend
-from .vivado import VivadoBackend, VivadoError
+from xdb.errors import UnsupportedOperationError, XdbError
+from xdb.backend.base import Capability, DebugBackend
+from xdb.backend.chipscopy_backend import ChipScoPyBackend
+from xdb.backend.select import select_backend
+from xdb.backend.vivado import VivadoBackend, VivadoError
 
 __all__ = [
     "Capability",
