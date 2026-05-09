@@ -11,7 +11,7 @@ import sys
 import time
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, Mapping, NoReturn, cast
 
 from ..errors import XdbError
 from .coyote import parse_hex_bytes
@@ -1094,6 +1094,20 @@ def trace_events_get_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_TRACE_EVENTS_GET))
 
 
+class _WithTraceArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        raise XdbError(message)
+
+    def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
+        if status:
+            raise XdbError((message or "invalid wrapped command arguments").strip())
+        raise XdbError((message or "unexpected parser exit").strip())
+
+
+def _with_trace_parser() -> argparse.ArgumentParser:
+    return _WithTraceArgumentParser(add_help=False)
+
+
 def _parse_with_trace_wait_args(
     rest: list[str], *, positional_count: int
 ) -> tuple[list[str], float | None, int | None, list[str]]:
@@ -1199,7 +1213,7 @@ def _parse_with_trace_command(command: list[str]) -> SimRequest:
             raise XdbError("xdb sim clear-completed does not accept extra arguments in with-trace")
         return make_request(OP_CLEAR_COMPLETED)
     if subcommand == "invoke":
-        parser = argparse.ArgumentParser(add_help=False)
+        parser = _with_trace_parser()
         parser.add_argument("opcode")
         parser.add_argument("--addr", default=None)
         parser.add_argument("--len", dest="length", default=None)
@@ -1233,7 +1247,7 @@ def _parse_with_trace_command(command: list[str]) -> SimRequest:
             dst_dest=int(ns.dst_dest, 0),
         )
     if subcommand == "completed":
-        parser = argparse.ArgumentParser(add_help=False)
+        parser = _with_trace_parser()
         parser.add_argument("opcode")
         parser.add_argument("--count", type=int, default=None)
         parser.add_argument("--timeout", type=float, default=None)
@@ -1245,7 +1259,7 @@ def _parse_with_trace_command(command: list[str]) -> SimRequest:
             timeout_seconds=ns.timeout,
         )
     if subcommand == "irq" and rest[:1] == ["wait"]:
-        parser = argparse.ArgumentParser(add_help=False)
+        parser = _with_trace_parser()
         parser.add_argument("wait")
         parser.add_argument("--timeout", type=float, default=None)
         ns = parser.parse_args(rest)
@@ -1254,7 +1268,7 @@ def _parse_with_trace_command(command: list[str]) -> SimRequest:
         if not rest:
             raise XdbError("missing xdb sim csr subcommand")
         csr_sub = rest[0]
-        parser = argparse.ArgumentParser(add_help=False)
+        parser = _with_trace_parser()
         if csr_sub == "read":
             parser.add_argument("read")
             parser.add_argument("addr")
@@ -1276,7 +1290,7 @@ def _parse_with_trace_command(command: list[str]) -> SimRequest:
         if not rest:
             raise XdbError("missing xdb sim mem subcommand")
         mem_sub = rest[0]
-        parser = argparse.ArgumentParser(add_help=False)
+        parser = _with_trace_parser()
         if mem_sub == "map":
             parser.add_argument("map")
             parser.add_argument("space")

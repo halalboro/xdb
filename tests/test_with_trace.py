@@ -100,6 +100,16 @@ class WithTraceTests(unittest.TestCase):
         self.assertEqual(request["args"]["action_request"]["op"], OP_MEM_WRITE)
         self.assertEqual(request["args"]["action_request"]["args"]["data_hex"], "deadbeef")
 
+    def test_with_trace_wrapped_argparse_errors_raise_xdb_error(self) -> None:
+        with self.assertRaises(XdbError):
+            with_trace_session(
+                None,
+                ["xdb", "sim", "invoke"],
+                ["10", "ns"],
+                step_tokens=["1", "ns"],
+                transactions=True,
+            )
+
     def test_with_trace_rejects_non_xdb_sim_commands(self) -> None:
         with self.assertRaises(XdbError):
             with_trace_session(None, ["echo", "ok"], ["10", "ns"], step_tokens=["1", "ns"], transactions=True)
