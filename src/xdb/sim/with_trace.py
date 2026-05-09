@@ -24,7 +24,12 @@ from xdb.sim.protocol import (
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
 )
-from xdb.sim.sim_time import parse_duration_tokens, parse_sim_time
+from xdb.sim.sim_time import (
+    duration_unit_from_tokens,
+    format_sim_duration_tokens,
+    parse_duration_tokens,
+    parse_sim_time,
+)
 from xdb.sim.tcl_helpers import _tcl_string
 from xdb.sim.trace_correlation import correlate_trace
 
@@ -130,16 +135,13 @@ class WithTraceRunner:
         self.driver._sim_advance_hook = handle_sim_advance
         try:
             action_result = self._with_trace_action(action_op, action_args, step_tokens)
-            action_time_after = str(self.driver.time().get("time") or "")
-            current_time_value = parse_sim_time(action_time_after)
-            end_time_value = current_time_value + duration_value
-            iterations = 0
-            while current_time_value < end_time_value:
-                run_result = self.driver.run(step_tokens)
-                current_time_text = str(run_result.get("time_after") or "")
-                current_time_value = parse_sim_time(current_time_text)
-                iterations += 1
-            time_after = str(self.driver.time().get("time") or "")
+            observation_result = self._run_duration_sampled(
+                duration_tokens,
+                step_tokens,
+                kind="observation",
+            )
+            iterations = int(observation_result.get("sample_iterations") or 0)
+            time_after = str(observation_result.get("time_after") or self.driver.time().get("time") or "")
         finally:
             self.driver._sim_advance_hook = previous_hook
             if transactions and self.driver._coyote is not None:
@@ -195,6 +197,10 @@ class WithTraceRunner:
         duration_text, duration_value = parse_duration_tokens(duration_tokens)
         if duration_value <= 0:
             raise XdbError(f"{kind} duration must be > 0")
+        _sample_step_text, sample_step_value = parse_duration_tokens(sample_step_tokens)
+        if sample_step_value <= 0:
+            raise XdbError("sample step must be > 0")
+        duration_unit = duration_unit_from_tokens(duration_tokens)
         time_before = str(self.driver.time().get("time") or "")
         current_time_value = parse_sim_time(time_before)
         end_time_value = current_time_value + duration_value
@@ -202,7 +208,13 @@ class WithTraceRunner:
         last_result: dict[str, Any] | None = None
         while current_time_value < end_time_value:
             previous_time_value = current_time_value
-            run_result = self.driver.run(sample_step_tokens)
+            remaining = end_time_value - current_time_value
+            run_tokens = (
+                sample_step_tokens
+                if sample_step_value <= remaining
+                else format_sim_duration_tokens(remaining, preferred_unit=duration_unit)
+            )
+            run_result = self.driver.run(run_tokens)
             last_result = run_result
             current_time_text = str(run_result.get("time_after") or "")
             current_time_value = parse_sim_time(current_time_text)

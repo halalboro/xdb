@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import sys
 import unittest
+from decimal import Decimal
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb.errors import XdbError
 from xdb.sim.client import with_trace_session
+from xdb.sim.sim_time import parse_sim_time
 from xdb.sim.protocol import (
     OP_INVOKE,
     OP_MEM_WRITE,
@@ -17,7 +20,37 @@ from xdb.sim.protocol import (
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
     OP_WITH_TRACE,
+    make_request,
 )
+from xdb.sim.with_trace import WithTraceRunner
+
+
+class _FakeWithTraceDriver:
+    def __init__(self) -> None:
+        self.time_seconds = Decimal("0")
+        self.run_tokens: list[list[str]] = []
+        self._sim_advance_hook = None
+        self._coyote = None
+
+    def time(self) -> dict[str, str]:
+        ns_value = self.time_seconds / Decimal("1e-9")
+        text = format(ns_value.normalize(), "f").rstrip("0").rstrip(".") or "0"
+        return {"time": f"{text} ns"}
+
+    def run(self, tokens: list[str]) -> dict[str, str]:
+        before = self.time()["time"]
+        self.run_tokens.append(list(tokens))
+        self.time_seconds += parse_sim_time(" ".join(tokens))
+        after = self.time()["time"]
+        if self._sim_advance_hook is not None:
+            self._sim_advance_hook(before, after)
+        return {"time_before": before, "time_after": after, "duration": " ".join(tokens)}
+
+    def trace_events_clear(self) -> dict[str, bool]:
+        return {"cleared": True}
+
+    def trace_events_get(self) -> dict[str, Any]:
+        return {"event_count": 0, "events": []}
 
 
 class WithTraceTests(unittest.TestCase):
@@ -99,6 +132,25 @@ class WithTraceTests(unittest.TestCase):
         self.assertEqual(request["op"], OP_WITH_TRACE)
         self.assertEqual(request["args"]["action_request"]["op"], OP_MEM_WRITE)
         self.assertEqual(request["args"]["action_request"]["args"]["data_hex"], "deadbeef")
+
+    def test_with_trace_sampled_run_caps_last_step_to_remaining_duration(self) -> None:
+        driver = _FakeWithTraceDriver()
+        runner = WithTraceRunner(driver, lambda _op, _args: {})
+
+        result = runner.run(
+            {
+                "action_request": make_request(OP_RUN, tokens=["5", "ns"]),
+                "duration_tokens": ["1", "ns"],
+                "step_tokens": ["10", "ns"],
+                "transactions": True,
+                "axis_paths": [],
+            }
+        )
+
+        self.assertEqual(driver.run_tokens, [["5", "ns"], ["1", "ns"]])
+        self.assertEqual(result["time_after"], "6 ns")
+        self.assertEqual(result["action"]["result"]["sample_iterations"], 1)
+        self.assertEqual(result["observation_iterations"], 1)
 
     def test_with_trace_wrapped_argparse_errors_raise_xdb_error(self) -> None:
         with self.assertRaises(XdbError):
