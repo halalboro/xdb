@@ -20,6 +20,8 @@ OP_STEP = "step"
 OP_UNTIL = "until"
 OP_UNTIL_SIGNAL = "until_signal"
 OP_BREAKPOINT_ADD = "breakpoint_add"
+OP_BREAKPOINT_LIST = "breakpoint_list"
+OP_BREAKPOINT_REMOVE = "breakpoint_remove"
 OP_BREAKPOINT_CLEAR = "breakpoint_clear"
 OP_TCL = "tcl"
 OP_SOURCE = "source"
@@ -72,6 +74,8 @@ ALL_OPERATIONS = {
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
     OP_BREAKPOINT_ADD,
+    OP_BREAKPOINT_LIST,
+    OP_BREAKPOINT_REMOVE,
     OP_BREAKPOINT_CLEAR,
     OP_TCL,
     OP_SOURCE,

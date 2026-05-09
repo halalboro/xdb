@@ -15,6 +15,8 @@ from xdb.sim.protocol import (
     OP_ASSERT_TCL,
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
+    OP_BREAKPOINT_LIST,
+    OP_BREAKPOINT_REMOVE,
     OP_CLEAR_COMPLETED,
     OP_CLOSE,
     OP_COMPLETED,
@@ -431,7 +433,15 @@ class SimDaemon:
             condition = str(args.get("condition") or "")
             if not condition:
                 raise XdbError("missing breakpoint condition")
-            return self.driver.add_breakpoint(condition)
+            poll_step_tokens = [str(v) for v in list(args.get("poll_step_tokens") or []) if str(v)]
+            return self.driver.add_breakpoint(condition, poll_step_tokens=poll_step_tokens)
+        if op == OP_BREAKPOINT_LIST:
+            return self.driver.list_breakpoints()
+        if op == OP_BREAKPOINT_REMOVE:
+            breakpoint_id = _arg_int(args, "breakpoint_id")
+            if breakpoint_id <= 0:
+                raise XdbError("breakpoint id must be > 0")
+            return self.driver.remove_breakpoint(breakpoint_id)
         if op == OP_BREAKPOINT_CLEAR:
             return self.driver.clear_breakpoints()
         if op == OP_TCL:

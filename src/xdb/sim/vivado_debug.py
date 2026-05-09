@@ -98,8 +98,18 @@ class VivadoDebugMixin:
     ) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_expect_change", signal, within_tokens))
 
-    def add_breakpoint(self: _VivadoDebugHost, condition: str) -> dict[str, Any]:
-        return self.request(build_proc_request("xdb_api_breakpoint_add", condition))
+    def add_breakpoint(
+        self: _VivadoDebugHost,
+        condition: str,
+        poll_step_tokens: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return self.request(build_proc_request("xdb_api_breakpoint_add", condition, poll_step_tokens or []))
+
+    def list_breakpoints(self: _VivadoDebugHost) -> dict[str, Any]:
+        return self.request(build_proc_request("xdb_api_breakpoint_list"))
+
+    def remove_breakpoint(self: _VivadoDebugHost, breakpoint_id: int) -> dict[str, Any]:
+        return self.request(build_proc_request("xdb_api_breakpoint_remove", breakpoint_id))
 
     def clear_breakpoints(self: _VivadoDebugHost) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_breakpoint_clear"))

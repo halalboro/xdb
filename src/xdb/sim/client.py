@@ -28,6 +28,8 @@ from xdb.sim.protocol import (
     OP_ASSERT_TCL,
     OP_BREAKPOINT_ADD,
     OP_BREAKPOINT_CLEAR,
+    OP_BREAKPOINT_LIST,
+    OP_BREAKPOINT_REMOVE,
     OP_CLEAR_COMPLETED,
     OP_CLOSE,
     OP_COMPLETED,
@@ -1056,8 +1058,26 @@ def expect_change_session(
     )
 
 
-def add_breakpoint(session_name: str | None, condition: str) -> dict[str, Any]:
-    return _send_request(session_name, make_request(OP_BREAKPOINT_ADD, condition=condition))
+def add_breakpoint(
+    session_name: str | None,
+    condition: str,
+    *,
+    poll_step_tokens: list[str] | None = None,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_BREAKPOINT_ADD, condition=condition, poll_step_tokens=list(poll_step_tokens or [])),
+    )
+
+
+def list_breakpoints(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_BREAKPOINT_LIST))
+
+
+def remove_breakpoint(session_name: str | None, breakpoint_id: int) -> dict[str, Any]:
+    if breakpoint_id <= 0:
+        raise XdbError("breakpoint id must be > 0")
+    return _send_request(session_name, make_request(OP_BREAKPOINT_REMOVE, breakpoint_id=breakpoint_id))
 
 
 def clear_breakpoints(session_name: str | None) -> dict[str, Any]:

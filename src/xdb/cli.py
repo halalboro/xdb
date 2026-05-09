@@ -19,6 +19,7 @@ from xdb.sim.client import (
     assert_tcl_session,
     clear_breakpoints,
     close_session,
+    list_breakpoints,
     coyote_clear_completed_session,
     coyote_completed_session,
     coyote_csr_read_session,
@@ -46,6 +47,7 @@ from xdb.sim.client import (
     provenance_session,
     relaunch_session,
     release_session,
+    remove_breakpoint,
     restage_session,
     restart_session,
     run_session,
@@ -689,7 +691,15 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_breakpoint_add = sim_bp_sub.add_parser("add")
     _add_debug_flag(s_sim_breakpoint_add)
     add_sim_session_arg(s_sim_breakpoint_add)
+    s_sim_breakpoint_add.add_argument("--poll-step", default=None, help="polling interval for fallback-polled breakpoints, e.g. '1 ns'")
     s_sim_breakpoint_add.add_argument("condition", nargs="+")
+    s_sim_breakpoint_list = sim_bp_sub.add_parser("list")
+    _add_debug_flag(s_sim_breakpoint_list)
+    add_sim_session_arg(s_sim_breakpoint_list)
+    s_sim_breakpoint_remove = sim_bp_sub.add_parser("remove")
+    _add_debug_flag(s_sim_breakpoint_remove)
+    add_sim_session_arg(s_sim_breakpoint_remove)
+    s_sim_breakpoint_remove.add_argument("breakpoint_id", type=int)
     s_sim_breakpoint_clear = sim_bp_sub.add_parser("clear")
     _add_debug_flag(s_sim_breakpoint_clear)
     add_sim_session_arg(s_sim_breakpoint_clear)
@@ -1059,7 +1069,17 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     )
                 )
             elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "add":
-                _print(add_breakpoint(args.session, _join_tokens(args.condition) or ""))
+                _print(
+                    add_breakpoint(
+                        args.session,
+                        _join_tokens(args.condition) or "",
+                        poll_step_tokens=None if args.poll_step is None else args.poll_step.split(),
+                    )
+                )
+            elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "list":
+                _print(list_breakpoints(args.session))
+            elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "remove":
+                _print(remove_breakpoint(args.session, args.breakpoint_id))
             elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "clear":
                 _print(clear_breakpoints(args.session))
             elif args.sim_cmd == "tcl":

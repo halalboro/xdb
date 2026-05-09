@@ -575,6 +575,29 @@ proc xdb_has_polled_breakpoints {} {
   return 0
 }
 
+proc xdb_polled_breakpoint_step_args {} {
+  set __xdb_best_args {}
+  set __xdb_best_fs -1
+  foreach __xdb_bp $::xdb_breakpoints {
+    if {[dict get $__xdb_bp mode] ne "poll"} {
+      continue
+    }
+    if {![dict exists $__xdb_bp poll_step_args]} {
+      continue
+    }
+    set __xdb_args [dict get $__xdb_bp poll_step_args]
+    if {[llength $__xdb_args] == 0} {
+      continue
+    }
+    set __xdb_fs [xdb_duration_args_to_fs $__xdb_args]
+    if {$__xdb_best_fs < 0 || $__xdb_fs < $__xdb_best_fs} {
+      set __xdb_best_fs $__xdb_fs
+      set __xdb_best_args $__xdb_args
+    }
+  }
+  return $__xdb_best_args
+}
+
 proc xdb_poll_breakpoints {} {
   foreach __xdb_bp $::xdb_breakpoints {
     if {[dict get $__xdb_bp mode] ne "poll"} {
@@ -592,6 +615,20 @@ proc xdb_breakpoint_hit_json {breakpoint} {
   return "\"breakpoint_hit\":true,\"breakpoint_id\":[dict get $breakpoint id],\"breakpoint_mode\":[xdb_json_string [dict get $breakpoint mode]],\"breakpoint_condition\":[xdb_json_string [dict get $breakpoint condition]]"
 }
 
+proc xdb_breakpoint_record_json {breakpoint} {
+  set __xdb_poll_step "null"
+  if {[dict exists $breakpoint poll_step_args] && [llength [dict get $breakpoint poll_step_args]] > 0} {
+    set __xdb_poll_step [xdb_json_string [join [dict get $breakpoint poll_step_args] " "]]
+  }
+  return "{\"id\":[dict get $breakpoint id],\"mode\":[xdb_json_string [dict get $breakpoint mode]],\"condition\":[xdb_json_string [dict get $breakpoint condition]],\"backend_id\":[xdb_json_string [dict get $breakpoint backend_id]],\"poll_step\":$__xdb_poll_step}"
+}
+
+proc xdb_breakpoint_disarm {breakpoint} {
+  if {[dict get $breakpoint mode] eq "when" && [dict get $breakpoint backend_id] ne ""} {
+    catch {nowhen [dict get $breakpoint backend_id]}
+  }
+}
+
 proc xdb_run_with_polled_breakpoints {run_args} {
   if {[llength $run_args] == 0} {
     error "polled breakpoints require a bounded run duration"
@@ -604,8 +641,13 @@ proc xdb_run_with_polled_breakpoints {run_args} {
   if {[llength $__xdb_hit] > 0} {
     return [xdb_breakpoint_hit_json $__xdb_hit]
   }
+  set __xdb_poll_step_args [xdb_polled_breakpoint_step_args]
   while {[xdb_parse_time_to_fs [current_time]] < $__xdb_deadline_fs} {
-    step
+    if {[llength $__xdb_poll_step_args] > 0} {
+      eval [linsert $__xdb_poll_step_args 0 run]
+    } else {
+      step
+    }
     incr __xdb_iterations
     set __xdb_current_fs [xdb_parse_time_to_fs [current_time]]
     set __xdb_hit [xdb_poll_breakpoints]
@@ -695,7 +737,7 @@ proc xdb_api_expect_change {signal within_args} {
   return "\"passed\":true,\"kind\":[xdb_json_string expect-change],\"signal\":[xdb_json_string $signal],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string $__xdb_within],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"changed\":true,\"iterations\":$__xdb_iterations"
 }
 
-proc xdb_api_breakpoint_add {condition} {
+proc xdb_api_breakpoint_add {condition {poll_step_args {}}} {
   set __xdb_condition [xdb_normalize_expr $condition]
   set __xdb_id $::xdb_next_breakpoint_id
   incr ::xdb_next_breakpoint_id
@@ -707,16 +749,44 @@ proc xdb_api_breakpoint_add {condition} {
       set __xdb_backend_id $__xdb_when_id
     }
   }
-  lappend ::xdb_breakpoints [dict create id $__xdb_id mode $__xdb_mode condition $__xdb_condition backend_id $__xdb_backend_id]
-  return "\"condition\":[xdb_json_string $__xdb_condition],\"breakpoint_id\":$__xdb_id,\"mode\":[xdb_json_string $__xdb_mode],\"backend_id\":[xdb_json_string $__xdb_backend_id]"
+  lappend ::xdb_breakpoints [dict create id $__xdb_id mode $__xdb_mode condition $__xdb_condition backend_id $__xdb_backend_id poll_step_args $poll_step_args]
+  set __xdb_poll_step_json "null"
+  if {[llength $poll_step_args] > 0} {
+    set __xdb_poll_step_json [xdb_json_string [join $poll_step_args " "]]
+  }
+  return "\"condition\":[xdb_json_string $__xdb_condition],\"breakpoint_id\":$__xdb_id,\"mode\":[xdb_json_string $__xdb_mode],\"backend_id\":[xdb_json_string $__xdb_backend_id],\"poll_step\":$__xdb_poll_step_json"
+}
+
+proc xdb_api_breakpoint_list {} {
+  set __xdb_records {}
+  foreach __xdb_bp $::xdb_breakpoints {
+    lappend __xdb_records [xdb_breakpoint_record_json $__xdb_bp]
+  }
+  return "\"count\":[llength $::xdb_breakpoints],\"breakpoints\":\[[join $__xdb_records ,]\]"
+}
+
+proc xdb_api_breakpoint_remove {breakpoint_id} {
+  set __xdb_remaining {}
+  set __xdb_removed {}
+  foreach __xdb_bp $::xdb_breakpoints {
+    if {[dict get $__xdb_bp id] == $breakpoint_id} {
+      set __xdb_removed $__xdb_bp
+    } else {
+      lappend __xdb_remaining $__xdb_bp
+    }
+  }
+  if {[llength $__xdb_removed] == 0} {
+    error [format "breakpoint not found: %s" $breakpoint_id]
+  }
+  xdb_breakpoint_disarm $__xdb_removed
+  set ::xdb_breakpoints $__xdb_remaining
+  return "\"removed\":true,\"breakpoint\":[xdb_breakpoint_record_json $__xdb_removed],\"count\":[llength $::xdb_breakpoints]"
 }
 
 proc xdb_api_breakpoint_clear {} {
   set __xdb_cleared 0
   foreach __xdb_bp $::xdb_breakpoints {
-    if {[dict get $__xdb_bp mode] eq "when" && [dict get $__xdb_bp backend_id] ne ""} {
-      catch {nowhen [dict get $__xdb_bp backend_id]}
-    }
+    xdb_breakpoint_disarm $__xdb_bp
     incr __xdb_cleared
   }
   set ::xdb_breakpoints {}
