@@ -110,6 +110,8 @@ xdb sim trace transactions --for 200 ns
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns -- \
   xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
 xdb sim exec -- helios-host --input-hex 01020304 --timeout-ms 1000
+xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns --exec -- \
+  helios-host --input-hex 01020304 --timeout-ms 1000
 
 # Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
 xdb sim coyote-status
@@ -228,8 +230,10 @@ xdb sim close
   and `--clean-env` as needed.
 - `xdb sim with-trace -- ...` currently supports a wrapped subset of `xdb sim`
   subcommands, including Coyote operations plus `run`, `step`, `until`, and
-  `until-signal`, and executes them under daemon-side tracing so AXIS and
-  transaction traces cover the same command-and-observation window. Use
+  `until-signal`. `xdb sim with-trace --exec -- <command...>` runs an external
+  host command while the daemon advances and samples the simulator. Both modes
+  execute under daemon-side tracing so AXIS and transaction traces cover the
+  same command-and-observation window. Use
   `--transactions`, repeat `--axis <path>`, and `--for <duration>` to choose
   the collected artifacts. When both modes are enabled, the result includes a
   `correlation` section with an ordered transaction/AXIS timeline and nearest
@@ -238,7 +242,9 @@ xdb sim close
   to focus links on all transaction events, opcode-bearing events, or
   address-bearing events. Output defaults to pretty JSON; use `--ndjson` for one
   event/record per line, `--summary` for a compact human-readable report, and
-  `--out <file>` to write the chosen format.
+  `--out <file>` to write the chosen format. With `--exec`, the options
+  `--cwd`, `--env KEY=VALUE`, `--timeout`, `--expect-exit-code`, and
+  `--clean-env` control the wrapped host command.
 - Current Coyote support is intentionally limited to the local host-memory
   protocol implemented by the upstream Coyote simulation target. Remote RDMA and
   TCP commands are not supported yet.

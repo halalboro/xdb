@@ -138,6 +138,32 @@ class WithTraceTests(unittest.TestCase):
                 for key, value in expected_args.items():
                     self.assertEqual(action_request["args"][key], value)
 
+    def test_with_trace_exec_mode_sends_external_command_request(self) -> None:
+        with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
+            with_trace_session(
+                None,
+                ["--", "helios-host", "--input-hex", "0102"],
+                ["10", "ns"],
+                step_tokens=["1", "ns"],
+                transactions=True,
+                exec_mode=True,
+                exec_cwd="/repo",
+                exec_env_overrides=["EXTRA=1"],
+                exec_timeout_seconds=2.0,
+                exec_expect_exit_code=3,
+                exec_clean_env=True,
+            )
+
+        request = send_request.call_args.args[1]
+        self.assertEqual(request["op"], OP_WITH_TRACE)
+        self.assertEqual(request["args"]["exec_command"], ["helios-host", "--input-hex", "0102"])
+        self.assertEqual(request["args"]["exec_cwd"], "/repo")
+        self.assertEqual(request["args"]["exec_env_overrides"], ["EXTRA=1"])
+        self.assertEqual(request["args"]["exec_timeout_seconds"], 2.0)
+        self.assertEqual(request["args"]["exec_expect_exit_code"], 3)
+        self.assertTrue(request["args"]["exec_clean_env"])
+        self.assertNotIn("action_request", request["args"])
+
     def test_with_trace_supports_mem_write_payload_parsing(self) -> None:
         with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
             with_trace_session(

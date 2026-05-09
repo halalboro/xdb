@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import tempfile
 import time
-from typing import Any, Callable, cast
+from pathlib import Path
+from typing import Any, Callable, Mapping, cast
 
 from xdb.errors import XdbError
 from xdb.sim.axis_trace import AxisTraceSampler
+from xdb.sim.exec_env import derive_sim_exec_env, parse_env_overrides, resolve_exec_cwd
 from xdb.sim.protocol import (
     OP_CLEAR_COMPLETED,
     OP_COMPLETED,
@@ -70,15 +75,19 @@ class WithTraceRunner:
         self,
         driver: Any,
         dispatch: Callable[[str, dict[str, Any]], dict[str, Any]],
+        *,
+        meta: Mapping[str, object] | None = None,
     ):
         self.driver = driver
         self.dispatch = dispatch
+        self.meta = meta or {}
 
     def run(self, args: dict[str, Any]) -> dict[str, Any]:
+        exec_command = [str(v) for v in list(args.get("exec_command") or []) if str(v)]
         action_request = cast(dict[str, Any], args.get("action_request") or {})
-        action_op = str(action_request.get("op") or "")
+        action_op = "exec" if exec_command else str(action_request.get("op") or "")
         action_args = cast(dict[str, Any], action_request.get("args") or {})
-        if action_op not in _SUPPORTED_WITH_TRACE_OPS:
+        if not exec_command and action_op not in _SUPPORTED_WITH_TRACE_OPS:
             raise XdbError(
                 "with-trace currently supports a limited set of 'xdb sim' commands; "
                 f"unsupported op: {action_op}"
@@ -130,7 +139,20 @@ class WithTraceRunner:
             lambda: {"time": current_trace_time, "time_source": "last_sample"},
             enabled=transactions,
         ), self.driver.sim_advance_hook(handle_sim_advance):
-            action_result = self._with_trace_action(action_op, action_args, step_tokens)
+            if exec_command:
+                action_result = self._with_trace_exec_action(
+                    exec_command,
+                    step_tokens,
+                    cwd=str(args.get("exec_cwd") or "") or None,
+                    env_overrides=[
+                        str(v) for v in list(args.get("exec_env_overrides") or []) if str(v)
+                    ],
+                    timeout_seconds=_arg_optional_float(args, "exec_timeout_seconds"),
+                    expect_exit_code=int(args.get("exec_expect_exit_code") or 0),
+                    clean_env=bool(args.get("exec_clean_env")),
+                )
+            else:
+                action_result = self._with_trace_action(action_op, action_args, step_tokens)
             observation_result = self._run_duration_sampled(
                 duration_tokens,
                 step_tokens,
@@ -178,6 +200,75 @@ class WithTraceRunner:
                 window_tokens=correlate_window_tokens or None,
             )
         return result
+
+    def _with_trace_exec_action(
+        self,
+        command: list[str],
+        step_tokens: list[str],
+        *,
+        cwd: str | None,
+        env_overrides: list[str],
+        timeout_seconds: float | None,
+        expect_exit_code: int,
+        clean_env: bool,
+    ) -> dict[str, Any]:
+        session_name = str(self.meta.get("session_name") or "default")
+        session_env = derive_sim_exec_env(self.meta, session_name)
+        overrides = parse_env_overrides(env_overrides)
+        run_env = {} if clean_env else dict(os.environ)
+        run_env.update(session_env)
+        run_env.update(overrides)
+        reported_env = {**session_env, **overrides}
+        run_cwd = resolve_exec_cwd(cwd, self.meta, Path.cwd())
+        started_seconds = time.time()
+        timed_out = False
+        exit_code: int | None = None
+        stdout = ""
+        stderr = ""
+        with (
+            tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stdout_file,
+            tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file,
+        ):
+            try:
+                proc = subprocess.Popen(
+                    command,
+                    cwd=run_cwd,
+                    env=run_env,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    text=True,
+                    start_new_session=True,
+                )
+            except FileNotFoundError as e:
+                raise XdbError(f"command not found: {command[0]}") from e
+            while proc.poll() is None:
+                if timeout_seconds is not None and time.time() - started_seconds >= timeout_seconds:
+                    timed_out = True
+                    proc.kill()
+                    proc.wait(timeout=5)
+                    break
+                self.driver.run(step_tokens)
+            if proc.poll() is None:
+                proc.wait()
+            exit_code = int(proc.returncode) if proc.returncode is not None else None
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+            stdout = stdout_file.read()
+            stderr = stderr_file.read()
+        finished_seconds = time.time()
+        return {
+            "kind": "exec",
+            "ok": (not timed_out) and exit_code == expect_exit_code,
+            "timed_out": timed_out,
+            "exit_code": exit_code,
+            "expected_exit_code": expect_exit_code,
+            "argv": command,
+            "cwd": run_cwd,
+            "env": reported_env,
+            "stdout": stdout,
+            "stderr": stderr,
+            "duration_seconds": max(0.0, finished_seconds - started_seconds),
+        }
 
     def _run_duration_sampled(
         self,

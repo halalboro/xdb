@@ -233,7 +233,7 @@ class SimDaemon:
         return b"".join(chunks)
 
     def _with_trace(self, args: dict[str, Any]) -> dict[str, Any]:
-        return WithTraceRunner(self.driver, self._dispatch).run(args)
+        return WithTraceRunner(self.driver, self._dispatch, meta=self.meta).run(args)
 
     def _dispatch(self, op: str, args: dict[str, Any]) -> dict[str, Any]:
         if op == OP_STATUS:

@@ -16,6 +16,12 @@ from typing import Any, Mapping, NoReturn, cast
 
 from xdb.errors import XdbError
 from xdb.sim.coyote import parse_hex_bytes
+from xdb.sim.exec_env import (
+    derive_sim_exec_env,
+    normalize_remainder_command,
+    parse_env_overrides,
+    resolve_exec_cwd,
+)
 from xdb.sim.protocol import (
     OP_ASSERT_SIGNAL,
     OP_ASSERT_TCL,
@@ -127,52 +133,6 @@ def _recv_all(sock: socket.socket) -> bytes:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _normalize_remainder_command(command: list[str]) -> list[str]:
-    normalized = list(command)
-    if normalized and normalized[0] == "--":
-        normalized = normalized[1:]
-    if not normalized:
-        raise XdbError("missing command after '--'")
-    return normalized
-
-
-def _parse_env_overrides(values: list[str]) -> dict[str, str]:
-    overrides: dict[str, str] = {}
-    for item in values:
-        if "=" not in item:
-            raise XdbError(f"environment override must be KEY=VALUE: {item!r}")
-        key, value = item.split("=", 1)
-        key = key.strip()
-        if not key:
-            raise XdbError(f"environment override has empty key: {item!r}")
-        overrides[key] = value
-    return overrides
-
-
-def _derive_sim_exec_env(meta: Mapping[str, object], session_name: str) -> dict[str, str]:
-    runtime_root = str(meta.get("runtime_root") or "")
-    work_dir = str(meta.get("work_dir") or "")
-    env: dict[str, str] = {
-        "XDB_SIM_SESSION": session_name,
-    }
-    for key, value in (
-        ("XDB_SIM_RUNTIME_ROOT", runtime_root),
-        ("XDB_SIM_WORKSPACE", runtime_root),
-        ("XDB_SIM_WORK_DIR", work_dir),
-        ("XDB_SIM_SOCKET", str(meta.get("socket_path") or "")),
-        ("XDB_SIM_PACKAGE_RUNTIME", str(meta.get("package_runtime") or "")),
-        ("XDB_SIM_PROJECT", str(meta.get("project") or "")),
-        ("XDB_SIM_SIMSET", str(meta.get("simset") or "")),
-        ("XDB_SIM_TOP", str(meta.get("top") or "")),
-        ("XDB_SIM_MODE", str(meta.get("mode") or "")),
-    ):
-        if value:
-            env[key] = value
-    if runtime_root:
-        env["COYOTE_SIM_DIR"] = runtime_root
-    return env
 
 
 _SIM_TIME_UNITS = {
@@ -1155,16 +1115,16 @@ def exec_session(
     expect_exit_code: int = 0,
     clean_env: bool = False,
 ) -> dict[str, Any]:
-    argv = _normalize_remainder_command(command)
+    argv = normalize_remainder_command(command)
     paths = session_paths(session_name)
     meta = require_live_meta(paths)
-    session_env = _derive_sim_exec_env(meta, paths.session_name)
-    overrides = _parse_env_overrides(list(env_overrides or []))
+    session_env = derive_sim_exec_env(meta, paths.session_name)
+    overrides = parse_env_overrides(list(env_overrides or []))
     run_env = {} if clean_env else dict(os.environ)
     run_env.update(session_env)
     run_env.update(overrides)
     reported_env = {**session_env, **overrides}
-    run_cwd = str(Path(cwd).expanduser().resolve()) if cwd else str(meta.get("anchor_dir") or paths.anchor_dir)
+    run_cwd = resolve_exec_cwd(cwd, meta, paths.anchor_dir)
     started_at = _now_iso()
     started_seconds = time.time()
     try:
@@ -1484,16 +1444,33 @@ def with_trace_session(
     only_handshakes: bool = False,
     correlate_by: str = "nearest",
     correlate_window_tokens: list[str] | None = None,
+    exec_mode: bool = False,
+    exec_cwd: str | None = None,
+    exec_env_overrides: list[str] | None = None,
+    exec_timeout_seconds: float | None = None,
+    exec_expect_exit_code: int = 0,
+    exec_clean_env: bool = False,
 ) -> dict[str, Any]:
     axis_paths = list(axis_paths or [])
     if not transactions and not axis_paths:
         raise XdbError("with-trace requires at least one trace mode")
-    action_request = _parse_with_trace_command(command)
+    request_args: dict[str, Any] = {}
+    if exec_mode:
+        request_args.update(
+            exec_command=normalize_remainder_command(command),
+            exec_cwd=exec_cwd or "",
+            exec_env_overrides=list(exec_env_overrides or []),
+            exec_timeout_seconds=exec_timeout_seconds,
+            exec_expect_exit_code=exec_expect_exit_code,
+            exec_clean_env=exec_clean_env,
+        )
+    else:
+        request_args["action_request"] = _parse_with_trace_command(command)
     return _send_request(
         session_name,
         make_request(
             OP_WITH_TRACE,
-            action_request=action_request,
+            **request_args,
             duration_tokens=duration_tokens,
             step_tokens=step_tokens,
             transactions=transactions,

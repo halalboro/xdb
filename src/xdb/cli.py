@@ -746,6 +746,12 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     add_sim_session_arg(s_sim_with_trace)
     s_sim_with_trace.add_argument("--transactions", action="store_true")
     s_sim_with_trace.add_argument("--axis", dest="axis_paths", action="append", default=[])
+    s_sim_with_trace.add_argument("--exec", dest="exec_mode", action="store_true", help="wrap an external host command instead of an xdb sim subcommand")
+    s_sim_with_trace.add_argument("--cwd", default=None, help="working directory for --exec command")
+    s_sim_with_trace.add_argument("--env", dest="exec_env_overrides", action="append", default=[])
+    s_sim_with_trace.add_argument("--timeout", type=float, default=None, help="wall-clock timeout for --exec command")
+    s_sim_with_trace.add_argument("--expect-exit-code", type=int, default=0)
+    s_sim_with_trace.add_argument("--clean-env", action="store_true", help="do not inherit current environment for --exec command")
     s_sim_with_trace.add_argument("--for", dest="duration", nargs="+", required=True)
     s_sim_with_trace.add_argument("--step", nargs="+", default=["1", "ns"])
     s_sim_with_trace.add_argument("--decode-bytes", action="store_true")
@@ -1102,6 +1108,12 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         if args.correlate_window is None
                         else _resolve_sim_step_tokens(args.correlate_window)
                     ),
+                    exec_mode=bool(args.exec_mode),
+                    exec_cwd=args.cwd,
+                    exec_env_overrides=list(args.exec_env_overrides or []),
+                    exec_timeout_seconds=args.timeout,
+                    exec_expect_exit_code=args.expect_exit_code,
+                    exec_clean_env=bool(args.clean_env),
                 )
                 if args.ndjson:
                     _emit_text(_format_with_trace_ndjson(result), args.out)
