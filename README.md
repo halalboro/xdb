@@ -109,9 +109,9 @@ xdb sim axis trace /tb_top/dut/axis_in --for 100 ns --decode-bytes
 xdb sim trace transactions --for 200 ns
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns -- \
   xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
-xdb sim exec -- helios-host --input-hex 01020304 --timeout-ms 1000
+xdb sim exec -- ./host-test --input 01020304
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns --exec -- \
-  helios-host --input-hex 01020304 --timeout-ms 1000
+  ./host-test --input 01020304
 
 # Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
 xdb sim coyote-status

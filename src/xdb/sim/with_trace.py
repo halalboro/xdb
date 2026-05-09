@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import tempfile
 import time
@@ -68,6 +69,15 @@ def _arg_optional_int(args: dict[str, Any], name: str) -> int | None:
 def _arg_optional_float(args: dict[str, Any], name: str) -> float | None:
     value = args.get(name)
     return None if value is None else float(value)
+
+
+def _terminate_process_group(proc: subprocess.Popen[str]) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except OSError:
+        proc.terminate()
 
 
 class WithTraceRunner:
@@ -241,15 +251,24 @@ class WithTraceRunner:
                 )
             except FileNotFoundError as e:
                 raise XdbError(f"command not found: {command[0]}") from e
-            while proc.poll() is None:
-                if timeout_seconds is not None and time.time() - started_seconds >= timeout_seconds:
-                    timed_out = True
-                    proc.kill()
-                    proc.wait(timeout=5)
-                    break
-                self.driver.run(step_tokens)
-            if proc.poll() is None:
-                proc.wait()
+            try:
+                while proc.poll() is None:
+                    if timeout_seconds is not None and time.time() - started_seconds >= timeout_seconds:
+                        timed_out = True
+                        _terminate_process_group(proc)
+                        proc.wait(timeout=5)
+                        break
+                    self.driver.run(step_tokens)
+                if proc.poll() is None:
+                    proc.wait()
+            except BaseException:
+                if proc.poll() is None:
+                    _terminate_process_group(proc)
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                raise
             exit_code = int(proc.returncode) if proc.returncode is not None else None
             stdout_file.seek(0)
             stderr_file.seek(0)

@@ -142,7 +142,7 @@ class WithTraceTests(unittest.TestCase):
         with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
             with_trace_session(
                 None,
-                ["--", "helios-host", "--input-hex", "0102"],
+                ["--", "host-test", "--input", "0102"],
                 ["10", "ns"],
                 step_tokens=["1", "ns"],
                 transactions=True,
@@ -156,7 +156,7 @@ class WithTraceTests(unittest.TestCase):
 
         request = send_request.call_args.args[1]
         self.assertEqual(request["op"], OP_WITH_TRACE)
-        self.assertEqual(request["args"]["exec_command"], ["helios-host", "--input-hex", "0102"])
+        self.assertEqual(request["args"]["exec_command"], ["host-test", "--input", "0102"])
         self.assertEqual(request["args"]["exec_cwd"], "/repo")
         self.assertEqual(request["args"]["exec_env_overrides"], ["EXTRA=1"])
         self.assertEqual(request["args"]["exec_timeout_seconds"], 2.0)
@@ -197,6 +197,40 @@ class WithTraceTests(unittest.TestCase):
         self.assertEqual(result["time_after"], "6 ns")
         self.assertEqual(result["action"]["result"]["sample_iterations"], 1)
         self.assertEqual(result["observation_iterations"], 1)
+
+    def test_with_trace_exec_action_advances_sim_and_injects_env(self) -> None:
+        driver = _FakeWithTraceDriver()
+        runner = WithTraceRunner(
+            driver,
+            lambda _op, _args: {},
+            meta={
+                "session_name": "unit",
+                "anchor_dir": str(Path.cwd()),
+                "runtime_root": "/tmp/xdb-runtime",
+                "work_dir": "/tmp/xdb-runtime/work",
+                "socket_path": "/tmp/xdb.sock",
+            },
+        )
+
+        result = runner.run(
+            {
+                "exec_command": [
+                    sys.executable,
+                    "-c",
+                    "import os,time; print(os.environ['COYOTE_SIM_DIR']); time.sleep(0.02)",
+                ],
+                "duration_tokens": ["1", "ns"],
+                "step_tokens": ["1", "ns"],
+                "transactions": True,
+                "axis_paths": [],
+                "exec_clean_env": True,
+            }
+        )
+
+        self.assertTrue(result["action"]["result"]["ok"])
+        self.assertEqual(result["action"]["result"]["stdout"].strip(), "/tmp/xdb-runtime")
+        self.assertEqual(result["action"]["result"]["env"]["COYOTE_SIM_DIR"], "/tmp/xdb-runtime")
+        self.assertGreaterEqual(len(driver.run_tokens), 2)
 
     def test_with_trace_wrapped_argparse_errors_raise_xdb_error(self) -> None:
         with self.assertRaises(XdbError):

@@ -20,21 +20,21 @@ class ExecSessionTests(unittest.TestCase):
             repo.mkdir()
             (repo / ".git").mkdir()
             runtime_root = Path(tmpdir) / "runtime"
-            work_dir = runtime_root / "helios-coyote.sim" / "sim_1" / "behav" / "xsim"
+            work_dir = runtime_root / "project.sim" / "sim_1" / "behav" / "xsim"
             meta = {
                 "anchor_dir": str(repo),
                 "runtime_root": str(runtime_root),
                 "work_dir": str(work_dir),
                 "socket_path": str(Path(tmpdir) / "control.sock"),
                 "package_runtime": "/nix/store/demo/project/sim",
-                "project": str(runtime_root / "helios-coyote.xpr"),
+                "project": str(runtime_root / "project.xpr"),
                 "simset": "sim_1",
                 "top": "tb_user",
                 "mode": "behavioral",
                 "state": "ready",
             }
             completed = subprocess.CompletedProcess(
-                ["helios-host", "--input-hex", "0102"],
+                ["host-test", "--input", "0102"],
                 0,
                 stdout="ok\n",
                 stderr="",
@@ -52,14 +52,14 @@ class ExecSessionTests(unittest.TestCase):
                 ):
                     result = exec_session(
                         "versal",
-                        ["--", "helios-host", "--input-hex", "0102"],
+                        ["--", "host-test", "--input", "0102"],
                         env_overrides=["EXTRA=1"],
                     )
             finally:
                 os.chdir(old_cwd)
 
         run_kwargs = run_cmd.call_args.kwargs
-        self.assertEqual(run_cmd.call_args.args[0], ["helios-host", "--input-hex", "0102"])
+        self.assertEqual(run_cmd.call_args.args[0], ["host-test", "--input", "0102"])
         self.assertEqual(run_kwargs["cwd"], str(repo))
         self.assertEqual(run_kwargs["env"]["XDB_SIM_SESSION"], "versal")
         self.assertEqual(run_kwargs["env"]["XDB_SIM_RUNTIME_ROOT"], str(runtime_root))
