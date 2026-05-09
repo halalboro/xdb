@@ -40,13 +40,59 @@
         pkgs = nixpkgs.legacyPackages.${system};
         python = pkgs.python3;
 
+        source = builtins.path {
+          name = "xdb-source";
+          path = ./.;
+          filter =
+            path: type:
+            let
+              base = baseNameOf path;
+              ignoredDirs = [
+                ".git"
+                ".direnv"
+                ".venv"
+                "venv"
+                "__pycache__"
+                ".pytest_cache"
+                ".ruff_cache"
+                ".mypy_cache"
+                ".pyright"
+                ".Xil"
+                "xsim.dir"
+                "build"
+                "dist"
+                "htmlcov"
+              ];
+              ignoredFiles = [
+                ".coverage"
+                "coverage.xml"
+              ];
+            in
+            !(builtins.elem base ignoredDirs)
+            && !(builtins.elem base ignoredFiles)
+            && !(type == "symlink" && lib.hasPrefix "result" base)
+            && !(lib.hasSuffix ".pyc" base)
+            && !(lib.hasSuffix ".pyo" base)
+            && !(lib.hasSuffix ".egg-info" base)
+            && !(lib.hasSuffix ".jou" base)
+            && !(lib.hasSuffix ".log" base)
+            && !(lib.hasSuffix ".str" base)
+            && !(lib.hasSuffix ".wdb" base)
+            && !(lib.hasSuffix ".vcd" base)
+            && !(lib.hasSuffix ".fst" base);
+        };
+
         workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
         overlay = workspace.mkPyprojectOverlay { sourcePreference = "wheel"; };
         editableOverlay = workspace.mkEditablePyprojectOverlay {
           root = "$REPO_ROOT";
         };
 
-        pyprojectOverrides = _self: _super: { };
+        pyprojectOverrides = _self: super: {
+          xdb = super.xdb.overrideAttrs (_old: {
+            src = source;
+          });
+        };
 
         pythonSet = (pkgs.callPackage pyproject-nix.build.packages { inherit python; }).overrideScope (
           lib.composeManyExtensions [
@@ -63,7 +109,7 @@
           pkgs.stdenvNoCC.mkDerivation {
             pname = "xdb-${name}";
             version = "0.1.0";
-            src = ./.;
+            src = source;
             inherit nativeBuildInputs;
             dontConfigure = true;
             dontFixup = true;
