@@ -498,6 +498,8 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_close = sim_sub.add_parser("close")
     _add_debug_flag(s_sim_close)
     add_sim_session_arg(s_sim_close)
+    s_sim_close.add_argument("--force", action="store_true", help="terminate cached daemon PID if the session is unresponsive")
+    s_sim_close.add_argument("--timeout", type=float, default=5.0, help="wall-clock daemon response timeout in seconds")
 
     s_sim_time = sim_sub.add_parser("time")
     _add_debug_flag(s_sim_time)
@@ -967,7 +969,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
             elif args.sim_cmd == "restart":
                 _print(restart_session(args.session))
             elif args.sim_cmd == "close":
-                _print(close_session(args.session))
+                _print(
+                    close_session(
+                        args.session,
+                        force=bool(args.force),
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                    )
+                )
             elif args.sim_cmd == "time":
                 _print(time_session(args.session))
             elif args.sim_cmd == "describe":

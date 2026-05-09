@@ -171,9 +171,12 @@ def terminate_session(meta: SessionMeta, force: bool = False) -> None:
         return
     sig = signal.SIGKILL if force else signal.SIGTERM
     try:
-        os.kill(pid, sig)
+        os.killpg(pid, sig)
     except OSError:
-        return
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            return
 
 
 def resolve_session_name_arg(session_name: str | None) -> str | None:

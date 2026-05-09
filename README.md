@@ -130,6 +130,8 @@ xdb sim irq wait --timeout 5
 
 # close the session when done
 xdb sim close
+# force cleanup if the daemon is unresponsive
+xdb sim close --force
 ```
 
 ## Notes
@@ -153,6 +155,10 @@ xdb sim close
   scripts there, and then starts a persistent `xsim` session.
 - `xdb sim launch` starts a persistent background session; later
   `xdb sim ...` commands talk to that live simulator process.
+- `xdb sim close` asks the daemon to shut down and has a wall-clock response
+  timeout, defaulting to 5 seconds. Use `xdb sim close --force` to terminate
+  the cached daemon process group and remove stale session state when the daemon
+  is unresponsive.
 - `xdb sim run <duration>` has a wall-clock daemon response timeout, defaulting
   to 30 seconds. Use `--timeout <seconds>` for slow simulations. If it times
   out, the daemon may still be busy inside Vivado; check responsiveness with

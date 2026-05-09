@@ -425,18 +425,48 @@ def _get_live_meta(session_name: str | None) -> SessionMeta | None:
     return meta
 
 
+def _terminate_cached_session(
+    session_name: str | None,
+    meta: SessionMeta,
+    *,
+    wait_seconds: float = 5.0,
+) -> dict[str, Any]:
+    paths = session_paths(session_name)
+    pid = int(meta.get("pid", 0) or 0)
+    was_alive = pid_is_alive(pid)
+    if was_alive:
+        terminate_session(meta, force=False)
+        _wait_until_stopped(session_name, timeout=wait_seconds)
+    cleanup_stale_session(paths)
+    remaining = load_meta(paths)
+    force_killed = False
+    if remaining and pid_is_alive(int(remaining.get("pid", 0) or 0)):
+        terminate_session(remaining, force=True)
+        force_killed = True
+        _wait_until_stopped(session_name, timeout=2.0)
+    cleanup_stale_session(paths)
+    if paths.session_dir.exists() and not load_meta(paths):
+        remove_session(paths)
+    return {
+        "pid": pid or None,
+        "was_alive": was_alive,
+        "force_killed": force_killed,
+        "session_removed": not paths.session_dir.exists(),
+    }
+
+
 def _close_live_session(session_name: str | None, meta: SessionMeta) -> None:
     try:
-        _send_request(session_name, make_request(OP_CLOSE))
+        _send_request(session_name, make_request(OP_CLOSE), timeout_seconds=5.0)
     except XdbError:
-        terminate_session(meta, force=False)
+        _terminate_cached_session(session_name, meta)
+        return
     _wait_until_stopped(session_name, timeout=5.0)
     paths = session_paths(session_name)
     cleanup_stale_session(paths)
     remaining = load_meta(paths)
     if remaining and pid_is_alive(int(remaining.get("pid", 0) or 0)):
-        terminate_session(remaining, force=True)
-        _wait_until_stopped(session_name, timeout=2.0)
+        _terminate_cached_session(session_name, remaining)
     cleanup_stale_session(paths)
 
 
@@ -784,9 +814,48 @@ def restart_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_RESTART))
 
 
-def close_session(session_name: str | None) -> dict[str, Any]:
-    result = _send_request(session_name, make_request(OP_CLOSE))
+def close_session(
+    session_name: str | None,
+    *,
+    force: bool = False,
+    timeout_seconds: float | None = 5.0,
+) -> dict[str, Any]:
+    paths = session_paths(session_name)
+    meta = load_meta(paths)
+    if force:
+        if meta is None:
+            remove_session(paths)
+            return {
+                "closed": True,
+                "force": True,
+                "session": paths.session_name,
+                "session_id": paths.session_id,
+                "pid": None,
+                "was_alive": False,
+                "force_killed": False,
+                "session_removed": not paths.session_dir.exists(),
+            }
+        termination = _terminate_cached_session(session_name, meta, wait_seconds=1.0)
+        return {
+            "closed": True,
+            "force": True,
+            "session": paths.session_name,
+            "session_id": paths.session_id,
+            **termination,
+        }
+
+    result = _send_request(session_name, make_request(OP_CLOSE), timeout_seconds=timeout_seconds)
+    _wait_until_stopped(session_name, timeout=timeout_seconds or 5.0)
+    cleanup_stale_session(paths)
+    remaining = load_meta(paths)
+    terminated = None
+    if remaining and pid_is_alive(int(remaining.get("pid", 0) or 0)):
+        terminated = _terminate_cached_session(session_name, remaining)
     time.sleep(0.1)
+    result["force"] = False
+    result["session_removed"] = not paths.session_dir.exists()
+    if terminated is not None:
+        result["terminated_after_close"] = terminated
     return result
 
 
