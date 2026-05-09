@@ -109,6 +109,7 @@ xdb sim axis trace /tb_top/dut/axis_in --for 100 ns --decode-bytes
 xdb sim trace transactions --for 200 ns
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns -- \
   xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
+xdb sim exec -- helios-host --input-hex 01020304 --timeout-ms 1000
 
 # Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
 xdb sim coyote-status
@@ -218,6 +219,13 @@ xdb sim close
   IRQs, completion checks/results, and `xdb`-issued invoke or memory commands.
   Use `--opcode <name>` to keep only events associated with a specific local
   Coyote opcode and `--out <file>` to write the JSON result.
+- `xdb sim exec -- <command...>` runs a host-side command against the active
+  simulation session. It injects session-aware environment variables including
+  `XDB_SIM_SESSION`, `XDB_SIM_RUNTIME_ROOT`, `XDB_SIM_WORK_DIR`,
+  `XDB_SIM_SOCKET`, and `COYOTE_SIM_DIR=<runtime_root>/sim`, captures
+  stdout/stderr/exit code, and returns structured JSON. Use `--cwd <dir>`,
+  repeated `--env KEY=VALUE`, `--timeout <seconds>`, `--expect-exit-code <n>`,
+  and `--clean-env` as needed.
 - `xdb sim with-trace -- ...` currently supports a wrapped subset of `xdb sim`
   subcommands, including Coyote operations plus `run`, `step`, `until`, and
   `until-signal`, and executes them under daemon-side tracing so AXIS and

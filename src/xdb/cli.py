@@ -34,6 +34,7 @@ from xdb.sim.client import (
     coyote_status_session,
     expect_change_session,
     expect_signal_session,
+    exec_session,
     describe_session,
     force_session,
     get_many_signals,
@@ -730,6 +731,16 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_trace_transactions.add_argument("--opcode", default=None)
     s_sim_trace_transactions.add_argument("--out", default=None, help="write trace output to a file")
 
+    s_sim_exec = sim_sub.add_parser("exec", help="run a host command against the live simulation session")
+    _add_debug_flag(s_sim_exec)
+    add_sim_session_arg(s_sim_exec)
+    s_sim_exec.add_argument("--cwd", default=None, help="working directory for the command")
+    s_sim_exec.add_argument("--env", dest="env_overrides", action="append", default=[])
+    s_sim_exec.add_argument("--timeout", type=float, default=None, help="wall-clock timeout in seconds")
+    s_sim_exec.add_argument("--expect-exit-code", type=int, default=0)
+    s_sim_exec.add_argument("--clean-env", action="store_true", help="do not inherit the current process environment")
+    s_sim_exec.add_argument("command", nargs=argparse.REMAINDER)
+
     s_sim_with_trace = sim_sub.add_parser("with-trace", help="run a command with scoped tracing")
     _add_debug_flag(s_sim_with_trace)
     add_sim_session_arg(s_sim_with_trace)
@@ -1060,6 +1071,18 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         opcode=args.opcode,
                     ),
                     args.out,
+                )
+            elif args.sim_cmd == "exec":
+                _print(
+                    exec_session(
+                        args.session,
+                        args.command,
+                        cwd=args.cwd,
+                        env_overrides=list(args.env_overrides or []),
+                        timeout_seconds=args.timeout,
+                        expect_exit_code=args.expect_exit_code,
+                        clean_env=bool(args.clean_env),
+                    )
                 )
             elif args.sim_cmd == "with-trace":
                 result = with_trace_session(

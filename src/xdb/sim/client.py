@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping, NoReturn, cast
@@ -122,6 +123,56 @@ def _recv_all(sock: socket.socket) -> bytes:
             break
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_remainder_command(command: list[str]) -> list[str]:
+    normalized = list(command)
+    if normalized and normalized[0] == "--":
+        normalized = normalized[1:]
+    if not normalized:
+        raise XdbError("missing command after '--'")
+    return normalized
+
+
+def _parse_env_overrides(values: list[str]) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for item in values:
+        if "=" not in item:
+            raise XdbError(f"environment override must be KEY=VALUE: {item!r}")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise XdbError(f"environment override has empty key: {item!r}")
+        overrides[key] = value
+    return overrides
+
+
+def _derive_sim_exec_env(meta: Mapping[str, object], session_name: str) -> dict[str, str]:
+    runtime_root = str(meta.get("runtime_root") or "")
+    work_dir = str(meta.get("work_dir") or "")
+    env: dict[str, str] = {
+        "XDB_SIM_SESSION": session_name,
+    }
+    for key, value in (
+        ("XDB_SIM_RUNTIME_ROOT", runtime_root),
+        ("XDB_SIM_WORKSPACE", runtime_root),
+        ("XDB_SIM_WORK_DIR", work_dir),
+        ("XDB_SIM_SOCKET", str(meta.get("socket_path") or "")),
+        ("XDB_SIM_PACKAGE_RUNTIME", str(meta.get("package_runtime") or "")),
+        ("XDB_SIM_PROJECT", str(meta.get("project") or "")),
+        ("XDB_SIM_SIMSET", str(meta.get("simset") or "")),
+        ("XDB_SIM_TOP", str(meta.get("top") or "")),
+        ("XDB_SIM_MODE", str(meta.get("mode") or "")),
+    ):
+        if value:
+            env[key] = value
+    if runtime_root:
+        env["COYOTE_SIM_DIR"] = str(Path(runtime_root) / "sim")
+    return env
 
 
 _SIM_TIME_UNITS = {
@@ -1092,6 +1143,77 @@ def trace_events_clear_session(session_name: str | None) -> dict[str, Any]:
 
 def trace_events_get_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_TRACE_EVENTS_GET))
+
+
+def exec_session(
+    session_name: str | None,
+    command: list[str],
+    *,
+    cwd: str | None = None,
+    env_overrides: list[str] | None = None,
+    timeout_seconds: float | None = None,
+    expect_exit_code: int = 0,
+    clean_env: bool = False,
+) -> dict[str, Any]:
+    argv = _normalize_remainder_command(command)
+    paths = session_paths(session_name)
+    meta = require_live_meta(paths)
+    session_env = _derive_sim_exec_env(meta, paths.session_name)
+    overrides = _parse_env_overrides(list(env_overrides or []))
+    run_env = {} if clean_env else dict(os.environ)
+    run_env.update(session_env)
+    run_env.update(overrides)
+    reported_env = {**session_env, **overrides}
+    run_cwd = str(Path(cwd).expanduser().resolve()) if cwd else str(meta.get("anchor_dir") or paths.anchor_dir)
+    started_at = _now_iso()
+    started_seconds = time.time()
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=run_cwd,
+            env=run_env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        finished_seconds = time.time()
+        exit_code: int | None = int(completed.returncode)
+        stdout = completed.stdout
+        stderr = completed.stderr
+        timed_out = False
+    except subprocess.TimeoutExpired as e:
+        finished_seconds = time.time()
+        exit_code = None
+        stdout = e.stdout.decode("utf-8", errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        stderr = e.stderr.decode("utf-8", errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+        timed_out = True
+    except FileNotFoundError as e:
+        raise XdbError(f"command not found: {argv[0]}") from e
+    finished_at = _now_iso()
+    ok = (not timed_out) and exit_code == expect_exit_code
+    return {
+        "ok": ok,
+        "timed_out": timed_out,
+        "exit_code": exit_code,
+        "expected_exit_code": expect_exit_code,
+        "argv": argv,
+        "cwd": run_cwd,
+        "env": reported_env,
+        "stdout": stdout,
+        "stderr": stderr,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": max(0.0, finished_seconds - started_seconds),
+        "session": {
+            "name": paths.session_name,
+            "id": paths.session_id,
+            "runtime_root": str(meta.get("runtime_root") or ""),
+            "work_dir": str(meta.get("work_dir") or ""),
+            "socket_path": str(meta.get("socket_path") or ""),
+            "state": str(meta.get("state") or ""),
+        },
+    }
 
 
 class _WithTraceArgumentParser(argparse.ArgumentParser):
