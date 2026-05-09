@@ -58,6 +58,30 @@
         pythonSetEditable = pythonSet.overrideScope editableOverlay;
         virtualenv = pythonSetEditable.mkVirtualEnv "xdb-dev-env" workspace.deps.all;
 
+        mkCheck =
+          name: command: nativeBuildInputs:
+          pkgs.stdenvNoCC.mkDerivation {
+            pname = "xdb-${name}";
+            version = "0.1.0";
+            src = ./.;
+            inherit nativeBuildInputs;
+            dontConfigure = true;
+            dontFixup = true;
+            buildPhase = ''
+              runHook preBuild
+              cp -r $src source
+              chmod -R +w source
+              cd source
+              export HOME=$TMPDIR
+              export PYTHONPATH=$PWD/src
+              ${command}
+              runHook postBuild
+            '';
+            installPhase = ''
+              mkdir -p $out
+            '';
+          };
+
         # Runtime variants
         depsUltrascale = workspace.deps.default;
         versalEnabled = builtins.elem "versal" (workspace.deps.optionals.xdb or [ ]);
@@ -92,6 +116,15 @@
             type = "app";
             program = "${versalEnv}/bin/xdb";
           };
+        };
+
+        checks = {
+          ruff = mkCheck "ruff" "${pkgs.ruff}/bin/ruff check ." [ pkgs.ruff ];
+          pyright = mkCheck "pyright" "${pkgs.pyright}/bin/pyright" [ pkgs.pyright ];
+          tests = mkCheck
+            "tests"
+            "${virtualenv}/bin/python -m unittest discover -s tests"
+            [ virtualenv ];
         };
 
         devShells.default = pkgs.mkShell {

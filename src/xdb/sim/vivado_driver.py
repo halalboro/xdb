@@ -13,6 +13,7 @@ import tty
 import uuid
 from collections import deque
 from pathlib import Path
+from typing import Any, TextIO, cast
 
 from ..errors import XdbError
 from .coyote import CoyoteSimController
@@ -47,15 +48,15 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
         self.compile_script = str(Path(compile_script).resolve()) if compile_script else ""
         self.elaborate_script = str(Path(elaborate_script).resolve()) if elaborate_script else ""
         self.simulate_script = str(Path(simulate_script).resolve()) if simulate_script else ""
-        self.proc: subprocess.Popen[str] | None = None
+        self.proc: subprocess.Popen[bytes] | None = None
         self._reader_thread: threading.Thread | None = None
         self._queue: queue.Queue[str] = queue.Queue()
-        self._log_file = None
+        self._log_file: TextIO | None = None
         self._recent_lines: deque[str] = deque(maxlen=80)
         self._pty_master_fd: int | None = None
         self._coyote: CoyoteSimController | None = None
-        self._snapshots: dict[str, dict] = {}
-        self._vcd_state: dict | None = None
+        self._snapshots: dict[str, dict[str, Any]] = {}
+        self._vcd_state: dict[str, Any] | None = None
 
     def _debug_enabled(self) -> bool:
         value = os.environ.get("XDB_DEBUG") or os.environ.get("XDB_VERBOSE")
@@ -270,7 +271,7 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
                 )
             ) from e
 
-    def request(self, body_tcl: str, timeout: int = 120) -> dict:
+    def request(self, body_tcl: str, timeout: int = 120) -> dict[str, Any]:
         if self.proc is None:
             raise XdbError("vivado simulation process is not running")
         if self.proc.poll() is not None:
@@ -288,7 +289,7 @@ if {{[catch {{
         self._send_raw(script)
         return self._await_response(request_id, timeout=timeout)
 
-    def _await_response(self, request_id: str, timeout: int) -> dict:
+    def _await_response(self, request_id: str, timeout: int) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
         in_block = False
         payload_lines: list[str] = []
@@ -318,14 +319,14 @@ if {{[catch {{
                 payload = "\n".join(payload_lines).strip()
                 if not payload:
                     raise XdbError("empty response from vivado simulation process")
-                data = json.loads(payload)
+                data = cast(dict[str, Any], json.loads(payload))
                 if not data.get("ok", False):
                     raise XdbError(str(data.get("error", "simulation request failed")))
                 return data
             if in_block:
                 payload_lines.append(line)
 
-    def launch(self, timeout: int = 300, top: str | None = None) -> dict:
+    def launch(self, timeout: int = 300, top: str | None = None) -> dict[str, Any]:
         effective_top = self.top if top is None else top
         if top is not None and top != self.top:
             raise XdbError("changing top module is not supported for runtime-backed simulation sessions")
@@ -338,19 +339,21 @@ if {{[catch {{
             "time": str(time_info.get("time", "")),
         }
 
-    def status(self) -> dict:
+    def status(self) -> dict[str, Any]:
         return self.time()
 
-    def time(self) -> dict:
+    def time(self) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_time"))
 
-    def run(self, tokens: list[str]) -> dict:
+    def run(self, tokens: list[str]) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_run", tokens))
 
-    def restart(self) -> dict:
+    def restart(self) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_restart"))
 
-    def step(self, count: int | None = None, time_tokens: list[str] | None = None) -> dict:
+    def step(
+        self, count: int | None = None, time_tokens: list[str] | None = None
+    ) -> dict[str, Any]:
         if time_tokens:
             return self.request(build_proc_request("xdb_api_step_time", time_tokens))
         step_count = count or 1
@@ -363,7 +366,7 @@ if {{[catch {{
         step_tokens: list[str],
         timeout_seconds: float | None = None,
         max_iterations: int | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         request_timeout = 86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
         return self.request(
             build_proc_request(
@@ -384,7 +387,7 @@ if {{[catch {{
         step_tokens: list[str],
         timeout_seconds: float | None = None,
         max_iterations: int | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         request_timeout = 86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
         return self.request(
             build_proc_request(

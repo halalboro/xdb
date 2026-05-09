@@ -7,9 +7,17 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 from ..errors import XdbError
-from .base import Capability
+from .base import (
+    Capability,
+    CaptureResult,
+    InstrumentsResult,
+    ListIlasResult,
+    ProgramResult,
+    TargetsResult,
+)
 
 
 class VivadoError(XdbError):
@@ -25,13 +33,15 @@ class VivadoResult:
 class VivadoBackend:
     name = "vivado"
 
-    def list_targets(self, part_hint: str | None, timeout: int = 120) -> dict:
+    def list_targets(self, part_hint: str | None, timeout: int = 120) -> TargetsResult:
         return list_targets(part_hint, timeout=timeout)
 
-    def program(self, bit: str, ltx: str | None, part_hint: str, timeout: int = 300) -> dict:
+    def program(
+        self, bit: str, ltx: str | None, part_hint: str, timeout: int = 300
+    ) -> ProgramResult:
         return program(bit, ltx, part_hint, timeout=timeout)
 
-    def list_ilas(self, part_hint: str, timeout: int = 180) -> dict:
+    def list_ilas(self, part_hint: str, timeout: int = 180) -> ListIlasResult:
         return list_ilas(part_hint, timeout=timeout)
 
     def capture(
@@ -41,10 +51,10 @@ class VivadoBackend:
         csv_path: str,
         samples: int,
         timeout: int = 120,
-    ) -> dict:
+    ) -> CaptureResult:
         return capture(part_hint, ila_name, csv_path, samples, timeout=timeout)
 
-    def list_instruments(self, part_hint: str, timeout: int = 180) -> dict:
+    def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult:
         ilas = self.list_ilas(part_hint, timeout=timeout)
         instruments = [
             {
@@ -54,11 +64,14 @@ class VivadoBackend:
             }
             for ila in ilas.get("ilas", [])
         ]
-        return {
-            "target": ilas.get("target", ""),
-            "part": ilas.get("part", ""),
-            "instruments": instruments,
-        }
+        return cast(
+            InstrumentsResult,
+            {
+                "target": ilas.get("target", ""),
+                "part": ilas.get("part", ""),
+                "instruments": instruments,
+            },
+        )
 
     def capabilities(self) -> set[Capability]:
         return {
@@ -102,7 +115,7 @@ def _run_vivado_tcl(tcl: str, args: list[str], timeout: int = 120) -> VivadoResu
     return VivadoResult(stdout=p.stdout, stderr=p.stderr)
 
 
-def _extract_json(stdout: str) -> dict:
+def _extract_json(stdout: str) -> dict[str, Any]:
     start = "XDB_JSON_BEGIN"
     end = "XDB_JSON_END"
     i = stdout.find(start)
@@ -113,7 +126,7 @@ def _extract_json(stdout: str) -> dict:
     return json.loads(payload)
 
 
-def list_targets(part_hint: str | None, timeout: int = 120) -> dict:
+def list_targets(part_hint: str | None, timeout: int = 120) -> TargetsResult:
     tcl = r'''
 open_hw_manager
 connect_hw_server
@@ -143,11 +156,13 @@ exit 0
     data = _extract_json(res.stdout)
     if part_hint:
         ph = part_hint.lower()
-        data["targets"] = [t for t in data.get("targets", []) if ph in (t.get("part", "").lower())]
-    return data
+        data["targets"] = [
+            t for t in data.get("targets", []) if ph in str(t.get("part", "")).lower()
+        ]
+    return cast(TargetsResult, data)
 
 
-def program(bit: str, ltx: str | None, part_hint: str, timeout: int = 300) -> dict:
+def program(bit: str, ltx: str | None, part_hint: str, timeout: int = 300) -> ProgramResult:
     tcl = r'''
 set part_hint [lindex $argv 0]
 set bit [lindex $argv 1]
@@ -184,10 +199,10 @@ puts "XDB_JSON_END"
 exit 0
 '''
     res = _run_vivado_tcl(tcl, [part_hint, bit, ltx or ""], timeout=timeout)
-    return _extract_json(res.stdout)
+    return cast(ProgramResult, _extract_json(res.stdout))
 
 
-def list_ilas(part_hint: str, timeout: int = 180) -> dict:
+def list_ilas(part_hint: str, timeout: int = 180) -> ListIlasResult:
     tcl = r'''
 set part_hint [lindex $argv 0]
 open_hw_manager
@@ -238,10 +253,12 @@ puts "XDB_JSON_END"
 exit 0
 '''
     res = _run_vivado_tcl(tcl, [part_hint], timeout=timeout)
-    return _extract_json(res.stdout)
+    return cast(ListIlasResult, _extract_json(res.stdout))
 
 
-def capture(part_hint: str, ila_name: str, csv_path: str, samples: int, timeout: int = 120) -> dict:
+def capture(
+    part_hint: str, ila_name: str, csv_path: str, samples: int, timeout: int = 120
+) -> CaptureResult:
     tcl = r'''
 set part_hint [lindex $argv 0]
 set ila_name [lindex $argv 1]
@@ -284,4 +301,4 @@ puts "XDB_JSON_END"
 exit 0
 '''
     res = _run_vivado_tcl(tcl, [part_hint, ila_name, csv_path, str(samples)], timeout=timeout)
-    return _extract_json(res.stdout)
+    return cast(CaptureResult, _extract_json(res.stdout))

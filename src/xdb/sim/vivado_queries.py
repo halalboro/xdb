@@ -2,14 +2,36 @@ from __future__ import annotations
 
 import re
 import uuid
+from typing import Any, Protocol
 
 from ..errors import XdbError
 from .tcl_api import build_proc_request
 
 
+class _VivadoQueryHost(Protocol):
+    top: str
+    project: str
+    simset: str
+    mode: str
+    runtime_root: str
+    work_dir: str
+    _snapshots: dict[str, dict[str, Any]]
+
+    @property
+    def _coyote(self) -> object | None: ...
+
+    def request(self, body_tcl: str, timeout: int = 120) -> dict[str, Any]: ...
+
+    def run(self, tokens: list[str]) -> dict[str, Any]: ...
+
+    def snapshot_scope(
+        self, scope: str, *, name: str | None = None
+    ) -> dict[str, Any]: ...
+
+
 class VivadoQueryMixin:
     @staticmethod
-    def _infer_known_signal_paths(objects: list[dict], patterns: list[str]) -> list[str]:
+    def _infer_known_signal_paths(objects: list[dict[str, Any]], patterns: list[str]) -> list[str]:
         compiled = [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
         out: list[str] = []
         seen: set[str] = set()
@@ -47,20 +69,20 @@ class VivadoQueryMixin:
             return preferred[0][1]
         return child_scopes[0] if child_scopes else (top_scope or None)
 
-    def describe_session(self) -> dict:
+    def describe_session(self: _VivadoQueryHost) -> dict[str, Any]:
         result = self.request(build_proc_request("xdb_api_describe", self.top))
         objects = list(result.get("objects") or [])
         top_scope = str(result.get("top_scope") or "")
         child_scopes = [str(scope) for scope in list(result.get("child_scopes") or [])]
-        clocks = self._infer_known_signal_paths(
+        clocks = VivadoQueryMixin._infer_known_signal_paths(
             objects,
             [r"(^|_)(clk|clock)(_|$)", r"(^|_)(aclk)(_|$)"],
         )
-        resets = self._infer_known_signal_paths(
+        resets = VivadoQueryMixin._infer_known_signal_paths(
             objects,
             [r"(^|_)(rst|reset|aresetn|resetn|srst|rstn)(_|$)"],
         )
-        dut_scope = self._infer_dut_scope(top_scope, child_scopes)
+        dut_scope = VivadoQueryMixin._infer_dut_scope(top_scope, child_scopes)
         common_scopes = [scope for scope in [top_scope, *child_scopes] if scope]
         return {
             "top": result.get("top", self.top),
@@ -81,23 +103,23 @@ class VivadoQueryMixin:
             "coyote": self._coyote is not None,
         }
 
-    def get_signal(self, signal: str) -> dict:
+    def get_signal(self: _VivadoQueryHost, signal: str) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_get_signal", signal))
 
-    def get_many(self, pattern: str) -> dict:
+    def get_many(self: _VivadoQueryHost, pattern: str) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_get_many", pattern))
 
-    def read_signals(self, signals: list[str]) -> dict:
+    def read_signals(self: _VivadoQueryHost, signals: list[str]) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_read_signals", signals))
 
-    def scopes(self, scope: str | None) -> dict:
+    def scopes(self: _VivadoQueryHost, scope: str | None) -> dict[str, Any]:
         pattern = "*" if not scope else f"{scope}/*"
         return self.request(build_proc_request("xdb_api_scopes", scope or "", pattern))
 
-    def objects(self, scope: str) -> dict:
+    def objects(self: _VivadoQueryHost, scope: str) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_objects", scope))
 
-    def snapshot_scope(self, scope: str, *, name: str | None = None) -> dict:
+    def snapshot_scope(self: _VivadoQueryHost, scope: str, *, name: str | None = None) -> dict[str, Any]:
         result = self.request(build_proc_request("xdb_api_snapshot_scope", scope))
         snapshot_id = name or f"snapshot-{uuid.uuid4().hex[:12]}"
         if snapshot_id in self._snapshots:
@@ -113,7 +135,9 @@ class VivadoQueryMixin:
         return dict(stored)
 
     @staticmethod
-    def _diff_snapshot_payload(before: dict, after: dict) -> dict:
+    def _diff_snapshot_payload(
+        before: dict[str, Any], after: dict[str, Any]
+    ) -> dict[str, Any]:
         before_map = {str(obj.get("path")): obj for obj in list(before.get("objects") or [])}
         after_map = {str(obj.get("path")): obj for obj in list(after.get("objects") or [])}
         added_paths = sorted(set(after_map) - set(before_map))
@@ -157,22 +181,22 @@ class VivadoQueryMixin:
             "removed_count": len(removed_paths),
         }
 
-    def diff_snapshot(self, before: str, after: str) -> dict:
+    def diff_snapshot(self: _VivadoQueryHost, before: str, after: str) -> dict[str, Any]:
         before_snapshot = self._snapshots.get(before)
         if before_snapshot is None:
             raise XdbError(f"unknown snapshot: {before}")
         after_snapshot = self._snapshots.get(after)
         if after_snapshot is None:
             raise XdbError(f"unknown snapshot: {after}")
-        return self._diff_snapshot_payload(before_snapshot, after_snapshot)
+        return VivadoQueryMixin._diff_snapshot_payload(before_snapshot, after_snapshot)
 
-    def watch_changes(self, scope: str, *, duration_tokens: list[str]) -> dict:
+    def watch_changes(self: _VivadoQueryHost, scope: str, *, duration_tokens: list[str]) -> dict[str, Any]:
         before_id = f"watch-before-{uuid.uuid4().hex[:10]}"
         after_id = f"watch-after-{uuid.uuid4().hex[:10]}"
         before = self.snapshot_scope(scope, name=before_id)
         run_result = self.run(duration_tokens)
         after = self.snapshot_scope(scope, name=after_id)
-        diff = self._diff_snapshot_payload(before, after)
+        diff = VivadoQueryMixin._diff_snapshot_payload(before, after)
         return {
             "scope": scope,
             "duration": " ".join(duration_tokens),

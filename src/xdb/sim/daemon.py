@@ -6,7 +6,7 @@ import signal
 import socket
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..errors import XdbError
 from .protocol import (
@@ -58,6 +58,21 @@ from .protocol import (
 )
 from .session_store import SessionPaths, ensure_session_dir, write_meta
 from .vivado_driver import VivadoSimDriver
+
+
+def _arg_int(args: dict[str, Any], name: str, default: int = 0) -> int:
+    value = args.get(name)
+    return default if value is None else int(value)
+
+
+def _arg_optional_int(args: dict[str, Any], name: str) -> int | None:
+    value = args.get(name)
+    return None if value is None else int(value)
+
+
+def _arg_optional_float(args: dict[str, Any], name: str) -> float | None:
+    value = args.get(name)
+    return None if value is None else float(value)
 
 
 class SimDaemon:
@@ -188,8 +203,11 @@ class SimDaemon:
     def _handle_connection(self, conn: socket.socket) -> dict[str, Any]:
         try:
             payload = self._recv_all(conn)
-            req = json.loads(payload.decode("utf-8"))
-            result = self._dispatch(req.get("op", ""), req.get("args") or {})
+            req = cast(dict[str, Any], json.loads(payload.decode("utf-8")))
+            result = self._dispatch(
+                str(req.get("op") or ""),
+                cast(dict[str, Any], req.get("args") or {}),
+            )
             return {"ok": True, "result": result}
         except Exception as e:
             return {
@@ -283,7 +301,7 @@ class SimDaemon:
             time_tokens = list(args.get("time_tokens") or [])
             if time_tokens:
                 return self.driver.step(time_tokens=time_tokens)
-            count = int(args.get("count") or 1)
+            count = _arg_int(args, "count", 1)
             if count <= 0:
                 raise XdbError("step count must be > 0")
             return self.driver.step(count=count)
@@ -303,8 +321,8 @@ class SimDaemon:
             return self.driver.wait_until(
                 expr,
                 step_tokens=step_tokens,
-                timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
-                max_iterations=None if max_iterations is None else int(max_iterations),
+                timeout_seconds=_arg_optional_float(args, "timeout_seconds"),
+                max_iterations=_arg_optional_int(args, "max_iterations"),
             )
         if op == OP_UNTIL_SIGNAL:
             signal_name = str(args.get("signal") or "")
@@ -326,8 +344,8 @@ class SimDaemon:
                 signal_name,
                 value,
                 step_tokens=step_tokens,
-                timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
-                max_iterations=None if max_iterations is None else int(max_iterations),
+                timeout_seconds=_arg_optional_float(args, "timeout_seconds"),
+                max_iterations=_arg_optional_int(args, "max_iterations"),
             )
         if op == OP_ASSERT_SIGNAL:
             signal_name = str(args.get("signal") or "")
@@ -382,26 +400,24 @@ class SimDaemon:
             return self.driver.coyote_status()
         if op == OP_CSR_READ:
             return self.driver.coyote_csr_read(
-                int(args.get("addr") or 0),
-                timeout_seconds=None
-                if args.get("timeout_seconds") is None
-                else float(args.get("timeout_seconds")),
+                _arg_int(args, "addr"),
+                timeout_seconds=_arg_optional_float(args, "timeout_seconds"),
             )
         if op == OP_CSR_WRITE:
             return self.driver.coyote_csr_write(
-                int(args.get("addr") or 0),
-                int(args.get("value") or 0),
+                _arg_int(args, "addr"),
+                _arg_int(args, "value"),
             )
         if op == OP_MEM_MAP:
             return self.driver.coyote_mem_map(
                 str(args.get("space") or "host"),
-                int(args.get("addr") or 0),
-                int(args.get("size") or 0),
+                _arg_int(args, "addr"),
+                _arg_int(args, "size"),
             )
         if op == OP_MEM_UNMAP:
             return self.driver.coyote_mem_unmap(
                 str(args.get("space") or "host"),
-                int(args.get("addr") or 0),
+                _arg_int(args, "addr"),
             )
         if op == OP_MEM_LIST:
             return self.driver.coyote_mem_list(str(args.get("space") or "host"))
@@ -413,49 +429,43 @@ class SimDaemon:
                 raise XdbError("missing memory write payload")
             return self.driver.coyote_mem_write(
                 str(args.get("space") or "host"),
-                int(args.get("addr") or 0),
+                _arg_int(args, "addr"),
                 bytes.fromhex(data_hex),
             )
         if op == OP_MEM_READ:
             return self.driver.coyote_mem_read(
                 str(args.get("space") or "host"),
-                int(args.get("addr") or 0),
-                int(args.get("size") or 0),
+                _arg_int(args, "addr"),
+                _arg_int(args, "size"),
             )
         if op == OP_INVOKE:
             return self.driver.coyote_invoke(
                 str(args.get("opcode") or ""),
-                addr=None if args.get("addr") is None else int(args.get("addr")),
-                length=None if args.get("length") is None else int(args.get("length")),
+                addr=_arg_optional_int(args, "addr"),
+                length=_arg_optional_int(args, "length"),
                 stream_name=str(args.get("stream_name") or "host"),
-                dest=int(args.get("dest") or 0),
+                dest=_arg_int(args, "dest"),
                 last=bool(args.get("last", True)),
-                src_addr=None if args.get("src_addr") is None else int(args.get("src_addr")),
-                src_length=None if args.get("src_length") is None else int(args.get("src_length")),
+                src_addr=_arg_optional_int(args, "src_addr"),
+                src_length=_arg_optional_int(args, "src_length"),
                 src_stream_name=str(args.get("src_stream_name") or "host"),
-                src_dest=int(args.get("src_dest") or 0),
-                dst_addr=None if args.get("dst_addr") is None else int(args.get("dst_addr")),
-                dst_length=None if args.get("dst_length") is None else int(args.get("dst_length")),
+                src_dest=_arg_int(args, "src_dest"),
+                dst_addr=_arg_optional_int(args, "dst_addr"),
+                dst_length=_arg_optional_int(args, "dst_length"),
                 dst_stream_name=str(args.get("dst_stream_name") or "host"),
-                dst_dest=int(args.get("dst_dest") or 0),
+                dst_dest=_arg_int(args, "dst_dest"),
             )
         if op == OP_COMPLETED:
             return self.driver.coyote_completed(
                 str(args.get("opcode") or ""),
-                target_count=None
-                if args.get("target_count") is None
-                else int(args.get("target_count")),
-                timeout_seconds=None
-                if args.get("timeout_seconds") is None
-                else float(args.get("timeout_seconds")),
+                target_count=_arg_optional_int(args, "target_count"),
+                timeout_seconds=_arg_optional_float(args, "timeout_seconds"),
             )
         if op == OP_CLEAR_COMPLETED:
             return self.driver.coyote_clear_completed()
         if op == OP_IRQ_WAIT:
             return self.driver.coyote_irq_wait(
-                timeout_seconds=None
-                if args.get("timeout_seconds") is None
-                else float(args.get("timeout_seconds")),
+                timeout_seconds=_arg_optional_float(args, "timeout_seconds"),
             )
         if op == OP_SNAPSHOT:
             scope = str(args.get("scope") or "")

@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import importlib
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..errors import XdbError
-from .base import Capability
+from .base import (
+    Capability,
+    CaptureResult,
+    InstrumentsResult,
+    ListIlasResult,
+    ProgramResult,
+    TargetsResult,
+)
 
 
 class ChipScoPyBackend:
@@ -20,7 +28,7 @@ class ChipScoPyBackend:
             Capability.INSTRUMENTS_LIST,
         }
 
-    def list_targets(self, part_hint: str | None, timeout: int = 120) -> dict:
+    def list_targets(self, part_hint: str | None, timeout: int = 120) -> TargetsResult:
         del timeout  # not currently plumbed through ChipScoPy APIs
         session = self._create_session(require_cs=False)
         try:
@@ -39,11 +47,13 @@ class ChipScoPyBackend:
                 out["targets"] = [
                     t for t in out["targets"] if ph in str(t.get("part", "")).lower()
                 ]
-            return out
+            return cast(TargetsResult, out)
         finally:
             self._delete_session(session)
 
-    def program(self, bit: str, ltx: str | None, part_hint: str, timeout: int = 300) -> dict:
+    def program(
+        self, bit: str, ltx: str | None, part_hint: str, timeout: int = 300
+    ) -> ProgramResult:
         del ltx, timeout  # program uses bit/pdi; ltx used for core discovery later
         session = self._create_session(require_cs=False)
         try:
@@ -57,7 +67,7 @@ class ChipScoPyBackend:
         finally:
             self._delete_session(session)
 
-    def list_ilas(self, part_hint: str, timeout: int = 180) -> dict:
+    def list_ilas(self, part_hint: str, timeout: int = 180) -> ListIlasResult:
         del timeout
         session = self._create_session(require_cs=True)
         try:
@@ -75,15 +85,18 @@ class ChipScoPyBackend:
                     probes.append({"name": p.name, "width": int(p.bit_width)})
                 ilas_out.append({"name": ila.name, "probes": probes})
 
-            return {
-                "target": self._target_name(dev),
-                "part": str(getattr(dev, "part_name", "")),
-                "ilas": ilas_out,
-            }
+            return cast(
+                ListIlasResult,
+                {
+                    "target": self._target_name(dev),
+                    "part": str(getattr(dev, "part_name", "")),
+                    "ilas": ilas_out,
+                },
+            )
         finally:
             self._delete_session(session)
 
-    def list_instruments(self, part_hint: str, timeout: int = 180) -> dict:
+    def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult:
         ilas = self.list_ilas(part_hint, timeout=timeout)
         instruments = [
             {
@@ -93,11 +106,14 @@ class ChipScoPyBackend:
             }
             for ila in ilas.get("ilas", [])
         ]
-        return {
-            "target": ilas.get("target", ""),
-            "part": ilas.get("part", ""),
-            "instruments": instruments,
-        }
+        return cast(
+            InstrumentsResult,
+            {
+                "target": ilas.get("target", ""),
+                "part": ilas.get("part", ""),
+                "instruments": instruments,
+            },
+        )
 
     def capture(
         self,
@@ -106,7 +122,7 @@ class ChipScoPyBackend:
         csv_path: str,
         samples: int,
         timeout: int = 120,
-    ) -> dict:
+    ) -> CaptureResult:
         session = self._create_session(require_cs=True)
         try:
             dev = self._select_device(session, part_hint)
@@ -157,8 +173,8 @@ class ChipScoPyBackend:
     @staticmethod
     def _delete_session(session) -> None:
         try:
-            from chipscopy import delete_session
-
+            chipscopy = importlib.import_module("chipscopy")
+            delete_session = getattr(chipscopy, "delete_session")
             delete_session(session)
         except Exception:
             pass
@@ -166,7 +182,8 @@ class ChipScoPyBackend:
     @staticmethod
     def _chipscopy_imports() -> dict[str, Any]:
         try:
-            from chipscopy import create_session
+            chipscopy = importlib.import_module("chipscopy")
+            create_session = getattr(chipscopy, "create_session")
         except Exception as e:
             raise XdbError(
                 "chipscopy backend requested but chipscopy is not available. "

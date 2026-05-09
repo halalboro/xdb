@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, cast
 
 from ..errors import XdbError
 from .protocol import (
@@ -71,12 +71,17 @@ from .session_store import (
     session_paths,
     terminate_session,
 )
+from .types import SessionMeta, SimRequest
 
 
-def _send_request(session_name: str | None, request: dict[str, Any]) -> dict[str, Any]:
+def _send_request(session_name: str | None, request: SimRequest) -> dict[str, Any]:
     paths = session_paths(session_name)
     meta = require_live_meta(paths)
-    sock_path = str(meta["socket_path"])
+    sock_path = str(meta.get("socket_path") or "")
+    if not sock_path:
+        raise XdbError(
+            f"simulation session socket missing for {paths.session_name!r}; run 'xdb sim launch' again"
+        )
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         try:
             sock.connect(sock_path)
@@ -88,7 +93,7 @@ def _send_request(session_name: str | None, request: dict[str, Any]) -> dict[str
         sock.shutdown(socket.SHUT_WR)
         response = _recv_all(sock)
 
-    data = json.loads(response.decode("utf-8"))
+    data = cast(dict[str, Any], json.loads(response.decode("utf-8")))
     if not data.get("ok", False):
         raise XdbError(str(data.get("error", "simulation request failed")))
     result = dict(data.get("result") or {})
@@ -106,7 +111,13 @@ def _recv_all(sock: socket.socket) -> bytes:
     return b"".join(chunks)
 
 
-def _config_matches(meta: dict[str, Any], launch_spec: dict[str, Any], simset: str, mode: str, top: str) -> bool:
+def _config_matches(
+    meta: SessionMeta,
+    launch_spec: Mapping[str, object],
+    simset: str,
+    mode: str,
+    top: str,
+) -> bool:
     return (
         str(meta.get("launch_kind") or "") == "runtime"
         and str(meta.get("package_runtime") or "") == str(launch_spec.get("package_runtime") or "")
@@ -120,7 +131,7 @@ def _spawn_daemon(
     *,
     session_name: str | None,
     anchor_dir: str,
-    launch_spec: dict[str, Any],
+    launch_spec: Mapping[str, object],
     simset: str,
     mode: str,
     top: str,
@@ -173,7 +184,9 @@ def _wait_for_session(session_name: str | None, timeout: int) -> dict[str, Any]:
         meta = load_meta(paths)
         if meta and meta.get("state") == "error":
             raise XdbError(str(meta.get("last_error") or "simulation daemon failed to start"))
-        if meta and pid_is_alive(int(meta.get("pid", 0) or 0)) and Path(str(meta.get("socket_path", ""))).exists():
+        if meta and pid_is_alive(int(meta.get("pid", 0) or 0)) and Path(
+            str(meta.get("socket_path") or "")
+        ).exists():
             return _send_request(session_name, make_request(OP_STATUS))
         time.sleep(0.2)
     raise XdbError("timed out waiting for simulation daemon to start")

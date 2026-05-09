@@ -8,6 +8,7 @@ import shutil
 import signal
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 from ..errors import XdbError
 from .types import SessionMeta
@@ -98,14 +99,14 @@ def ensure_session_dir(paths: SessionPaths) -> None:
 
 def write_meta(paths: SessionPaths, meta: SessionMeta) -> SessionMeta:
     ensure_session_dir(paths)
-    payload = dict(paths.to_meta())
+    payload: dict[str, object] = dict(paths.to_meta())
     payload.update(meta)
     payload["updated_at"] = _now_iso()
     if "created_at" not in payload:
         payload["created_at"] = payload["updated_at"]
     with paths.meta_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
-    return payload
+    return cast(SessionMeta, payload)
 
 
 def load_meta(paths: SessionPaths) -> SessionMeta | None:
@@ -113,7 +114,9 @@ def load_meta(paths: SessionPaths) -> SessionMeta | None:
         return None
     with paths.meta_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
-    return data
+    if not isinstance(data, dict):
+        return None
+    return cast(SessionMeta, data)
 
 
 def remove_session(paths: SessionPaths) -> None:

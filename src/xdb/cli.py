@@ -255,7 +255,7 @@ def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def main() -> None:
+def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     p = argparse.ArgumentParser(prog="xdb", description="Generic FPGA ILA debug toolkit")
     p.add_argument("--version", action="version", version=f"xdb {__version__}")
     _add_debug_flag(p)

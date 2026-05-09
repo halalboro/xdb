@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
+from typing import Any, Callable, Protocol, TypeVar
 
 from ..errors import XdbError
 from .coyote import (
@@ -13,8 +14,30 @@ from .coyote import (
 )
 
 
+_T = TypeVar("_T")
+
+
+class _VivadoCoyoteHost(Protocol):
+    runtime_root: str
+    _coyote: CoyoteSimController | None
+
+    def run(self, tokens: list[str]) -> dict[str, Any]: ...
+
+    def _require_coyote(self) -> CoyoteSimController: ...
+
+    def _coyote_pump_step(self) -> None: ...
+
+    def _coyote_wait_for_item(
+        self,
+        getter: Callable[[], _T | None],
+        *,
+        timeout_seconds: float | None,
+        description: str,
+    ) -> _T: ...
+
+
 class VivadoCoyoteMixin:
-    def _prepare_coyote_runtime(self) -> None:
+    def _prepare_coyote_runtime(self: _VivadoCoyoteHost) -> None:
         if not self.runtime_root:
             return
         runtime_root = Path(self.runtime_root)
@@ -50,23 +73,23 @@ class VivadoCoyoteMixin:
         self._coyote = CoyoteSimController(str(runtime_root))
         self._coyote.start()
 
-    def _require_coyote(self) -> CoyoteSimController:
+    def _require_coyote(self: _VivadoCoyoteHost) -> CoyoteSimController:
         if self._coyote is None:
             raise XdbError(
                 "Coyote simulation protocol is not available for this simulation runtime"
             )
         return self._coyote
 
-    def _coyote_pump_step(self) -> None:
+    def _coyote_pump_step(self: _VivadoCoyoteHost) -> None:
         self.run(["10", "ns"])
 
     def _coyote_wait_for_item(
-        self,
-        getter,
+        self: _VivadoCoyoteHost,
+        getter: Callable[[], _T | None],
         *,
         timeout_seconds: float | None,
         description: str,
-    ):
+    ) -> _T:
         deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
         while True:
             item = getter()
@@ -76,10 +99,12 @@ class VivadoCoyoteMixin:
                 raise XdbError(f"timed out waiting for {description}")
             self._coyote_pump_step()
 
-    def coyote_status(self) -> dict:
+    def coyote_status(self: _VivadoCoyoteHost) -> dict[str, Any]:
         return self._require_coyote().status()
 
-    def coyote_csr_read(self, addr: int, *, timeout_seconds: float | None = None) -> dict:
+    def coyote_csr_read(
+        self: _VivadoCoyoteHost, addr: int, *, timeout_seconds: float | None = None
+    ) -> dict[str, Any]:
         controller = self._require_coyote()
         controller.write_input(
             controller.encode_csr_read(addr),
@@ -97,7 +122,9 @@ class VivadoCoyoteMixin:
             "value_hex": f"0x{value:x}",
         }
 
-    def coyote_csr_write(self, addr: int, value: int) -> dict:
+    def coyote_csr_write(
+        self: _VivadoCoyoteHost, addr: int, value: int
+    ) -> dict[str, Any]:
         controller = self._require_coyote()
         controller.write_input(
             controller.encode_csr_write(addr, value),
@@ -112,7 +139,9 @@ class VivadoCoyoteMixin:
             "written": True,
         }
 
-    def coyote_mem_map(self, space: str, addr: int, size: int) -> dict:
+    def coyote_mem_map(
+        self: _VivadoCoyoteHost, space: str, addr: int, size: int
+    ) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")
         controller = self._require_coyote()
@@ -120,7 +149,9 @@ class VivadoCoyoteMixin:
         self._coyote_pump_step()
         return result
 
-    def coyote_mem_unmap(self, space: str, addr: int) -> dict:
+    def coyote_mem_unmap(
+        self: _VivadoCoyoteHost, space: str, addr: int
+    ) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")
         controller = self._require_coyote()
@@ -128,7 +159,7 @@ class VivadoCoyoteMixin:
         self._coyote_pump_step()
         return result
 
-    def coyote_mem_list(self, space: str) -> dict:
+    def coyote_mem_list(self: _VivadoCoyoteHost, space: str) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")
         return {
@@ -136,7 +167,7 @@ class VivadoCoyoteMixin:
             **self._require_coyote().host_memory_status(),
         }
 
-    def coyote_mem_reset(self, space: str) -> dict:
+    def coyote_mem_reset(self: _VivadoCoyoteHost, space: str) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")
         controller = self._require_coyote()
@@ -144,7 +175,9 @@ class VivadoCoyoteMixin:
         self._coyote_pump_step()
         return result
 
-    def coyote_mem_write(self, space: str, addr: int, data: bytes) -> dict:
+    def coyote_mem_write(
+        self: _VivadoCoyoteHost, space: str, addr: int, data: bytes
+    ) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")
         controller = self._require_coyote()
@@ -152,13 +185,15 @@ class VivadoCoyoteMixin:
         self._coyote_pump_step()
         return result
 
-    def coyote_mem_read(self, space: str, addr: int, size: int) -> dict:
+    def coyote_mem_read(
+        self: _VivadoCoyoteHost, space: str, addr: int, size: int
+    ) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")
         return self._require_coyote().read_host_memory(addr, size)
 
     def coyote_invoke(
-        self,
+        self: _VivadoCoyoteHost,
         opcode_name: str,
         *,
         addr: int | None = None,
@@ -174,7 +209,7 @@ class VivadoCoyoteMixin:
         dst_length: int | None = None,
         dst_stream_name: str = "host",
         dst_dest: int = 0,
-    ) -> dict:
+    ) -> dict[str, Any]:
         controller = self._require_coyote()
         opcode = ensure_supported_local_opcode(opcode_name)
         if opcode_name == "local-transfer":
@@ -263,12 +298,12 @@ class VivadoCoyoteMixin:
         }
 
     def coyote_completed(
-        self,
+        self: _VivadoCoyoteHost,
         opcode_name: str,
         *,
         target_count: int | None = None,
         timeout_seconds: float | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         controller = self._require_coyote()
         opcode = ensure_supported_local_opcode(opcode_name)
 
@@ -307,7 +342,7 @@ class VivadoCoyoteMixin:
             "satisfied": count >= target_count,
         }
 
-    def coyote_clear_completed(self) -> dict:
+    def coyote_clear_completed(self: _VivadoCoyoteHost) -> dict[str, Any]:
         controller = self._require_coyote()
         controller.write_input(
             controller.encode_clear_completed(),
@@ -316,7 +351,9 @@ class VivadoCoyoteMixin:
         self._coyote_pump_step()
         return {"cleared": True}
 
-    def coyote_irq_wait(self, *, timeout_seconds: float | None = None) -> dict:
+    def coyote_irq_wait(
+        self: _VivadoCoyoteHost, *, timeout_seconds: float | None = None
+    ) -> dict[str, Any]:
         event = self._coyote_wait_for_item(
             self._require_coyote().get_irq_nowait,
             timeout_seconds=timeout_seconds,
