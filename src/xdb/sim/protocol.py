@@ -51,6 +51,8 @@ OP_ASSERT_TCL = "assert_tcl"
 OP_EXPECT_SIGNAL = "expect_signal"
 OP_EXPECT_CHANGE = "expect_change"
 OP_TRACE_TRANSACTIONS = "trace_transactions"
+OP_TRACE_EVENTS_CLEAR = "trace_events_clear"
+OP_TRACE_EVENTS_GET = "trace_events_get"
 
 
 ALL_OPERATIONS = {
@@ -100,6 +102,8 @@ ALL_OPERATIONS = {
     OP_EXPECT_SIGNAL,
     OP_EXPECT_CHANGE,
     OP_TRACE_TRANSACTIONS,
+    OP_TRACE_EVENTS_CLEAR,
+    OP_TRACE_EVENTS_GET,
 }
 
 

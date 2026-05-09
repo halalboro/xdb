@@ -47,6 +47,8 @@ from .protocol import (
     OP_TIME,
     OP_TCL,
     OP_TOP,
+    OP_TRACE_EVENTS_CLEAR,
+    OP_TRACE_EVENTS_GET,
     OP_TRACE_TRANSACTIONS,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
@@ -468,6 +470,10 @@ class SimDaemon:
             return self.driver.coyote_irq_wait(
                 timeout_seconds=_arg_optional_float(args, "timeout_seconds"),
             )
+        if op == OP_TRACE_EVENTS_CLEAR:
+            return self.driver.trace_events_clear()
+        if op == OP_TRACE_EVENTS_GET:
+            return self.driver.trace_events_get()
         if op == OP_TRACE_TRANSACTIONS:
             duration_tokens = [str(v) for v in list(args.get("duration_tokens") or [])]
             if not duration_tokens:

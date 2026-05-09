@@ -107,6 +107,7 @@ xdb sim vcd status
 xdb sim vcd stop
 xdb sim axis trace /tb_top/dut/axis_in --for 100 ns --decode-bytes
 xdb sim trace transactions --for 200 ns
+xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns -- xdb sim run 50 ns
 
 # Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
 xdb sim coyote-status
@@ -215,6 +216,10 @@ xdb sim close
   IRQs, completion checks/results, and `xdb`-issued invoke or memory commands.
   Use `--opcode <name>` to keep only events associated with a specific local
   Coyote opcode.
+- `xdb sim with-trace -- ...` runs a single command and then observes a scoped
+  simulation window afterwards, returning any requested transaction trace data
+  and/or AXIS beat trace data from that window. Use `--transactions`, repeat
+  `--axis <path>`, and `--for <duration>` to choose the collected artifacts.
 - Current Coyote support is intentionally limited to the local host-memory
   protocol implemented by the upstream Coyote simulation target. Remote RDMA and
   TCP commands are not supported yet.

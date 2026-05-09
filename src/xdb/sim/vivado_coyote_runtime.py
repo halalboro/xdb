@@ -29,6 +29,10 @@ class _VivadoCoyoteHost(Protocol):
 
     def _coyote_pump_step(self) -> None: ...
 
+    def trace_events_clear(self) -> dict[str, Any]: ...
+
+    def trace_events_get(self) -> dict[str, Any]: ...
+
     def _coyote_wait_for_item(
         self,
         getter: Callable[[], _T | None],
@@ -409,19 +413,27 @@ class VivadoCoyoteMixin:
             "value_hex": f"0x{int(event['value']):x}",
         }
 
+    def trace_events_clear(self: _VivadoCoyoteHost) -> dict[str, Any]:
+        controller = self._require_coyote()
+        controller.clear_trace_events()
+        return {"cleared": True}
+
+    def trace_events_get(self: _VivadoCoyoteHost) -> dict[str, Any]:
+        events = self._require_coyote().get_trace_events()
+        return {"event_count": len(events), "events": events}
+
     def trace_transactions(
         self: _VivadoCoyoteHost,
         duration_tokens: list[str],
         *,
         opcode_filter: str | None = None,
     ) -> dict[str, Any]:
-        controller = self._require_coyote()
         if opcode_filter is not None:
             ensure_supported_local_opcode(opcode_filter)
         time_before = str(self.time().get("time") or "")
-        controller.clear_trace_events()
+        self.trace_events_clear()
         run_result = self.run(duration_tokens)
-        events = controller.get_trace_events()
+        events = self.trace_events_get()["events"]
         if opcode_filter is not None:
             events = [
                 event

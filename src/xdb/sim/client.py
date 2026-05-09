@@ -51,6 +51,8 @@ from .protocol import (
     OP_TCL,
     OP_TIME,
     OP_TOP,
+    OP_TRACE_EVENTS_CLEAR,
+    OP_TRACE_EVENTS_GET,
     OP_TRACE_TRANSACTIONS,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
@@ -608,7 +610,7 @@ def provenance_session(session_name: str | None) -> dict[str, Any]:
     return result
 
 
-def axis_trace_session(
+def _axis_trace_collect(
     session_name: str | None,
     interface_paths: list[str],
     duration_tokens: list[str],
@@ -702,6 +704,29 @@ def axis_trace_session(
         "only_handshakes": bool(only_handshakes),
         "records": records,
     }
+
+
+def axis_trace_session(
+    session_name: str | None,
+    interface_paths: list[str],
+    duration_tokens: list[str],
+    *,
+    step_tokens: list[str],
+    decode_bytes: bool = False,
+    lane_order: str = "low-to-high",
+    include_idle: bool = False,
+    only_handshakes: bool = False,
+) -> dict[str, Any]:
+    return _axis_trace_collect(
+        session_name,
+        interface_paths,
+        duration_tokens,
+        step_tokens=step_tokens,
+        decode_bytes=decode_bytes,
+        lane_order=lane_order,
+        include_idle=include_idle,
+        only_handshakes=only_handshakes,
+    )
 
 
 def run_session(session_name: str | None, tokens: list[str]) -> dict[str, Any]:
@@ -1056,6 +1081,111 @@ def trace_transactions_session(
             opcode=opcode or "",
         ),
     )
+
+
+def trace_events_clear_session(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_TRACE_EVENTS_CLEAR))
+
+
+def trace_events_get_session(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_TRACE_EVENTS_GET))
+
+
+def _normalize_with_trace_command(command: list[str]) -> list[str]:
+    if not command:
+        raise XdbError("missing command after '--'")
+    normalized = list(command)
+    if normalized and normalized[0] == "--":
+        normalized = normalized[1:]
+    if not normalized:
+        raise XdbError("missing command after '--'")
+    if normalized[0] == "xdb":
+        return [sys.executable, "-m", "xdb.cli", *normalized[1:]]
+    return normalized
+
+
+def with_trace_session(
+    session_name: str | None,
+    command: list[str],
+    duration_tokens: list[str],
+    *,
+    step_tokens: list[str],
+    transactions: bool = False,
+    axis_paths: list[str] | None = None,
+    decode_bytes: bool = False,
+    lane_order: str = "low-to-high",
+    include_idle: bool = False,
+    only_handshakes: bool = False,
+) -> dict[str, Any]:
+    axis_paths = list(axis_paths or [])
+    if not transactions and not axis_paths:
+        raise XdbError("with-trace requires at least one trace mode")
+
+    argv = _normalize_with_trace_command(command)
+    session_meta = require_live_meta(session_paths(session_name))
+    cwd = str(session_meta.get("anchor_dir") or Path.cwd())
+
+    if transactions:
+        trace_events_clear_session(session_name)
+
+    started_at = time.time()
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as e:
+        raise XdbError(f"command not found: {argv[0]}") from e
+    finished_at = time.time()
+
+    axis_result: dict[str, Any] | None = None
+    observation_result: dict[str, Any] | None = None
+    if axis_paths:
+        axis_result = _axis_trace_collect(
+            session_name,
+            axis_paths,
+            duration_tokens,
+            step_tokens=step_tokens,
+            decode_bytes=decode_bytes,
+            lane_order=lane_order,
+            include_idle=include_idle,
+            only_handshakes=only_handshakes,
+        )
+    elif transactions:
+        run_result = run_session(session_name, duration_tokens)
+        observation_result = {
+            "time_before": str(run_result.get("time_before") or ""),
+            "time_after": str(run_result.get("time_after") or ""),
+            "duration": " ".join(duration_tokens),
+        }
+
+    result: dict[str, Any] = {
+        "command": {
+            "argv": argv,
+            "cwd": cwd,
+            "exit_code": int(completed.returncode),
+            "ok": completed.returncode == 0,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "duration_seconds": max(0.0, finished_at - started_at),
+        },
+        "duration": " ".join(duration_tokens),
+        "step": " ".join(step_tokens),
+        "transactions_enabled": bool(transactions),
+        "axis_interfaces": axis_paths,
+    }
+    if transactions:
+        result["transactions"] = trace_events_get_session(session_name)
+    if axis_result is not None:
+        result["axis"] = axis_result
+    if observation_result is not None:
+        result["observation"] = observation_result
+    return result
 
 
 def snapshot_session(

@@ -54,6 +54,7 @@ from .sim.client import (
     time_session,
     trace_transactions_session,
     vcd_start_session,
+    with_trace_session,
     vcd_status_session,
     vcd_stop_session,
     tcl_session,
@@ -602,6 +603,23 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_trace_transactions.add_argument("--for", dest="duration", nargs="+", required=True)
     s_sim_trace_transactions.add_argument("--opcode", default=None)
 
+    s_sim_with_trace = sim_sub.add_parser("with-trace", help="run a command with scoped tracing")
+    _add_debug_flag(s_sim_with_trace)
+    add_sim_session_arg(s_sim_with_trace)
+    s_sim_with_trace.add_argument("--transactions", action="store_true")
+    s_sim_with_trace.add_argument("--axis", dest="axis_paths", action="append", default=[])
+    s_sim_with_trace.add_argument("--for", dest="duration", nargs="+", required=True)
+    s_sim_with_trace.add_argument("--step", nargs="+", default=["1", "ns"])
+    s_sim_with_trace.add_argument("--decode-bytes", action="store_true")
+    s_sim_with_trace.add_argument(
+        "--lane-order",
+        choices=["low-to-high", "high-to-low"],
+        default="low-to-high",
+    )
+    s_sim_with_trace.add_argument("--include-idle", action="store_true")
+    s_sim_with_trace.add_argument("--only-handshakes", action="store_true")
+    s_sim_with_trace.add_argument("command", nargs=argparse.REMAINDER)
+
     s_sim_release = sim_sub.add_parser("release")
     _add_debug_flag(s_sim_release)
     add_sim_session_arg(s_sim_release)
@@ -891,6 +909,21 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         args.session,
                         _resolve_sim_step_tokens(args.duration),
                         opcode=args.opcode,
+                    )
+                )
+            elif args.sim_cmd == "with-trace":
+                _print(
+                    with_trace_session(
+                        args.session,
+                        args.command,
+                        _resolve_sim_step_tokens(args.duration),
+                        step_tokens=_resolve_sim_step_tokens(args.step),
+                        transactions=bool(args.transactions),
+                        axis_paths=list(args.axis_paths or []),
+                        decode_bytes=bool(args.decode_bytes),
+                        lane_order=args.lane_order,
+                        include_idle=bool(args.include_idle),
+                        only_handshakes=bool(args.only_handshakes),
                     )
                 )
             elif args.sim_cmd == "release":
