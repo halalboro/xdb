@@ -298,6 +298,10 @@ if {![info exists ::xdb_breakpoints]} {
   set ::xdb_breakpoints {}
 }
 
+if {![info exists ::xdb_next_breakpoint_id]} {
+  set ::xdb_next_breakpoint_id 1
+}
+
 if {![info exists ::xdb_forces]} {
   set ::xdb_forces [dict create]
 }
@@ -309,14 +313,17 @@ proc xdb_api_time {} {
 
 proc xdb_api_run {run_args} {
   set __xdb_before [current_time]
-  if {[llength $run_args] == 0} {
+  set __xdb_breakpoint_json "\"breakpoint_hit\":false"
+  if {[xdb_has_polled_breakpoints]} {
+    set __xdb_breakpoint_json [xdb_run_with_polled_breakpoints $run_args]
+  } elseif {[llength $run_args] == 0} {
     run
   } else {
     eval [linsert $run_args 0 run]
   }
   set __xdb_after [current_time]
   set __xdb_joined [join $run_args " "]
-  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined]"
+  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined],$__xdb_breakpoint_json"
 }
 
 proc xdb_api_restart {} {
@@ -328,19 +335,30 @@ proc xdb_api_restart {} {
 
 proc xdb_api_step_time {step_args} {
   set __xdb_before [current_time]
-  eval [linsert $step_args 0 run]
+  set __xdb_breakpoint_json "\"breakpoint_hit\":false"
+  if {[xdb_has_polled_breakpoints]} {
+    set __xdb_breakpoint_json [xdb_run_with_polled_breakpoints $step_args]
+  } else {
+    eval [linsert $step_args 0 run]
+  }
   set __xdb_after [current_time]
   set __xdb_joined [join $step_args " "]
-  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined],\"step_mode\":[xdb_json_string time]"
+  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"duration\":[xdb_json_string $__xdb_joined],\"step_mode\":[xdb_json_string time],$__xdb_breakpoint_json"
 }
 
 proc xdb_api_step_count {count} {
   set __xdb_before [current_time]
+  set __xdb_breakpoint_json "\"breakpoint_hit\":false"
   for {set __xdb_i 0} {$__xdb_i < $count} {incr __xdb_i} {
     step
+    set __xdb_hit [xdb_poll_breakpoints]
+    if {[llength $__xdb_hit] > 0} {
+      set __xdb_breakpoint_json [xdb_breakpoint_hit_json $__xdb_hit]
+      break
+    }
   }
   set __xdb_after [current_time]
-  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"count\":$count,\"step_mode\":[xdb_json_string count]"
+  return "\"time_before\":[xdb_json_string $__xdb_before],\"time_after\":[xdb_json_string $__xdb_after],\"count\":$count,\"step_mode\":[xdb_json_string count],$__xdb_breakpoint_json"
 }
 
 proc xdb_api_wait_until {expr_text step_args timeout_seconds max_iterations} {
@@ -548,6 +566,63 @@ proc xdb_duration_args_to_fs {duration_args} {
   return [expr {double($__xdb_value) * [xdb_time_unit_to_fs $__xdb_unit]}]
 }
 
+proc xdb_has_polled_breakpoints {} {
+  foreach __xdb_bp $::xdb_breakpoints {
+    if {[dict get $__xdb_bp mode] eq "poll"} {
+      return 1
+    }
+  }
+  return 0
+}
+
+proc xdb_poll_breakpoints {} {
+  foreach __xdb_bp $::xdb_breakpoints {
+    if {[dict get $__xdb_bp mode] ne "poll"} {
+      continue
+    }
+    set __xdb_condition [dict get $__xdb_bp condition]
+    if {[uplevel #0 [list expr $__xdb_condition]]} {
+      return $__xdb_bp
+    }
+  }
+  return {}
+}
+
+proc xdb_breakpoint_hit_json {breakpoint} {
+  return "\"breakpoint_hit\":true,\"breakpoint_id\":[dict get $breakpoint id],\"breakpoint_mode\":[xdb_json_string [dict get $breakpoint mode]],\"breakpoint_condition\":[xdb_json_string [dict get $breakpoint condition]]"
+}
+
+proc xdb_run_with_polled_breakpoints {run_args} {
+  if {[llength $run_args] == 0} {
+    error "polled breakpoints require a bounded run duration"
+  }
+  set __xdb_start_fs [xdb_parse_time_to_fs [current_time]]
+  set __xdb_deadline_fs [expr {$__xdb_start_fs + [xdb_duration_args_to_fs $run_args]}]
+  set __xdb_iterations 0
+  set __xdb_previous_fs $__xdb_start_fs
+  set __xdb_hit [xdb_poll_breakpoints]
+  if {[llength $__xdb_hit] > 0} {
+    return [xdb_breakpoint_hit_json $__xdb_hit]
+  }
+  while {[xdb_parse_time_to_fs [current_time]] < $__xdb_deadline_fs} {
+    step
+    incr __xdb_iterations
+    set __xdb_current_fs [xdb_parse_time_to_fs [current_time]]
+    set __xdb_hit [xdb_poll_breakpoints]
+    if {[llength $__xdb_hit] > 0} {
+      return [xdb_breakpoint_hit_json $__xdb_hit]
+    }
+    if {$__xdb_current_fs <= $__xdb_previous_fs} {
+      error "simulation did not advance while polling breakpoints"
+    }
+    set __xdb_previous_fs $__xdb_current_fs
+    if {$__xdb_iterations > 1000000} {
+      error "polled breakpoint run exceeded iteration limit"
+    }
+  }
+  return "\"breakpoint_hit\":false"
+}
+
 proc xdb_api_expect_signal {signal expected within_args} {
   set __xdb_time_before [current_time]
   set __xdb_within [join $within_args " "]
@@ -621,17 +696,28 @@ proc xdb_api_expect_change {signal within_args} {
 }
 
 proc xdb_api_breakpoint_add {condition} {
-  set __xdb_id [when $condition {stop}]
-  lappend ::xdb_breakpoints $__xdb_id
-  return "\"condition\":[xdb_json_string $condition],\"breakpoint_id\":[xdb_json_string $__xdb_id]"
+  set __xdb_condition [xdb_normalize_expr $condition]
+  set __xdb_id $::xdb_next_breakpoint_id
+  incr ::xdb_next_breakpoint_id
+  set __xdb_mode poll
+  set __xdb_backend_id ""
+  if {[llength [info commands when]] > 0} {
+    if {![catch {when $__xdb_condition {stop}} __xdb_when_id]} {
+      set __xdb_mode when
+      set __xdb_backend_id $__xdb_when_id
+    }
+  }
+  lappend ::xdb_breakpoints [dict create id $__xdb_id mode $__xdb_mode condition $__xdb_condition backend_id $__xdb_backend_id]
+  return "\"condition\":[xdb_json_string $__xdb_condition],\"breakpoint_id\":$__xdb_id,\"mode\":[xdb_json_string $__xdb_mode],\"backend_id\":[xdb_json_string $__xdb_backend_id]"
 }
 
 proc xdb_api_breakpoint_clear {} {
   set __xdb_cleared 0
-  foreach __xdb_id $::xdb_breakpoints {
-    if {![catch {nowhen $__xdb_id}]} {
-      incr __xdb_cleared
+  foreach __xdb_bp $::xdb_breakpoints {
+    if {[dict get $__xdb_bp mode] eq "when" && [dict get $__xdb_bp backend_id] ne ""} {
+      catch {nowhen [dict get $__xdb_bp backend_id]}
     }
+    incr __xdb_cleared
   }
   set ::xdb_breakpoints {}
   return "\"cleared\":$__xdb_cleared"
