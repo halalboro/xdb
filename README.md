@@ -106,6 +106,7 @@ xdb sim vcd start ./waves/fail.vcd /tb_top/dut
 xdb sim vcd status
 xdb sim vcd stop
 xdb sim axis trace /tb_top/dut/axis_in --for 100 ns --decode-bytes
+xdb sim trace transactions --for 200 ns
 
 # Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
 xdb sim coyote-status
@@ -209,6 +210,11 @@ xdb sim close
 - `xdb sim mem reset` unmaps every host-memory segment tracked by `xdb` and
   clears the local host read/write counters and last protocol error string.
   It does not clear pending IRQ events or completion counters.
+- `xdb sim trace transactions --for <duration>` captures protocol-level Coyote
+  activity observed during that simulation window, including host reads/writes,
+  IRQs, completion checks/results, and `xdb`-issued invoke or memory commands.
+  Use `--opcode <name>` to keep only events associated with a specific local
+  Coyote opcode.
 - Current Coyote support is intentionally limited to the local host-memory
   protocol implemented by the upstream Coyote simulation target. Remote RDMA and
   TCP commands are not supported yet.

@@ -23,6 +23,8 @@ class _VivadoCoyoteHost(Protocol):
 
     def run(self, tokens: list[str]) -> dict[str, Any]: ...
 
+    def time(self) -> dict[str, Any]: ...
+
     def _require_coyote(self) -> CoyoteSimController: ...
 
     def _coyote_pump_step(self) -> None: ...
@@ -106,6 +108,7 @@ class VivadoCoyoteMixin:
         self: _VivadoCoyoteHost, addr: int, *, timeout_seconds: float | None = None
     ) -> dict[str, Any]:
         controller = self._require_coyote()
+        controller.record_trace_event("csr_read_request", addr=addr, addr_hex=f"0x{addr:x}")
         controller.write_input(
             controller.encode_csr_read(addr),
             pump=self._coyote_pump_step,
@@ -126,6 +129,13 @@ class VivadoCoyoteMixin:
         self: _VivadoCoyoteHost, addr: int, value: int
     ) -> dict[str, Any]:
         controller = self._require_coyote()
+        controller.record_trace_event(
+            "csr_write_request",
+            addr=addr,
+            addr_hex=f"0x{addr:x}",
+            value=value,
+            value_hex=f"0x{value:x}",
+        )
         controller.write_input(
             controller.encode_csr_write(addr, value),
             pump=self._coyote_pump_step,
@@ -239,6 +249,21 @@ class VivadoCoyoteMixin:
                 dst_dest=dst_dest,
                 last=last,
             )
+            controller.record_trace_event(
+                "invoke",
+                opcode=opcode_name,
+                src_addr=src_addr,
+                src_addr_hex=f"0x{src_addr:x}",
+                src_len=effective_src_len,
+                dst_addr=dst_addr,
+                dst_addr_hex=f"0x{dst_addr:x}",
+                dst_len=effective_dst_len,
+                src_stream=src_stream_name,
+                dst_stream=dst_stream_name,
+                src_dest=src_dest,
+                dst_dest=dst_dest,
+                last=bool(last),
+            )
             controller.write_input(payload, pump=self._coyote_pump_step)
             self._coyote_pump_step()
             return {
@@ -284,6 +309,16 @@ class VivadoCoyoteMixin:
                 dest=dest,
                 last=last,
             )
+        controller.record_trace_event(
+            "invoke",
+            opcode=opcode_name,
+            addr=addr,
+            addr_hex=f"0x{addr:x}",
+            length=length,
+            stream=stream_name,
+            dest=dest,
+            last=bool(last),
+        )
         controller.write_input(payload, pump=self._coyote_pump_step)
         self._coyote_pump_step()
         return {
@@ -308,6 +343,12 @@ class VivadoCoyoteMixin:
         opcode = ensure_supported_local_opcode(opcode_name)
 
         def check_once(wait_timeout: float | None) -> int:
+            controller.record_trace_event(
+                "completed_request",
+                opcode=opcode_name,
+                target_count=target_count,
+                timeout_seconds=wait_timeout,
+            )
             controller.write_input(
                 controller.encode_check_completed(opcode),
                 pump=self._coyote_pump_step,
@@ -344,6 +385,7 @@ class VivadoCoyoteMixin:
 
     def coyote_clear_completed(self: _VivadoCoyoteHost) -> dict[str, Any]:
         controller = self._require_coyote()
+        controller.record_trace_event("clear_completed_request")
         controller.write_input(
             controller.encode_clear_completed(),
             pump=self._coyote_pump_step,
@@ -354,8 +396,10 @@ class VivadoCoyoteMixin:
     def coyote_irq_wait(
         self: _VivadoCoyoteHost, *, timeout_seconds: float | None = None
     ) -> dict[str, Any]:
+        controller = self._require_coyote()
+        controller.record_trace_event("irq_wait_request", timeout_seconds=timeout_seconds)
         event = self._coyote_wait_for_item(
-            self._require_coyote().get_irq_nowait,
+            controller.get_irq_nowait,
             timeout_seconds=timeout_seconds,
             description="Coyote IRQ",
         )
@@ -363,4 +407,32 @@ class VivadoCoyoteMixin:
             "pid": int(event["pid"]),
             "value": int(event["value"]),
             "value_hex": f"0x{int(event['value']):x}",
+        }
+
+    def trace_transactions(
+        self: _VivadoCoyoteHost,
+        duration_tokens: list[str],
+        *,
+        opcode_filter: str | None = None,
+    ) -> dict[str, Any]:
+        controller = self._require_coyote()
+        if opcode_filter is not None:
+            ensure_supported_local_opcode(opcode_filter)
+        time_before = str(self.time().get("time") or "")
+        controller.clear_trace_events()
+        run_result = self.run(duration_tokens)
+        events = controller.get_trace_events()
+        if opcode_filter is not None:
+            events = [
+                event
+                for event in events
+                if str(event.get("opcode") or "") == opcode_filter
+            ]
+        return {
+            "duration": " ".join(duration_tokens),
+            "time_before": time_before,
+            "time_after": str(run_result.get("time_after") or ""),
+            "opcode_filter": opcode_filter,
+            "event_count": len(events),
+            "events": events,
         }

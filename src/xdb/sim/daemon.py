@@ -47,6 +47,7 @@ from .protocol import (
     OP_TIME,
     OP_TCL,
     OP_TOP,
+    OP_TRACE_TRANSACTIONS,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
     OP_VCD_START,
@@ -467,6 +468,12 @@ class SimDaemon:
             return self.driver.coyote_irq_wait(
                 timeout_seconds=_arg_optional_float(args, "timeout_seconds"),
             )
+        if op == OP_TRACE_TRANSACTIONS:
+            duration_tokens = [str(v) for v in list(args.get("duration_tokens") or [])]
+            if not duration_tokens:
+                raise XdbError("missing trace duration")
+            opcode = str(args.get("opcode") or "") or None
+            return self.driver.trace_transactions(duration_tokens, opcode_filter=opcode)
         if op == OP_SNAPSHOT:
             scope = str(args.get("scope") or "")
             if not scope:

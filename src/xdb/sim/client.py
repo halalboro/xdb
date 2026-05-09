@@ -51,6 +51,7 @@ from .protocol import (
     OP_TCL,
     OP_TIME,
     OP_TOP,
+    OP_TRACE_TRANSACTIONS,
     OP_UNTIL,
     OP_UNTIL_SIGNAL,
     OP_VCD_START,
@@ -1038,6 +1039,22 @@ def coyote_irq_wait_session(
     return _send_request(
         session_name,
         make_request(OP_IRQ_WAIT, timeout_seconds=timeout_seconds),
+    )
+
+
+def trace_transactions_session(
+    session_name: str | None,
+    duration_tokens: list[str],
+    *,
+    opcode: str | None = None,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(
+            OP_TRACE_TRANSACTIONS,
+            duration_tokens=duration_tokens,
+            opcode=opcode or "",
+        ),
     )
 
 

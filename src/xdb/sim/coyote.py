@@ -7,6 +7,7 @@ import re
 import select
 import struct
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -92,6 +93,9 @@ class CoyoteSimController:
         self._host_write_count = 0
         self._host_read_count = 0
         self._last_protocol_error = ""
+        self._trace_lock = threading.Lock()
+        self._trace_next_id = 1
+        self._trace_events: list[dict[str, object]] = []
 
     def start(self) -> None:
         self.sim_dir.mkdir(parents=True, exist_ok=True)
@@ -152,11 +156,40 @@ class CoyoteSimController:
             "last_protocol_error": self._last_protocol_error,
         }
 
+    def clear_trace_events(self) -> None:
+        with self._trace_lock:
+            self._trace_events.clear()
+            self._trace_next_id = 1
+
+    def get_trace_events(self) -> list[dict[str, object]]:
+        with self._trace_lock:
+            return [dict(event) for event in self._trace_events]
+
+    def record_trace_event(self, event_type: str, **fields: object) -> dict[str, object]:
+        event = {
+            "id": self._trace_next_id,
+            "type": event_type,
+            "wallclock_seconds": time.monotonic(),
+            **fields,
+        }
+        with self._trace_lock:
+            event["id"] = self._trace_next_id
+            self._trace_next_id += 1
+            self._trace_events.append(event)
+        return dict(event)
+
     def map_host_memory(self, addr: int, size: int) -> dict[str, object]:
         _require_positive_size(size)
         self._ensure_non_overlapping(addr, size)
         self._segments[addr] = bytearray(size)
         self.write_input(self._encode_user_map(addr, size))
+        self.record_trace_event(
+            "mem_map",
+            space="host",
+            addr=addr,
+            addr_hex=_hex(addr),
+            size=size,
+        )
         return {
             "space": "host",
             "addr": addr,
@@ -171,6 +204,13 @@ class CoyoteSimController:
         size = len(self._segments[addr])
         del self._segments[addr]
         self.write_input(self._encode_user_unmap(addr))
+        self.record_trace_event(
+            "mem_unmap",
+            space="host",
+            addr=addr,
+            addr_hex=_hex(addr),
+            size=size,
+        )
         return {
             "space": "host",
             "addr": addr,
@@ -190,6 +230,12 @@ class CoyoteSimController:
         self._last_protocol_error = ""
         if payload:
             self.write_input(payload)
+        self.record_trace_event(
+            "mem_reset",
+            space="host",
+            unmapped_count=len(unmapped_segments),
+            unmapped_segments=unmapped_segments,
+        )
         return {
             "space": "host",
             "reset": True,
@@ -214,6 +260,15 @@ class CoyoteSimController:
         base, segment, offset = self._find_segment(addr, len(data))
         segment[offset : offset + len(data)] = data
         self.write_input(self._encode_mem_write(addr, data))
+        self.record_trace_event(
+            "mem_write",
+            space="host",
+            addr=addr,
+            addr_hex=_hex(addr),
+            size=len(data),
+            data_hex=data.hex(),
+            auto_mapped=auto_mapped,
+        )
         return {
             "space": "host",
             "addr": addr,
@@ -399,6 +454,7 @@ class CoyoteSimController:
                 value = struct.unpack_from("<Q", buffer, 0)[0]
                 del buffer[:8]
                 self._csr_results.put(value)
+                self.record_trace_event("csr_read_result", value=value, value_hex=_hex(value))
                 continue
             if opcode == _OUTPUT_HOST_WRITE:
                 if len(buffer) < 1 + 16:
@@ -422,6 +478,12 @@ class CoyoteSimController:
                 value = struct.unpack_from("<I", buffer, 1)[0]
                 del buffer[:5]
                 self._irq_events.put({"pid": pid, "value": value})
+                self.record_trace_event(
+                    "irq",
+                    pid=pid,
+                    value=value,
+                    value_hex=_hex(value),
+                )
                 continue
             if opcode == _OUTPUT_CHECK_COMPLETED:
                 if len(buffer) < 1 + 4:
@@ -430,6 +492,7 @@ class CoyoteSimController:
                 value = struct.unpack_from("<I", buffer, 0)[0]
                 del buffer[:4]
                 self._completed_results.put(value)
+                self.record_trace_event("completed_result", count=value)
                 continue
             if opcode == _OUTPUT_HOST_READ:
                 if len(buffer) < 1 + 16:
@@ -448,6 +511,14 @@ class CoyoteSimController:
             _base, segment, offset = self._find_segment(vaddr, len(data))
             segment[offset : offset + len(data)] = data
             self._host_write_count += 1
+            self.record_trace_event(
+                "host_write",
+                addr=vaddr,
+                addr_hex=_hex(vaddr),
+                size=len(data),
+                data_hex=data.hex(),
+                host_write_count=self._host_write_count,
+            )
         except XdbError as e:
             self._set_protocol_error(str(e))
 
@@ -458,6 +529,13 @@ class CoyoteSimController:
             self._set_protocol_error(str(e))
             payload = self._encode_mem_write(vaddr, bytes(size))
         self._host_read_count += 1
+        self.record_trace_event(
+            "host_read",
+            addr=vaddr,
+            addr_hex=_hex(vaddr),
+            size=size,
+            host_read_count=self._host_read_count,
+        )
         try:
             self.write_input(payload)
         except XdbError as e:

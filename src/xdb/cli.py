@@ -52,6 +52,7 @@ from .sim.client import (
     snapshot_session,
     step_session,
     time_session,
+    trace_transactions_session,
     vcd_start_session,
     vcd_status_session,
     vcd_stop_session,
@@ -592,6 +593,15 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_axis_trace.add_argument("--only-handshakes", action="store_true")
     s_sim_axis_trace.add_argument("--ndjson", action="store_true")
 
+    s_sim_trace = sim_sub.add_parser("trace", help="simulation trace helpers")
+    _add_debug_flag(s_sim_trace)
+    sim_trace_sub = s_sim_trace.add_subparsers(dest="sim_trace_cmd", required=True)
+    s_sim_trace_transactions = sim_trace_sub.add_parser("transactions")
+    _add_debug_flag(s_sim_trace_transactions)
+    add_sim_session_arg(s_sim_trace_transactions)
+    s_sim_trace_transactions.add_argument("--for", dest="duration", nargs="+", required=True)
+    s_sim_trace_transactions.add_argument("--opcode", default=None)
+
     s_sim_release = sim_sub.add_parser("release")
     _add_debug_flag(s_sim_release)
     add_sim_session_arg(s_sim_release)
@@ -875,6 +885,14 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         print(json.dumps(record, sort_keys=False))
                 else:
                     _print(result)
+            elif args.sim_cmd == "trace" and args.sim_trace_cmd == "transactions":
+                _print(
+                    trace_transactions_session(
+                        args.session,
+                        _resolve_sim_step_tokens(args.duration),
+                        opcode=args.opcode,
+                    )
+                )
             elif args.sim_cmd == "release":
                 _print(release_session(args.session, args.signal, all_forces=args.all))
             elif args.sim_cmd == "csr" and args.sim_csr_cmd == "read":
