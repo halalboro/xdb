@@ -519,39 +519,105 @@ proc xdb_api_assert_tcl {expr_text} {
   return "\"passed\":true,\"kind\":[xdb_json_string assert-tcl],\"expr\":[xdb_json_string $__xdb_expr],\"time\":[xdb_json_string $__xdb_time]"
 }
 
+proc xdb_time_unit_to_fs {unit} {
+  set __xdb_unit [string tolower $unit]
+  switch -- $__xdb_unit {
+    fs { return 1.0 }
+    ps { return 1000.0 }
+    ns { return 1000000.0 }
+    us { return 1000000000.0 }
+    ms { return 1000000000000.0 }
+    s - sec - secs - second - seconds { return 1000000000000000.0 }
+    default { error [format "unsupported simulation time unit: %s" $unit] }
+  }
+}
+
+proc xdb_parse_time_to_fs {time_text} {
+  set __xdb_text [string trim $time_text]
+  if {![regexp {^([0-9]+(?:\.[0-9]*)?|\.[0-9]+)\s*([A-Za-z]+)$} $__xdb_text -> __xdb_value __xdb_unit]} {
+    error [format "invalid simulation time: %s" $time_text]
+  }
+  return [expr {double($__xdb_value) * [xdb_time_unit_to_fs $__xdb_unit]}]
+}
+
+proc xdb_duration_args_to_fs {duration_args} {
+  set __xdb_text [string map {" " "" "\t" "" "\n" ""} [join $duration_args ""]]
+  if {![regexp {^([0-9]+(?:\.[0-9]*)?|\.[0-9]+)([A-Za-z]+)$} $__xdb_text -> __xdb_value __xdb_unit]} {
+    error [format "invalid simulation duration: %s" [join $duration_args " "]]
+  }
+  return [expr {double($__xdb_value) * [xdb_time_unit_to_fs $__xdb_unit]}]
+}
+
 proc xdb_api_expect_signal {signal expected within_args} {
   set __xdb_time_before [current_time]
+  set __xdb_within [join $within_args " "]
   set __xdb_initial [get_value $signal]
-  if {$__xdb_initial eq $expected} {
-    return "\"passed\":true,\"kind\":[xdb_json_string expect-signal],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_initial],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_before],\"iterations\":0"
+  set __xdb_start_fs [xdb_parse_time_to_fs $__xdb_time_before]
+  set __xdb_deadline_fs [expr {$__xdb_start_fs + [xdb_duration_args_to_fs $within_args]}]
+  set __xdb_iterations 0
+  set __xdb_actual $__xdb_initial
+  while {$__xdb_actual ne $expected} {
+    set __xdb_current_fs [xdb_parse_time_to_fs [current_time]]
+    if {$__xdb_current_fs > $__xdb_deadline_fs} {
+      break
+    }
+    step
+    incr __xdb_iterations
+    set __xdb_actual [get_value $signal]
+    set __xdb_after_step_fs [xdb_parse_time_to_fs [current_time]]
+    if {$__xdb_actual eq $expected && $__xdb_after_step_fs <= $__xdb_deadline_fs} {
+      break
+    }
+    if {$__xdb_after_step_fs > $__xdb_deadline_fs} {
+      break
+    }
+    if {$__xdb_iterations > 1000000} {
+      error [format "expect-signal exceeded iteration limit while waiting for %s to reach %s" $signal $expected]
+    }
   }
-  set ::xdb_expect_signal_hit 0
-  set __xdb_condition [xdb_signal_eq_expr $signal $expected]
-  set __xdb_id [when $__xdb_condition {set ::xdb_expect_signal_hit 1; stop}]
-  eval [linsert $within_args 0 run]
-  catch {nowhen $__xdb_id}
   set __xdb_time_after [current_time]
   set __xdb_actual [get_value $signal]
-  if {!$::xdb_expect_signal_hit && $__xdb_actual ne $expected} {
-    error [format "expect-signal failed: %s did not reach %s within %s (start=%s end=%s time_before=%s time_after=%s)" $signal $expected [join $within_args \" \" ] $__xdb_initial $__xdb_actual $__xdb_time_before $__xdb_time_after]
+  set __xdb_time_after_fs [xdb_parse_time_to_fs $__xdb_time_after]
+  if {$__xdb_actual ne $expected || $__xdb_time_after_fs > $__xdb_deadline_fs} {
+    error [format "expect-signal failed: %s did not reach %s within %s (start=%s end=%s time_before=%s time_after=%s)" $signal $expected $__xdb_within $__xdb_initial $__xdb_actual $__xdb_time_before $__xdb_time_after]
   }
-  return "\"passed\":true,\"kind\":[xdb_json_string expect-signal],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"iterations\":1"
+  return "\"passed\":true,\"kind\":[xdb_json_string expect-signal],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string $__xdb_within],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"iterations\":$__xdb_iterations"
 }
 
 proc xdb_api_expect_change {signal within_args} {
   set __xdb_time_before [current_time]
+  set __xdb_within [join $within_args " "]
   set __xdb_initial [get_value $signal]
-  set ::xdb_expect_change_hit 0
-  set __xdb_condition [xdb_signal_change_expr $signal $__xdb_initial]
-  set __xdb_id [when $__xdb_condition {set ::xdb_expect_change_hit 1; stop}]
-  eval [linsert $within_args 0 run]
-  catch {nowhen $__xdb_id}
+  set __xdb_start_fs [xdb_parse_time_to_fs $__xdb_time_before]
+  set __xdb_deadline_fs [expr {$__xdb_start_fs + [xdb_duration_args_to_fs $within_args]}]
+  set __xdb_iterations 0
+  set __xdb_actual $__xdb_initial
+  while {$__xdb_actual eq $__xdb_initial} {
+    set __xdb_current_fs [xdb_parse_time_to_fs [current_time]]
+    if {$__xdb_current_fs > $__xdb_deadline_fs} {
+      break
+    }
+    step
+    incr __xdb_iterations
+    set __xdb_actual [get_value $signal]
+    set __xdb_after_step_fs [xdb_parse_time_to_fs [current_time]]
+    if {$__xdb_actual ne $__xdb_initial && $__xdb_after_step_fs <= $__xdb_deadline_fs} {
+      break
+    }
+    if {$__xdb_after_step_fs > $__xdb_deadline_fs} {
+      break
+    }
+    if {$__xdb_iterations > 1000000} {
+      error [format "expect-change exceeded iteration limit while waiting for %s to change" $signal]
+    }
+  }
   set __xdb_time_after [current_time]
   set __xdb_actual [get_value $signal]
-  if {!$::xdb_expect_change_hit && $__xdb_actual eq $__xdb_initial} {
-    error [format "expect-change failed: %s did not change within %s (value=%s time_before=%s time_after=%s)" $signal [join $within_args \" \" ] $__xdb_initial $__xdb_time_before $__xdb_time_after]
+  set __xdb_time_after_fs [xdb_parse_time_to_fs $__xdb_time_after]
+  if {$__xdb_actual eq $__xdb_initial || $__xdb_time_after_fs > $__xdb_deadline_fs} {
+    error [format "expect-change failed: %s did not change within %s (value=%s time_before=%s time_after=%s)" $signal $__xdb_within $__xdb_initial $__xdb_time_before $__xdb_time_after]
   }
-  return "\"passed\":true,\"kind\":[xdb_json_string expect-change],\"signal\":[xdb_json_string $signal],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string [join $within_args \" \" ]],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"changed\":true"
+  return "\"passed\":true,\"kind\":[xdb_json_string expect-change],\"signal\":[xdb_json_string $signal],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string $__xdb_within],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"changed\":true,\"iterations\":$__xdb_iterations"
 }
 
 proc xdb_api_breakpoint_add {condition} {

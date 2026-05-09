@@ -162,6 +162,7 @@ class WithTraceTests(unittest.TestCase):
         self.assertEqual(request["args"]["exec_timeout_seconds"], 2.0)
         self.assertEqual(request["args"]["exec_expect_exit_code"], 3)
         self.assertTrue(request["args"]["exec_clean_env"])
+        self.assertEqual(request["args"]["exec_base_env"], {})
         self.assertNotIn("action_request", request["args"])
 
     def test_with_trace_supports_mem_write_payload_parsing(self) -> None:

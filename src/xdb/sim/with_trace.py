@@ -160,6 +160,7 @@ class WithTraceRunner:
                     timeout_seconds=_arg_optional_float(args, "exec_timeout_seconds"),
                     expect_exit_code=int(args.get("exec_expect_exit_code") or 0),
                     clean_env=bool(args.get("exec_clean_env")),
+                    base_env=cast(Mapping[str, object], args.get("exec_base_env") or {}),
                 )
             else:
                 action_result = self._with_trace_action(action_op, action_args, step_tokens)
@@ -221,11 +222,12 @@ class WithTraceRunner:
         timeout_seconds: float | None,
         expect_exit_code: int,
         clean_env: bool,
+        base_env: Mapping[str, object],
     ) -> dict[str, Any]:
         session_name = str(self.meta.get("session_name") or "default")
         session_env = derive_sim_exec_env(self.meta, session_name)
         overrides = parse_env_overrides(env_overrides)
-        run_env = {} if clean_env else dict(os.environ)
+        run_env = {} if clean_env else {str(key): str(value) for key, value in base_env.items()}
         run_env.update(session_env)
         run_env.update(overrides)
         reported_env = {**session_env, **overrides}

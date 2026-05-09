@@ -1463,6 +1463,7 @@ def with_trace_session(
             exec_timeout_seconds=exec_timeout_seconds,
             exec_expect_exit_code=exec_expect_exit_code,
             exec_clean_env=exec_clean_env,
+            exec_base_env={} if exec_clean_env else dict(os.environ),
         )
     else:
         request_args["action_request"] = _parse_with_trace_command(command)
