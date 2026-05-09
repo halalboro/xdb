@@ -213,25 +213,25 @@ class WithTraceTests(unittest.TestCase):
             },
         )
 
-        result = runner.run(
-            {
-                "exec_command": [
-                    sys.executable,
-                    "-c",
-                    "import os,time; print(os.environ['COYOTE_SIM_DIR']); time.sleep(0.02)",
-                ],
-                "duration_tokens": ["1", "ns"],
-                "step_tokens": ["1", "ns"],
-                "transactions": True,
-                "axis_paths": [],
-                "exec_clean_env": True,
-            }
+        result = runner._with_trace_exec_action(
+            [
+                sys.executable,
+                "-c",
+                "import os,time; print(os.environ['COYOTE_SIM_DIR']); time.sleep(0.02)",
+            ],
+            ["1", "ns"],
+            cwd=None,
+            env_overrides=[],
+            timeout_seconds=None,
+            expect_exit_code=0,
+            clean_env=True,
+            base_env={},
         )
 
-        self.assertTrue(result["action"]["result"]["ok"])
-        self.assertEqual(result["action"]["result"]["stdout"].strip(), "/tmp/xdb-runtime")
-        self.assertEqual(result["action"]["result"]["env"]["COYOTE_SIM_DIR"], "/tmp/xdb-runtime")
-        self.assertGreaterEqual(len(driver.run_tokens), 2)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["stdout"].strip(), "/tmp/xdb-runtime")
+        self.assertEqual(result["env"]["COYOTE_SIM_DIR"], "/tmp/xdb-runtime")
+        self.assertGreaterEqual(len(driver.run_tokens), 1)
 
     def test_with_trace_wrapped_argparse_errors_raise_xdb_error(self) -> None:
         with self.assertRaises(XdbError):

@@ -11,7 +11,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb.sim.client import provenance_session, restage_session
-from xdb.sim.session_store import resolve_launch_spec
+from xdb.sim.session_store import cleanup_stale_session, load_meta, resolve_launch_spec, session_paths
 
 
 class FreshnessControlTests(unittest.TestCase):
@@ -74,6 +74,28 @@ class FreshnessControlTests(unittest.TestCase):
             self.assertTrue(provenance["runtime"]["stage_source_matches_package"])
             self.assertTrue(provenance["runtime"]["stage_fingerprint_matches_package"])
             self.assertTrue(provenance["comparisons"]["runtime_root_matches_workspace"])
+
+    def test_corrupt_session_meta_is_treated_as_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+            cache = tmp_path / "cache"
+            old_cwd = Path.cwd()
+            try:
+                os.chdir(repo)
+                with patch.dict(os.environ, {"XDB_SIM_CACHE_DIR": str(cache)}, clear=False):
+                    paths = session_paths(None)
+                    paths.session_dir.mkdir(parents=True)
+                    paths.meta_path.write_text("", encoding="utf-8")
+
+                    self.assertIsNone(load_meta(paths))
+                    cleanup_stale_session(paths)
+
+                    self.assertFalse(paths.session_dir.exists())
+            finally:
+                os.chdir(old_cwd)
 
     def test_restage_rebuilds_workspace_without_live_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

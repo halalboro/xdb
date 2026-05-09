@@ -112,8 +112,11 @@ def write_meta(paths: SessionPaths, meta: SessionMeta) -> SessionMeta:
 def load_meta(paths: SessionPaths) -> SessionMeta | None:
     if not paths.meta_path.exists():
         return None
-    with paths.meta_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with paths.meta_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
     if not isinstance(data, dict):
         return None
     return cast(SessionMeta, data)
@@ -144,6 +147,9 @@ def is_live_session(meta: SessionMeta | None) -> bool:
 
 def cleanup_stale_session(paths: SessionPaths) -> None:
     meta = load_meta(paths)
+    if paths.meta_path.exists() and meta is None:
+        remove_session(paths)
+        return
     if meta and not is_live_session(meta):
         remove_session(paths)
 

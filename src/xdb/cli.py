@@ -383,6 +383,7 @@ def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
         "--verbose",
         dest="debug",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="print tracebacks and detailed Vivado diagnostics on failure",
     )
 
@@ -895,6 +896,8 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_simd.add_argument("--simulate-script", default="")
 
     args = p.parse_args()
+    if not hasattr(args, "debug"):
+        args.debug = False
     _configure_diagnostics(bool(args.debug))
 
     try:
