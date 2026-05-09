@@ -197,8 +197,9 @@ xdb sim close
 - `xdb sim axis trace <path...> --for <duration>` samples AXI Stream interface
   signals over time and records beats where `tvalid && tready`. Use `--step`
   to control sampling cadence, `--decode-bytes` to decode `tdata`/`tkeep` into
-  lane-ordered bytes, `--include-idle` to keep non-handshake samples, and
-  `--ndjson` for one JSON object per traced record.
+  lane-ordered bytes, `--include-idle` to keep non-handshake samples,
+  `--ndjson` for one JSON object per traced record, and `--out <file>` to write
+  the trace instead of printing it.
 - `xdb sim force <signal> <value...>` wraps `add_force`; use `--radix`,
   `--repeat-every`, and `--cancel-after` for common options.
 - `xdb sim release <signal>` releases forces created through `xdb sim force`.
@@ -216,12 +217,14 @@ xdb sim close
   activity observed during that simulation window, including host reads/writes,
   IRQs, completion checks/results, and `xdb`-issued invoke or memory commands.
   Use `--opcode <name>` to keep only events associated with a specific local
-  Coyote opcode.
+  Coyote opcode and `--out <file>` to write the JSON result.
 - `xdb sim with-trace -- ...` currently supports a wrapped subset of `xdb sim`
   subcommands and executes them under daemon-side tracing so AXIS and
   transaction traces cover the same command-and-observation window. Use
   `--transactions`, repeat `--axis <path>`, and `--for <duration>` to choose
-  the collected artifacts.
+  the collected artifacts. Output defaults to pretty JSON; use `--ndjson` for
+  one event/record per line, `--summary` for a compact human-readable report,
+  and `--out <file>` to write the chosen format.
 - Current Coyote support is intentionally limited to the local host-memory
   protocol implemented by the upstream Coyote simulation target. Remote RDMA and
   TCP commands are not supported yet.

@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import traceback
+from pathlib import Path
 
 from . import __version__
 from .backend.base import Capability
@@ -67,8 +68,98 @@ from .sim.coyote import parse_hex_bytes
 from .sim.daemon import run_daemon
 
 
+def _json_text(data: dict) -> str:
+    return json.dumps(data, indent=2, sort_keys=False)
+
+
+def _emit_text(text: str, out_path: str | None = None) -> None:
+    if out_path:
+        Path(out_path).expanduser().write_text(text if text.endswith("\n") else f"{text}\n")
+    else:
+        print(text)
+
+
 def _print(data: dict) -> None:
-    print(json.dumps(data, indent=2, sort_keys=False))
+    _emit_text(_json_text(data))
+
+
+def _emit_json(data: dict, out_path: str | None = None) -> None:
+    _emit_text(_json_text(data), out_path)
+
+
+def _format_with_trace_ndjson(result: dict) -> str:
+    lines: list[str] = []
+    window = {
+        "kind": "window",
+        "duration": result.get("duration"),
+        "step": result.get("step"),
+        "time_before": result.get("time_before"),
+        "time_after": result.get("time_after"),
+    }
+    lines.append(json.dumps(window, sort_keys=False))
+
+    action = result.get("action")
+    if isinstance(action, dict):
+        lines.append(json.dumps({"kind": "action", **action}, sort_keys=False))
+
+    transactions = result.get("transactions")
+    if isinstance(transactions, dict):
+        for index, event in enumerate(list(transactions.get("events") or [])):
+            if isinstance(event, dict):
+                lines.append(json.dumps({"kind": "transaction", "index": index, **event}, sort_keys=False))
+
+    axis = result.get("axis")
+    if isinstance(axis, dict):
+        for index, record in enumerate(list(axis.get("records") or [])):
+            if isinstance(record, dict):
+                lines.append(json.dumps({"kind": "axis", "index": index, **record}, sort_keys=False))
+    return "\n".join(lines)
+
+
+def _format_with_trace_summary(result: dict) -> str:
+    action = result.get("action") if isinstance(result.get("action"), dict) else {}
+    axis = result.get("axis") if isinstance(result.get("axis"), dict) else {}
+    transactions = result.get("transactions") if isinstance(result.get("transactions"), dict) else {}
+    axis_records = list(axis.get("records") or []) if isinstance(axis, dict) else []
+    tx_events = list(transactions.get("events") or []) if isinstance(transactions, dict) else []
+    action_op = str(action.get("op") or "unknown") if isinstance(action, dict) else "unknown"
+
+    lines = [
+        "with-trace summary",
+        f"window: {result.get('time_before', '?')} -> {result.get('time_after', '?')}",
+        f"duration: {result.get('duration', '?')}  step: {result.get('step', '?')}",
+        f"action: {action_op}",
+        f"transactions: {len(tx_events)} event(s)",
+        f"axis: {len(axis_records)} record(s)",
+    ]
+    if tx_events:
+        lines.append("transaction events:")
+        for index, event in enumerate(tx_events[:10]):
+            if isinstance(event, dict):
+                event_type = str(event.get("type") or "event")
+                opcode = event.get("opcode")
+                time_text = event.get("time")
+                suffix = ""
+                if opcode is not None:
+                    suffix += f" opcode={opcode}"
+                if time_text is not None:
+                    suffix += f" time={time_text}"
+                lines.append(f"  {index}: {event_type}{suffix}")
+        if len(tx_events) > 10:
+            lines.append(f"  ... {len(tx_events) - 10} more")
+    if axis_records:
+        lines.append("axis records:")
+        for index, record in enumerate(axis_records[:10]):
+            if isinstance(record, dict):
+                interface = record.get("interface", "?")
+                time_text = record.get("time", "?")
+                handshake = record.get("handshake", False)
+                beat = record.get("beat_index")
+                beat_text = "" if beat is None else f" beat={beat}"
+                lines.append(f"  {index}: {interface} time={time_text} handshake={handshake}{beat_text}")
+        if len(axis_records) > 10:
+            lines.append(f"  ... {len(axis_records) - 10} more")
+    return "\n".join(lines)
 
 
 def _resolve_part_hint(cli_value: str | None) -> str | None:
@@ -593,6 +684,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_axis_trace.add_argument("--include-idle", action="store_true")
     s_sim_axis_trace.add_argument("--only-handshakes", action="store_true")
     s_sim_axis_trace.add_argument("--ndjson", action="store_true")
+    s_sim_axis_trace.add_argument("--out", default=None, help="write trace output to a file")
 
     s_sim_trace = sim_sub.add_parser("trace", help="simulation trace helpers")
     _add_debug_flag(s_sim_trace)
@@ -602,6 +694,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     add_sim_session_arg(s_sim_trace_transactions)
     s_sim_trace_transactions.add_argument("--for", dest="duration", nargs="+", required=True)
     s_sim_trace_transactions.add_argument("--opcode", default=None)
+    s_sim_trace_transactions.add_argument("--out", default=None, help="write trace output to a file")
 
     s_sim_with_trace = sim_sub.add_parser("with-trace", help="run a command with scoped tracing")
     _add_debug_flag(s_sim_with_trace)
@@ -618,6 +711,10 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     )
     s_sim_with_trace.add_argument("--include-idle", action="store_true")
     s_sim_with_trace.add_argument("--only-handshakes", action="store_true")
+    s_sim_with_trace_output = s_sim_with_trace.add_mutually_exclusive_group()
+    s_sim_with_trace_output.add_argument("--ndjson", action="store_true")
+    s_sim_with_trace_output.add_argument("--summary", action="store_true")
+    s_sim_with_trace.add_argument("--out", default=None, help="write trace output to a file")
     s_sim_with_trace.add_argument("command", nargs=argparse.REMAINDER)
 
     s_sim_release = sim_sub.add_parser("release")
@@ -899,33 +996,44 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     only_handshakes=bool(args.only_handshakes),
                 )
                 if args.ndjson:
-                    for record in result.get("records", []):
-                        print(json.dumps(record, sort_keys=False))
+                    _emit_text(
+                        "\n".join(
+                            json.dumps(record, sort_keys=False)
+                            for record in list(result.get("records") or [])
+                            if isinstance(record, dict)
+                        ),
+                        args.out,
+                    )
                 else:
-                    _print(result)
+                    _emit_json(result, args.out)
             elif args.sim_cmd == "trace" and args.sim_trace_cmd == "transactions":
-                _print(
+                _emit_json(
                     trace_transactions_session(
                         args.session,
                         _resolve_sim_step_tokens(args.duration),
                         opcode=args.opcode,
-                    )
+                    ),
+                    args.out,
                 )
             elif args.sim_cmd == "with-trace":
-                _print(
-                    with_trace_session(
-                        args.session,
-                        args.command,
-                        _resolve_sim_step_tokens(args.duration),
-                        step_tokens=_resolve_sim_step_tokens(args.step),
-                        transactions=bool(args.transactions),
-                        axis_paths=list(args.axis_paths or []),
-                        decode_bytes=bool(args.decode_bytes),
-                        lane_order=args.lane_order,
-                        include_idle=bool(args.include_idle),
-                        only_handshakes=bool(args.only_handshakes),
-                    )
+                result = with_trace_session(
+                    args.session,
+                    args.command,
+                    _resolve_sim_step_tokens(args.duration),
+                    step_tokens=_resolve_sim_step_tokens(args.step),
+                    transactions=bool(args.transactions),
+                    axis_paths=list(args.axis_paths or []),
+                    decode_bytes=bool(args.decode_bytes),
+                    lane_order=args.lane_order,
+                    include_idle=bool(args.include_idle),
+                    only_handshakes=bool(args.only_handshakes),
                 )
+                if args.ndjson:
+                    _emit_text(_format_with_trace_ndjson(result), args.out)
+                elif args.summary:
+                    _emit_text(_format_with_trace_summary(result), args.out)
+                else:
+                    _emit_json(result, args.out)
             elif args.sim_cmd == "release":
                 _print(release_session(args.session, args.signal, all_forces=args.all))
             elif args.sim_cmd == "csr" and args.sim_csr_cmd == "read":
