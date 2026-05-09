@@ -37,6 +37,7 @@ from xdb.sim.client import (
     expect_signal_session,
     exec_session,
     describe_session,
+    doctor_session,
     force_session,
     get_many_signals,
     get_objects,
@@ -486,6 +487,11 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_provenance = sim_sub.add_parser("provenance")
     _add_debug_flag(s_sim_provenance)
     add_sim_session_arg(s_sim_provenance)
+
+    s_sim_doctor = sim_sub.add_parser("doctor", help="diagnose simulation session/runtime health")
+    _add_debug_flag(s_sim_doctor)
+    add_sim_session_arg(s_sim_doctor)
+    s_sim_doctor.add_argument("--timeout", type=float, default=1.0, help="daemon status probe timeout in seconds")
 
     s_sim_run = sim_sub.add_parser("run")
     _add_debug_flag(s_sim_run)
@@ -970,6 +976,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 _print(restage_session(args.session))
             elif args.sim_cmd == "provenance":
                 _print(provenance_session(args.session))
+            elif args.sim_cmd == "doctor":
+                _print(
+                    doctor_session(
+                        args.session,
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout) or 1.0,
+                    )
+                )
             elif args.sim_cmd == "run":
                 _print(
                     run_session(
