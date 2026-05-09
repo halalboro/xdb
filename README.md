@@ -222,7 +222,7 @@ xdb sim close
 - `xdb sim exec -- <command...>` runs a host-side command against the active
   simulation session. It injects session-aware environment variables including
   `XDB_SIM_SESSION`, `XDB_SIM_RUNTIME_ROOT`, `XDB_SIM_WORK_DIR`,
-  `XDB_SIM_SOCKET`, and `COYOTE_SIM_DIR=<runtime_root>/sim`, captures
+  `XDB_SIM_SOCKET`, and `COYOTE_SIM_DIR=<runtime_root>`, captures
   stdout/stderr/exit code, and returns structured JSON. Use `--cwd <dir>`,
   repeated `--env KEY=VALUE`, `--timeout <seconds>`, `--expect-exit-code <n>`,
   and `--clean-env` as needed.

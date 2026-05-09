@@ -64,7 +64,7 @@ class ExecSessionTests(unittest.TestCase):
         self.assertEqual(run_kwargs["env"]["XDB_SIM_SESSION"], "versal")
         self.assertEqual(run_kwargs["env"]["XDB_SIM_RUNTIME_ROOT"], str(runtime_root))
         self.assertEqual(run_kwargs["env"]["XDB_SIM_WORK_DIR"], str(work_dir))
-        self.assertEqual(run_kwargs["env"]["COYOTE_SIM_DIR"], str(runtime_root / "sim"))
+        self.assertEqual(run_kwargs["env"]["COYOTE_SIM_DIR"], str(runtime_root))
         self.assertEqual(run_kwargs["env"]["EXTRA"], "1")
         self.assertTrue(result["ok"])
         self.assertEqual(result["exit_code"], 0)

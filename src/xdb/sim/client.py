@@ -171,7 +171,7 @@ def _derive_sim_exec_env(meta: Mapping[str, object], session_name: str) -> dict[
         if value:
             env[key] = value
     if runtime_root:
-        env["COYOTE_SIM_DIR"] = str(Path(runtime_root) / "sim")
+        env["COYOTE_SIM_DIR"] = runtime_root
     return env
 
 
