@@ -6,10 +6,11 @@ import os
 import re
 import signal
 import socket
+import time
 import traceback
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from ..errors import XdbError
 from .protocol import (
@@ -136,6 +137,119 @@ def _parse_logic_int(value: str) -> tuple[int | None, int | None]:
     if re.fullmatch(r"[0-9a-fA-F]+", normalized):
         return int(normalized, 16), None
     return None, None
+
+
+def _trace_wallclock(value: dict[str, Any]) -> float | None:
+    raw = value.get("wallclock_seconds")
+    if isinstance(raw, int | float):
+        return float(raw)
+    return None
+
+
+def _transaction_label(event: dict[str, Any]) -> str:
+    event_type = str(event.get("type") or "transaction")
+    opcode = event.get("opcode")
+    if opcode is not None:
+        return f"{event_type}:{opcode}"
+    addr_hex = event.get("addr_hex")
+    if addr_hex is not None:
+        return f"{event_type}@{addr_hex}"
+    return event_type
+
+
+def _axis_label(record: dict[str, Any]) -> str:
+    interface = str(record.get("interface") or "axis")
+    beat = record.get("beat_index")
+    if beat is not None:
+        return f"{interface} beat {beat}"
+    return interface
+
+
+def _correlate_trace(
+    transactions: dict[str, Any], axis: dict[str, Any]
+) -> dict[str, Any]:
+    tx_events = [
+        dict(item)
+        for item in list(transactions.get("events") or [])
+        if isinstance(item, dict)
+    ]
+    axis_records = [
+        dict(item)
+        for item in list(axis.get("records") or [])
+        if isinstance(item, dict)
+    ]
+    timeline: list[dict[str, Any]] = []
+    for index, event in enumerate(tx_events):
+        timeline.append(
+            {
+                "kind": "transaction",
+                "index": index,
+                "label": _transaction_label(event),
+                "time": event.get("time"),
+                "wallclock_seconds": _trace_wallclock(event),
+                "event": event,
+            }
+        )
+    for index, record in enumerate(axis_records):
+        timeline.append(
+            {
+                "kind": "axis",
+                "index": index,
+                "label": _axis_label(record),
+                "time": record.get("time"),
+                "wallclock_seconds": _trace_wallclock(record),
+                "record": record,
+            }
+        )
+    timeline.sort(
+        key=lambda item: (
+            item.get("wallclock_seconds") is None,
+            float(item.get("wallclock_seconds") or 0.0),
+            str(item.get("time") or ""),
+            str(item.get("kind") or ""),
+            int(item.get("index") or 0),
+        )
+    )
+
+    axis_with_time: list[tuple[int, dict[str, Any], float]] = []
+    for index, record in enumerate(axis_records):
+        wallclock = _trace_wallclock(record)
+        if wallclock is not None:
+            axis_with_time.append((index, record, wallclock))
+    links: list[dict[str, Any]] = []
+    for tx_index, event in enumerate(tx_events):
+        maybe_tx_wallclock = _trace_wallclock(event)
+        if maybe_tx_wallclock is None or not axis_with_time:
+            continue
+        tx_wallclock = maybe_tx_wallclock
+        axis_index, axis_record, axis_wallclock = min(
+            axis_with_time,
+            key=lambda item: abs(item[2] - tx_wallclock),
+        )
+        links.append(
+            {
+                "transaction_index": tx_index,
+                "transaction_label": _transaction_label(event),
+                "axis_index": axis_index,
+                "axis_label": _axis_label(axis_record),
+                "delta_wallclock_seconds": axis_wallclock - tx_wallclock,
+                "transaction_time": event.get("time"),
+                "axis_time": axis_record.get("time"),
+            }
+        )
+
+    return {
+        "transaction_count": len(tx_events),
+        "axis_record_count": len(axis_records),
+        "timeline_count": len(timeline),
+        "link_count": len(links),
+        "timeline": timeline,
+        "links": links,
+        "notes": [
+            "correlation is ordered by collection wallclock when available",
+            "AXIS records are sampled; handshakes shorter than the sampling step can still be missed",
+        ],
+    }
 
 
 class SimDaemon:
@@ -369,6 +483,7 @@ class SimDaemon:
         record: dict[str, Any] = {
             "interface": interface_path,
             "time": time_text,
+            "wallclock_seconds": time.monotonic(),
             "handshake": tvalid == "1" and tready == "1",
             "tvalid": tvalid,
             "tready": tready,
@@ -472,13 +587,25 @@ class SimDaemon:
                 )
 
         time_before = str(self.driver.time().get("time") or "")
+        current_trace_time = time_before
         current_time_value = _parse_sim_time(time_before)
         end_time_value = current_time_value + duration_value
         if transactions:
             self.driver.trace_events_clear()
         sample_axis(time_before)
         previous_hook = self.driver._sim_advance_hook
-        self.driver._sim_advance_hook = lambda _before, after: sample_axis(after)
+        previous_context_provider: Callable[[], dict[str, object]] | None = None
+        if transactions and self.driver._coyote is not None:
+            previous_context_provider = self.driver._coyote.set_trace_context_provider(
+                lambda: {"time": current_trace_time, "time_source": "last_sample"}
+            )
+
+        def handle_sim_advance(_before: str, after: str) -> None:
+            nonlocal current_trace_time
+            current_trace_time = after
+            sample_axis(after)
+
+        self.driver._sim_advance_hook = handle_sim_advance
         try:
             action_result = self._dispatch(action_op, action_args)
             iterations = 0
@@ -490,6 +617,8 @@ class SimDaemon:
             time_after = str(self.driver.time().get("time") or "")
         finally:
             self.driver._sim_advance_hook = previous_hook
+            if transactions and self.driver._coyote is not None:
+                self.driver._coyote.set_trace_context_provider(previous_context_provider)
 
         result: dict[str, Any] = {
             "action": {
@@ -502,10 +631,13 @@ class SimDaemon:
             "time_before": time_before,
             "time_after": time_after,
         }
+        transaction_result: dict[str, Any] | None = None
+        axis_result: dict[str, Any] | None = None
         if transactions:
-            result["transactions"] = self.driver.trace_events_get()
+            transaction_result = self.driver.trace_events_get()
+            result["transactions"] = transaction_result
         if axis_paths:
-            result["axis"] = {
+            axis_result = {
                 "interfaces": axis_paths,
                 "duration": " ".join(duration_tokens),
                 "step": " ".join(step_tokens),
@@ -517,6 +649,9 @@ class SimDaemon:
                 "only_handshakes": only_handshakes,
                 "records": axis_records,
             }
+            result["axis"] = axis_result
+        if transaction_result is not None and axis_result is not None:
+            result["correlation"] = _correlate_trace(transaction_result, axis_result)
         return result
 
     def _dispatch(self, op: str, args: dict[str, Any]) -> dict[str, Any]:

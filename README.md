@@ -222,7 +222,9 @@ xdb sim close
   subcommands and executes them under daemon-side tracing so AXIS and
   transaction traces cover the same command-and-observation window. Use
   `--transactions`, repeat `--axis <path>`, and `--for <duration>` to choose
-  the collected artifacts. Output defaults to pretty JSON; use `--ndjson` for
+  the collected artifacts. When both modes are enabled, the result includes a
+  `correlation` section with an ordered transaction/AXIS timeline and nearest
+  transaction-to-AXIS links. Output defaults to pretty JSON; use `--ndjson` for
   one event/record per line, `--summary` for a compact human-readable report,
   and `--out <file>` to write the chosen format.
 - Current Coyote support is intentionally limited to the local host-memory

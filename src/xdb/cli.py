@@ -113,6 +113,17 @@ def _format_with_trace_ndjson(result: dict) -> str:
         for index, record in enumerate(list(axis.get("records") or [])):
             if isinstance(record, dict):
                 lines.append(json.dumps({"kind": "axis", "index": index, **record}, sort_keys=False))
+
+    correlation = result.get("correlation")
+    if isinstance(correlation, dict):
+        for index, item in enumerate(list(correlation.get("timeline") or [])):
+            if isinstance(item, dict):
+                lines.append(
+                    json.dumps(
+                        {"kind": "correlation", "index": index, "entry": item},
+                        sort_keys=False,
+                    )
+                )
     return "\n".join(lines)
 
 
@@ -120,8 +131,10 @@ def _format_with_trace_summary(result: dict) -> str:
     action = result.get("action") if isinstance(result.get("action"), dict) else {}
     axis = result.get("axis") if isinstance(result.get("axis"), dict) else {}
     transactions = result.get("transactions") if isinstance(result.get("transactions"), dict) else {}
+    correlation = result.get("correlation") if isinstance(result.get("correlation"), dict) else {}
     axis_records = list(axis.get("records") or []) if isinstance(axis, dict) else []
     tx_events = list(transactions.get("events") or []) if isinstance(transactions, dict) else []
+    correlation_links = list(correlation.get("links") or []) if isinstance(correlation, dict) else []
     action_op = str(action.get("op") or "unknown") if isinstance(action, dict) else "unknown"
 
     lines = [
@@ -131,6 +144,7 @@ def _format_with_trace_summary(result: dict) -> str:
         f"action: {action_op}",
         f"transactions: {len(tx_events)} event(s)",
         f"axis: {len(axis_records)} record(s)",
+        f"correlation links: {len(correlation_links)}",
     ]
     if tx_events:
         lines.append("transaction events:")
@@ -159,6 +173,18 @@ def _format_with_trace_summary(result: dict) -> str:
                 lines.append(f"  {index}: {interface} time={time_text} handshake={handshake}{beat_text}")
         if len(axis_records) > 10:
             lines.append(f"  ... {len(axis_records) - 10} more")
+    if correlation_links:
+        lines.append("correlation links:")
+        for index, link in enumerate(correlation_links[:10]):
+            if isinstance(link, dict):
+                lines.append(
+                    "  "
+                    f"{index}: tx={link.get('transaction_label', '?')} "
+                    f"axis={link.get('axis_label', '?')} "
+                    f"delta={link.get('delta_wallclock_seconds', '?')}s"
+                )
+        if len(correlation_links) > 10:
+            lines.append(f"  ... {len(correlation_links) - 10} more")
     return "\n".join(lines)
 
 

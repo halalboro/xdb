@@ -75,6 +75,16 @@ class TransactionTraceTests(unittest.TestCase):
         self.assertEqual(result["events"][0]["type"], "invoke")
         self.assertEqual(result["events"][0]["opcode"], "local-transfer")
 
+    def test_trace_context_provider_adds_sim_time_to_events(self) -> None:
+        controller = CoyoteSimController("/tmp/xdb-coyote-trace-test")
+        controller.set_trace_context_provider(lambda: {"time": "5 ns", "time_source": "test"})
+
+        event = controller.record_trace_event("invoke", opcode="local-transfer")
+
+        self.assertEqual(event["time"], "5 ns")
+        self.assertEqual(event["time_source"], "test")
+        self.assertEqual(event["type"], "invoke")
+
 
 if __name__ == "__main__":
     unittest.main()

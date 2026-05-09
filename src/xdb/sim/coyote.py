@@ -96,6 +96,7 @@ class CoyoteSimController:
         self._trace_lock = threading.Lock()
         self._trace_next_id = 1
         self._trace_events: list[dict[str, object]] = []
+        self._trace_context_provider: Callable[[], dict[str, object]] | None = None
 
     def start(self) -> None:
         self.sim_dir.mkdir(parents=True, exist_ok=True)
@@ -165,11 +166,21 @@ class CoyoteSimController:
         with self._trace_lock:
             return [dict(event) for event in self._trace_events]
 
+    def set_trace_context_provider(
+        self, provider: Callable[[], dict[str, object]] | None
+    ) -> Callable[[], dict[str, object]] | None:
+        previous = self._trace_context_provider
+        self._trace_context_provider = provider
+        return previous
+
     def record_trace_event(self, event_type: str, **fields: object) -> dict[str, object]:
+        context: dict[str, object] = {}
+        if self._trace_context_provider is not None:
+            context = dict(self._trace_context_provider())
         event = {
-            "id": self._trace_next_id,
             "type": event_type,
             "wallclock_seconds": time.monotonic(),
+            **context,
             **fields,
         }
         with self._trace_lock:
