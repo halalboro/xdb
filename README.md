@@ -105,6 +105,7 @@ xdb sim wave add /tb_top/dut/*
 xdb sim vcd start ./waves/fail.vcd /tb_top/dut
 xdb sim vcd status
 xdb sim vcd stop
+xdb sim axis trace /tb_top/dut/axis_in --for 100 ns --decode-bytes
 
 # Coyote-aware transactional commands (when the packaged simulation runtime exposes Coyote)
 xdb sim coyote-status
@@ -190,6 +191,11 @@ xdb sim close
 - `xdb sim vcd start <file> [scope]` starts persistent VCD dumping. If `scope`
   is omitted, the whole design is logged recursively. Use
   `xdb sim vcd status` and `xdb sim vcd stop` to inspect or stop capture.
+- `xdb sim axis trace <path...> --for <duration>` samples AXI Stream interface
+  signals over time and records beats where `tvalid && tready`. Use `--step`
+  to control sampling cadence, `--decode-bytes` to decode `tdata`/`tkeep` into
+  lane-ordered bytes, `--include-idle` to keep non-handshake samples, and
+  `--ndjson` for one JSON object per traced record.
 - `xdb sim force <signal> <value...>` wraps `add_force`; use `--radix`,
   `--repeat-every`, and `--cancel-after` for common options.
 - `xdb sim release <signal>` releases forces created through `xdb sim force`.

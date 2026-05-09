@@ -13,6 +13,7 @@ from .errors import UnsupportedOperationError, XdbError
 from .sim.client import (
     add_breakpoint,
     add_wave,
+    axis_trace_session,
     assert_signal_session,
     assert_tcl_session,
     clear_breakpoints,
@@ -572,6 +573,25 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_force.add_argument("signal")
     s_sim_force.add_argument("values", nargs="+")
 
+    s_sim_axis = sim_sub.add_parser("axis", help="AXI Stream helpers")
+    _add_debug_flag(s_sim_axis)
+    sim_axis_sub = s_sim_axis.add_subparsers(dest="sim_axis_cmd", required=True)
+    s_sim_axis_trace = sim_axis_sub.add_parser("trace")
+    _add_debug_flag(s_sim_axis_trace)
+    add_sim_session_arg(s_sim_axis_trace)
+    s_sim_axis_trace.add_argument("paths", nargs="+")
+    s_sim_axis_trace.add_argument("--for", dest="duration", nargs="+", required=True)
+    s_sim_axis_trace.add_argument("--step", nargs="+", default=["1", "ns"])
+    s_sim_axis_trace.add_argument("--decode-bytes", action="store_true")
+    s_sim_axis_trace.add_argument(
+        "--lane-order",
+        choices=["low-to-high", "high-to-low"],
+        default="low-to-high",
+    )
+    s_sim_axis_trace.add_argument("--include-idle", action="store_true")
+    s_sim_axis_trace.add_argument("--only-handshakes", action="store_true")
+    s_sim_axis_trace.add_argument("--ndjson", action="store_true")
+
     s_sim_release = sim_sub.add_parser("release")
     _add_debug_flag(s_sim_release)
     add_sim_session_arg(s_sim_release)
@@ -839,6 +859,22 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         cancel_after=args.cancel_after,
                     )
                 )
+            elif args.sim_cmd == "axis" and args.sim_axis_cmd == "trace":
+                result = axis_trace_session(
+                    args.session,
+                    args.paths,
+                    _resolve_sim_step_tokens(args.duration),
+                    step_tokens=_resolve_sim_step_tokens(args.step),
+                    decode_bytes=bool(args.decode_bytes),
+                    lane_order=args.lane_order,
+                    include_idle=bool(args.include_idle),
+                    only_handshakes=bool(args.only_handshakes),
+                )
+                if args.ndjson:
+                    for record in result.get("records", []):
+                        print(json.dumps(record, sort_keys=False))
+                else:
+                    _print(result)
             elif args.sim_cmd == "release":
                 _print(release_session(args.session, args.signal, all_forces=args.all))
             elif args.sim_cmd == "csr" and args.sim_csr_cmd == "read":
