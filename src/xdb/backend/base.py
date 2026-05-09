@@ -23,7 +23,7 @@ class TargetsResult(TypedDict):
 
 class ProbeInfo(TypedDict):
     name: str
-    width: int
+    width: int | None
 
 
 class IlaInfo(TypedDict):

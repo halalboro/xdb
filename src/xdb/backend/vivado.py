@@ -251,7 +251,10 @@ foreach ila $ilas {
     if {!$fp} { append out "," }
     set fp 0
     set pn [get_property NAME $p]
-    set w [get_property PORT_WIDTH $p]
+    set w "null"
+    if {[lsearch -exact [list_property $p] PORT_WIDTH] >= 0} {
+      set w [get_property PORT_WIDTH $p]
+    }
     append out "{\"name\":\"$pn\",\"width\":" $w "}"
   }
   append out "]}"

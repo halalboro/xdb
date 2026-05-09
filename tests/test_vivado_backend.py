@@ -33,6 +33,30 @@ class VivadoBackendTests(unittest.TestCase):
         self.assertIn('if {$ltx ne ""} { set_property PROBES.FILE $ltx $dev }', tcl)
         self.assertLess(tcl.index("set_property PROBES.FILE"), tcl.index("refresh_hw_device"))
 
+    def test_list_ilas_guards_missing_probe_port_width(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_run(tcl: str, args: list[str], timeout: int = 120) -> vivado.VivadoResult:
+            del args, timeout
+            captured["tcl"] = tcl
+            return vivado.VivadoResult(
+                stdout=(
+                    'XDB_JSON_BEGIN\n'
+                    '{"target":"t","part":"p","ilas":[{"name":"ila0","probes":[{"name":"const_probe","width":null}]}]}'
+                    "\nXDB_JSON_END\n"
+                ),
+                stderr="",
+            )
+
+        with patch("xdb.backend.vivado._run_vivado_tcl", side_effect=fake_run):
+            result = vivado.list_ilas("xcu")
+
+        self.assertIsNone(result["ilas"][0]["probes"][0]["width"])
+        tcl = str(captured["tcl"])
+        self.assertIn("list_property $p", tcl)
+        self.assertIn("set w \"null\"", tcl)
+        self.assertIn("set w [get_property PORT_WIDTH $p]", tcl)
+
     def test_capture_passes_ltx_and_sets_probes_before_refresh(self) -> None:
         captured: dict[str, object] = {}
 

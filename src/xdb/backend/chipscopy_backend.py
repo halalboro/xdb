@@ -88,7 +88,10 @@ class ChipScoPyBackend:
             for ila in dev.ila_cores:
                 probes = []
                 for p in ila.probes.values():
-                    probes.append({"name": p.name, "width": int(p.bit_width)})
+                    bit_width = getattr(p, "bit_width", None)
+                    probes.append(
+                        {"name": p.name, "width": None if bit_width is None else int(bit_width)}
+                    )
                 ilas_out.append({"name": ila.name, "probes": probes})
 
             return cast(
