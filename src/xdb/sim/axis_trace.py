@@ -6,6 +6,7 @@ import time
 from typing import Any, Protocol, cast
 
 from xdb.errors import XdbError
+from xdb.sim.sim_time import parse_duration_tokens, parse_sim_time
 
 _AXIS_REQUIRED_SIGNALS = ("tvalid", "tready", "tdata")
 _AXIS_OPTIONAL_SIGNALS = ("tkeep", "tlast", "tid")
@@ -15,6 +16,12 @@ class AxisTraceDriver(Protocol):
     def objects(self, scope: str) -> dict[str, Any]: ...
 
     def read_signals(self, signals: list[str]) -> dict[str, Any]: ...
+
+
+class AxisTraceCollectDriver(AxisTraceDriver, Protocol):
+    def time(self) -> dict[str, Any]: ...
+
+    def run(self, tokens: list[str]) -> dict[str, Any]: ...
 
 
 def _parse_logic_int(value: str) -> tuple[int | None, int | None]:
@@ -30,6 +37,14 @@ def _parse_logic_int(value: str) -> tuple[int | None, int | None]:
             return None, width
         base = {"b": 2, "o": 8, "d": 10, "h": 16}[radix]
         return int(digits, base), width
+    prefixed = re.match(r"^0([boxd])([0-9a-fA-F]+)$", normalized, re.IGNORECASE)
+    if prefixed:
+        radix = prefixed.group(1).lower()
+        digits = prefixed.group(2)
+        base = {"b": 2, "o": 8, "d": 10, "x": 16}.get(radix)
+        if base is None:
+            return None, None
+        return int(digits, base), None
     if re.search(r"[xXzZ]", normalized):
         return None, None
     if re.fullmatch(r"[01]+", normalized):
@@ -57,6 +72,8 @@ class AxisTraceSampler:
         self.decode_bytes = decode_bytes
         self.lane_order = lane_order
         self.include_idle = include_idle
+        if lane_order not in {"low-to-high", "high-to-low"}:
+            raise XdbError("lane order must be 'low-to-high' or 'high-to-low'")
         self.only_handshakes = only_handshakes
         self.interface_signals = {
             path: self._axis_child_signal_map(path) for path in interface_paths
@@ -200,3 +217,64 @@ class AxisTraceSampler:
             record["bytes"] = decoded_bytes
             record["valid_bytes"] = valid_bytes
         return record
+
+
+def collect_axis_trace(
+    driver: AxisTraceCollectDriver,
+    interface_paths: list[str],
+    duration_tokens: list[str],
+    *,
+    step_tokens: list[str],
+    decode_bytes: bool = False,
+    lane_order: str = "low-to-high",
+    include_idle: bool = False,
+    only_handshakes: bool = False,
+) -> dict[str, Any]:
+    if not interface_paths:
+        raise XdbError("missing AXIS interface path")
+
+    duration_text, duration_value = parse_duration_tokens(duration_tokens)
+    step_text, step_value = parse_duration_tokens(step_tokens)
+    if duration_value <= 0:
+        raise XdbError("AXIS trace duration must be > 0")
+    if step_value <= 0:
+        raise XdbError("AXIS trace step must be > 0")
+
+    sampler = AxisTraceSampler(
+        driver,
+        interface_paths,
+        decode_bytes=decode_bytes,
+        lane_order=lane_order,
+        include_idle=include_idle,
+        only_handshakes=only_handshakes,
+    )
+    start_time_text = str(driver.time().get("time") or "")
+    current_time_text = start_time_text
+    current_time_value = parse_sim_time(current_time_text)
+    end_time_value = current_time_value + duration_value
+
+    iterations = 0
+    while current_time_value < end_time_value:
+        sampler.sample(current_time_text)
+        run_result = driver.run(step_tokens)
+        next_time_text = str(run_result.get("time_after") or "")
+        next_time_value = parse_sim_time(next_time_text)
+        iterations += 1
+        if next_time_value <= current_time_value:
+            raise XdbError("simulation did not advance while tracing AXIS activity")
+        current_time_text = next_time_text
+        current_time_value = next_time_value
+
+    return {
+        "interfaces": interface_paths,
+        "duration": duration_text,
+        "step": step_text,
+        "time_before": start_time_text,
+        "time_after": current_time_text,
+        "iterations": iterations,
+        "decode_bytes": bool(decode_bytes),
+        "lane_order": lane_order,
+        "include_idle": bool(include_idle),
+        "only_handshakes": bool(only_handshakes),
+        "records": sampler.records,
+    }

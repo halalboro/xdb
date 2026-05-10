@@ -107,6 +107,7 @@ class AxisTraceTests(unittest.TestCase):
         self.assertEqual(first["bytes"], ["01", "02", "03", "04"])
         self.assertEqual(first["valid_bytes"], ["01", "02", "03", "04"])
         self.assertEqual(first["tlast"], "0")
+        self.assertIsInstance(first["wallclock_seconds"], float)
 
         second = result["records"][1]
         self.assertEqual(second["time"], "2 ns")
@@ -115,6 +116,59 @@ class AxisTraceTests(unittest.TestCase):
         self.assertEqual(second["bytes"], ["ff", "00", "00", "0a"])
         self.assertEqual(second["valid_bytes"], ["ff", "0a"])
         self.assertEqual(second["tlast"], "1")
+
+    def test_axis_trace_decodes_prefixed_logic_literals_through_shared_sampler(self) -> None:
+        interface = "/tb_top/dut/axis_prefixed"
+        signal_paths = {
+            name: f"{interface}/{name}"
+            for name in ("tvalid", "tready", "tdata", "tkeep", "tlast")
+        }
+
+        def fake_get_objects(session_name: str | None, scope: str) -> dict:
+            self.assertIsNone(session_name)
+            self.assertEqual(scope, interface)
+            return {
+                "metadata": [
+                    {"path": signal_paths["tvalid"], "width": 1},
+                    {"path": signal_paths["tready"], "width": 1},
+                    {"path": signal_paths["tdata"], "width": 32},
+                    {"path": signal_paths["tkeep"], "width": 4},
+                    {"path": signal_paths["tlast"], "width": 1},
+                ]
+            }
+
+        def fake_read_signals(session_name: str | None, signals: list[str]) -> dict:
+            self.assertIsNone(session_name)
+            self.assertEqual(set(signals), set(signal_paths.values()))
+            return {
+                "signals": [
+                    {"path": signal_paths["tvalid"], "value": "1", "width": 1},
+                    {"path": signal_paths["tready"], "value": "1", "width": 1},
+                    {"path": signal_paths["tdata"], "value": "0x04030201", "width": 32},
+                    {"path": signal_paths["tkeep"], "value": "0b1011", "width": 4},
+                    {"path": signal_paths["tlast"], "value": "1", "width": 1},
+                ]
+            }
+
+        with (
+            patch("xdb.sim.client.get_objects", side_effect=fake_get_objects),
+            patch("xdb.sim.client.time_session", return_value={"time": "0 ns"}),
+            patch("xdb.sim.client.read_signals", side_effect=fake_read_signals),
+            patch("xdb.sim.client.run_session", return_value={"time_after": "1 ns"}),
+        ):
+            result = axis_trace_session(
+                None,
+                [interface],
+                ["1", "ns"],
+                step_tokens=["1", "ns"],
+                decode_bytes=True,
+            )
+
+        self.assertEqual(len(result["records"]), 1)
+        record = result["records"][0]
+        self.assertEqual(record["bytes"], ["01", "02", "03", "04"])
+        self.assertEqual(record["valid_bytes"], ["01", "02", "04"])
+        self.assertIsInstance(record["wallclock_seconds"], float)
 
     def test_axis_trace_requires_tvalid_tready_tdata(self) -> None:
         interface = "/tb_top/dut/axis_host_send[0]"

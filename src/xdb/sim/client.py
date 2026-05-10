@@ -1,22 +1,22 @@
 from __future__ import annotations
 
-import argparse
 import json
-import math
 import os
-import re
 import socket
 import subprocess
 import sys
 import threading
 import time
 from datetime import datetime, timezone
-from decimal import Decimal
 from pathlib import Path
-from typing import Any, Mapping, NoReturn, cast
+from typing import Any, Mapping, cast
 
 from xdb.errors import XdbError
-from xdb.sim.coyote import parse_hex_bytes
+from xdb.sim.axis_trace import collect_axis_trace
+from xdb.sim.diagnostics import doctor_session as doctor_session
+from xdb.sim.diagnostics import provenance_session as provenance_session
+from xdb.sim.session_status import config_matches, launch_spec_summary
+from xdb.sim.with_trace_client import parse_with_trace_command
 from xdb.sim.exec_env import (
     derive_sim_exec_env,
     normalize_remainder_command,
@@ -83,7 +83,6 @@ from xdb.sim.session_store import (
     is_live_session,
     load_meta,
     pid_is_alive,
-    read_runtime_stage_stamp,
     remove_session,
     remove_workspace_tree,
     require_live_meta,
@@ -93,7 +92,6 @@ from xdb.sim.session_store import (
     resolve_top_arg,
     session_paths,
     terminate_session,
-    tree_fingerprint,
 )
 from xdb.sim.types import SessionMeta, SimRequest
 
@@ -221,185 +219,6 @@ def _recv_all(sock: socket.socket) -> bytes:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-_SIM_TIME_UNITS = {
-    "fs": Decimal("1e-15"),
-    "ps": Decimal("1e-12"),
-    "ns": Decimal("1e-9"),
-    "us": Decimal("1e-6"),
-    "ms": Decimal("1e-3"),
-    "s": Decimal("1"),
-}
-
-_AXIS_REQUIRED_SIGNALS = ("tvalid", "tready", "tdata")
-_AXIS_OPTIONAL_SIGNALS = ("tkeep", "tlast", "tid")
-
-
-def _parse_sim_time(text: str) -> Decimal:
-    normalized = text.strip()
-    match = re.match(r"^([0-9]+(?:\.[0-9]*)?)\s*([a-zA-Z]+)$", normalized)
-    if not match:
-        raise XdbError(f"unsupported simulation time format: {text!r}")
-    value = Decimal(match.group(1))
-    unit = match.group(2).lower()
-    if unit not in _SIM_TIME_UNITS:
-        raise XdbError(f"unsupported simulation time unit: {unit!r}")
-    return value * _SIM_TIME_UNITS[unit]
-
-
-def _parse_duration_tokens(tokens: list[str]) -> tuple[str, Decimal]:
-    joined = " ".join(token.strip() for token in tokens if token.strip())
-    if not joined:
-        raise XdbError("missing duration")
-    return joined, _parse_sim_time(joined)
-
-
-def _parse_logic_int(value: str) -> tuple[int | None, int | None]:
-    normalized = value.strip().replace("_", "")
-    if not normalized:
-        return None, None
-    sized = re.match(r"^([0-9]+)'([bBoOdDhH])([0-9a-fA-FxXzZ]+)$", normalized)
-    if sized:
-        width = int(sized.group(1))
-        radix = sized.group(2).lower()
-        digits = sized.group(3)
-        if re.search(r"[xXzZ]", digits):
-            return None, width
-        base = {"b": 2, "o": 8, "d": 10, "h": 16}[radix]
-        return int(digits, base), width
-    prefixed = re.match(r"^0([boxd])([0-9a-fA-F]+)$", normalized, re.IGNORECASE)
-    if prefixed:
-        radix = prefixed.group(1).lower()
-        digits = prefixed.group(2)
-        base = {"b": 2, "o": 8, "d": 10, "x": 16}.get(radix)
-        if base is None:
-            return None, None
-        return int(digits, base), None
-    if re.search(r"[xXzZ]", normalized):
-        return None, None
-    if re.fullmatch(r"[01]+", normalized):
-        return int(normalized, 2), len(normalized)
-    if re.fullmatch(r"[0-9]+", normalized):
-        return int(normalized, 10), None
-    if re.fullmatch(r"[0-9a-fA-F]+", normalized):
-        return int(normalized, 16), None
-    return None, None
-
-
-def _axis_child_signal_map(session_name: str | None, interface_path: str) -> dict[str, dict[str, Any]]:
-    result = get_objects(session_name, interface_path)
-    metadata = [
-        cast(dict[str, Any], item)
-        for item in list(result.get("metadata") or [])
-        if isinstance(item, dict)
-    ]
-    signal_map: dict[str, dict[str, Any]] = {}
-    for item in metadata:
-        path = str(item.get("path") or "")
-        base = path.rsplit("/", 1)[-1].lower()
-        if base in {*_AXIS_REQUIRED_SIGNALS, *_AXIS_OPTIONAL_SIGNALS}:
-            signal_map[base] = item
-    missing = [name for name in _AXIS_REQUIRED_SIGNALS if name not in signal_map]
-    if missing:
-        raise XdbError(
-            f"AXIS interface {interface_path!r} is missing required signals: {', '.join(missing)}"
-        )
-    return signal_map
-
-
-def _axis_signal_value_map(
-    signal_metadata: dict[str, dict[str, Any]],
-    sampled_signals: list[dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    by_path = {
-        str(item.get("path") or ""): item
-        for item in sampled_signals
-        if isinstance(item, dict) and item.get("path")
-    }
-    return {
-        name: cast(dict[str, Any], by_path.get(str(meta.get("path") or ""), meta))
-        for name, meta in signal_metadata.items()
-    }
-
-
-def _axis_decode_bytes(
-    signal_values: dict[str, dict[str, Any]], lane_order: str
-) -> tuple[list[str] | None, list[str] | None, int | None]:
-    tdata = signal_values.get("tdata") or {}
-    tkeep = signal_values.get("tkeep") or {}
-    data_value, parsed_data_width = _parse_logic_int(str(tdata.get("value") or ""))
-    keep_value, parsed_keep_width = _parse_logic_int(str(tkeep.get("value") or ""))
-    meta_data_width = tdata.get("width")
-    data_width = int(meta_data_width) if isinstance(meta_data_width, int) else parsed_data_width
-    lane_count = None
-    if isinstance(data_width, int) and data_width > 0:
-        lane_count = max(1, math.ceil(data_width / 8))
-    elif isinstance(parsed_keep_width, int) and parsed_keep_width > 0:
-        lane_count = parsed_keep_width
-    if lane_count is None or lane_count <= 0 or data_value is None:
-        return None, None, data_width
-    bytes_low_to_high = [f"{(data_value >> (8 * i)) & 0xFF:02x}" for i in range(lane_count)]
-    keep_bits_low_to_high = [
-        True if keep_value is None else bool((keep_value >> i) & 1) for i in range(lane_count)
-    ]
-    if lane_order == "high-to-low":
-        ordered_bytes = list(reversed(bytes_low_to_high))
-        ordered_keep = list(reversed(keep_bits_low_to_high))
-    else:
-        ordered_bytes = bytes_low_to_high
-        ordered_keep = keep_bits_low_to_high
-    valid_bytes = [byte for byte, keep in zip(ordered_bytes, ordered_keep) if keep]
-    return ordered_bytes, valid_bytes, data_width
-
-
-def _axis_record(
-    *,
-    interface_path: str,
-    time_text: str,
-    signal_values: dict[str, dict[str, Any]],
-    beat_index: int | None,
-    lane_order: str,
-    decode_bytes: bool,
-) -> dict[str, Any]:
-    tvalid = str((signal_values.get("tvalid") or {}).get("value") or "")
-    tready = str((signal_values.get("tready") or {}).get("value") or "")
-    record: dict[str, Any] = {
-        "interface": interface_path,
-        "time": time_text,
-        "handshake": tvalid == "1" and tready == "1",
-        "tvalid": tvalid,
-        "tready": tready,
-        "tdata": str((signal_values.get("tdata") or {}).get("value") or ""),
-        "tkeep": str((signal_values.get("tkeep") or {}).get("value") or ""),
-        "tlast": str((signal_values.get("tlast") or {}).get("value") or ""),
-        "tid": str((signal_values.get("tid") or {}).get("value") or ""),
-    }
-    if beat_index is not None:
-        record["beat_index"] = beat_index
-    if decode_bytes:
-        decoded_bytes, valid_bytes, width_bits = _axis_decode_bytes(signal_values, lane_order)
-        record["lane_order"] = lane_order
-        record["data_width_bits"] = width_bits
-        record["bytes"] = decoded_bytes
-        record["valid_bytes"] = valid_bytes
-    return record
-
-
-def _config_matches(
-    meta: SessionMeta,
-    launch_spec: Mapping[str, object],
-    simset: str,
-    mode: str,
-    top: str,
-) -> bool:
-    return (
-        str(meta.get("launch_kind") or "") == "runtime"
-        and str(meta.get("package_runtime") or "") == str(launch_spec.get("package_runtime") or "")
-        and str(meta.get("simset") or "") == simset
-        and str(meta.get("mode") or "") == mode
-        and str(meta.get("top") or "") == top
-    )
 
 
 def _spawn_daemon(
@@ -533,27 +352,6 @@ def _close_live_session(session_name: str | None, meta: SessionMeta) -> None:
     cleanup_stale_session(paths)
 
 
-def _launch_spec_summary(launch_spec: Mapping[str, object]) -> dict[str, Any]:
-    return {
-        key: launch_spec[key]
-        for key in (
-            "launch_kind",
-            "project",
-            "package_runtime",
-            "runtime_root",
-            "workspace",
-            "work_dir",
-            "compile_script",
-            "elaborate_script",
-            "simulate_script",
-            "staged",
-            "workspace_reused",
-            "needs_stage",
-        )
-        if key in launch_spec
-    }
-
-
 def launch_session(
     *,
     simset: str | None,
@@ -580,10 +378,10 @@ def launch_session(
                     "the packaged simulation input changed and the writable workspace needs "
                     "to be refreshed; use --replace or close the current session first"
                 )
-            if _config_matches(live_meta, launch_spec, effective_simset, effective_mode, effective_top):
+            if config_matches(live_meta, launch_spec, effective_simset, effective_mode, effective_top):
                 status = _send_request(session_name, make_request(OP_STATUS))
                 status["reused"] = True
-                status.update(_launch_spec_summary(launch_spec))
+                status.update(launch_spec_summary(launch_spec))
                 return status
             raise XdbError(
                 "a live simulation session already exists with different configuration; "
@@ -609,7 +407,7 @@ def launch_session(
             terminate_session({"pid": proc.pid, "socket_path": ""}, force=True)
         raise
     status["reused"] = False
-    status.update(_launch_spec_summary(launch_spec))
+    status.update(launch_spec_summary(launch_spec))
     return status
 
 
@@ -655,433 +453,8 @@ def restage_session(session_name: str | None) -> dict[str, Any]:
     return {
         "restaged": True,
         "workspace_removed": removed_workspace,
-        **_launch_spec_summary(staged_spec),
+        **launch_spec_summary(staged_spec),
         "provenance": provenance,
-    }
-
-
-def _doctor_check(
-    name: str,
-    ok: bool,
-    *,
-    severity: str = "error",
-    detail: str = "",
-    data: Mapping[str, object] | None = None,
-) -> dict[str, Any]:
-    result: dict[str, Any] = {"name": name, "ok": ok, "severity": severity}
-    if detail:
-        result["detail"] = detail
-    if data is not None:
-        result["data"] = dict(data)
-    return result
-
-
-def _read_meta_for_doctor(paths) -> tuple[SessionMeta | None, dict[str, Any]]:
-    if not paths.meta_path.exists():
-        return None, {"exists": False, "valid_json": None, "error": "metadata file does not exist"}
-    try:
-        with paths.meta_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        return None, {"exists": True, "valid_json": False, "error": str(e)}
-    if not isinstance(data, dict):
-        return None, {"exists": True, "valid_json": False, "error": "metadata is not an object"}
-    return cast(SessionMeta, data), {"exists": True, "valid_json": True}
-
-
-def _tail_text(path: Path, *, max_lines: int = 20) -> list[str]:
-    if not path.is_file():
-        return []
-    try:
-        return path.read_text(encoding="utf-8", errors="replace").splitlines()[-max_lines:]
-    except OSError:
-        return []
-
-
-def _probe_daemon_status(meta: SessionMeta, timeout_seconds: float) -> tuple[bool, str, dict[str, Any] | None]:
-    sock_path = str(meta.get("socket_path") or "")
-    if not sock_path:
-        return False, "session metadata does not contain a socket path", None
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout_seconds)
-        try:
-            sock.connect(sock_path)
-            sock.sendall(json.dumps(make_request(OP_STATUS)).encode("utf-8"))
-            sock.shutdown(socket.SHUT_WR)
-            response = _recv_all(sock)
-        except Exception as e:
-            return False, str(e), None
-    if not response:
-        return False, "daemon returned an empty response", None
-    try:
-        data = cast(dict[str, Any], json.loads(response.decode("utf-8")))
-    except Exception as e:
-        return False, f"daemon returned invalid JSON: {e}", None
-    if not data.get("ok", False):
-        return False, str(data.get("error", "status request failed")), data
-    return True, "", data
-
-
-def doctor_session(session_name: str | None, *, timeout_seconds: float = 1.0) -> dict[str, Any]:
-    paths = session_paths(session_name)
-    checks: list[dict[str, Any]] = []
-    suggestions: list[str] = []
-    meta, meta_state = _read_meta_for_doctor(paths)
-
-    checks.append(
-        _doctor_check(
-            "session_metadata",
-            bool(meta_state.get("valid_json")),
-            severity="error",
-            detail=str(meta_state.get("error") or ""),
-            data={
-                "path": str(paths.meta_path),
-                "exists": bool(meta_state.get("exists")),
-                "valid_json": meta_state.get("valid_json"),
-            },
-        )
-    )
-    if meta_state.get("exists") and not meta_state.get("valid_json"):
-        suggestions.append("run: xdb sim close --force")
-    if not meta_state.get("exists"):
-        suggestions.append("run: xdb sim launch")
-
-    pid = int((meta or {}).get("pid", 0) or 0)
-    pid_alive = pid_is_alive(pid)
-    if meta is not None:
-        checks.append(
-            _doctor_check(
-                "daemon_pid_alive",
-                pid_alive,
-                detail="daemon process is not alive" if not pid_alive else "",
-                data={"pid": pid},
-            )
-        )
-        socket_path_text = str(meta.get("socket_path") or "")
-        socket_path = Path(socket_path_text) if socket_path_text else Path("/__xdb_missing_socket__")
-        socket_exists = bool(socket_path_text) and socket_path.exists()
-        checks.append(
-            _doctor_check(
-                "control_socket_exists",
-                socket_exists,
-                detail="control socket is missing" if not socket_exists else "",
-                data={"socket_path": str(socket_path)},
-            )
-        )
-        if not pid_alive or not socket_exists:
-            suggestions.append("run: xdb sim close --force")
-        if pid_alive and socket_exists:
-            responsive, error, status = _probe_daemon_status(meta, timeout_seconds)
-            checks.append(
-                _doctor_check(
-                    "daemon_responsive",
-                    responsive,
-                    detail=error,
-                    data={"timeout_seconds": timeout_seconds},
-                )
-            )
-            if status is not None:
-                checks[-1]["status"] = status.get("result")
-            if not responsive:
-                suggestions.append("run: xdb sim close --force")
-                suggestions.append("run: xdb sim relaunch --fresh")
-
-    try:
-        launch_spec = resolve_launch_spec(stage=False)
-    except XdbError as e:
-        checks.append(
-            _doctor_check(
-                "runtime_configuration",
-                False,
-                severity="warning",
-                detail=str(e),
-            )
-        )
-        suggestions.append(
-            "set XDB_SIM_PACKAGE_RUNTIME and XDB_SIM_WORKSPACE, or enter the project simulation shell"
-        )
-        launch_spec = None
-
-    runtime: dict[str, Any] = {"available": launch_spec is not None}
-    if launch_spec is not None:
-        package_runtime = str(launch_spec.get("package_runtime") or "")
-        workspace = str(launch_spec.get("workspace") or "")
-        package_path = Path(package_runtime)
-        workspace_path = Path(workspace)
-        package_fingerprint = tree_fingerprint(package_runtime)
-        stage_stamp = read_runtime_stage_stamp(workspace) if workspace else None
-        needs_stage = bool(launch_spec.get("needs_stage"))
-        runtime.update(
-            {
-                **_launch_spec_summary(launch_spec),
-                "package_exists": package_path.is_dir(),
-                "workspace_exists": workspace_path.exists(),
-                "package_fingerprint": package_fingerprint,
-                "staged_at": None if stage_stamp is None else stage_stamp.get("updated_at"),
-                "stage_source_matches_package": None
-                if stage_stamp is None
-                else stage_stamp.get("source_root") == package_runtime,
-                "stage_fingerprint_matches_package": None
-                if stage_stamp is None
-                else stage_stamp.get("source_fingerprint") == package_fingerprint,
-            }
-        )
-        checks.append(
-            _doctor_check(
-                "runtime_package_exists",
-                package_path.is_dir(),
-                detail="runtime package path does not exist" if not package_path.is_dir() else "",
-                data={"package_runtime": package_runtime},
-            )
-        )
-        checks.append(
-            _doctor_check(
-                "workspace_fresh",
-                not needs_stage,
-                severity="warning",
-                detail="workspace needs staging/restaging" if needs_stage else "",
-                data={"workspace": workspace, "needs_stage": needs_stage},
-            )
-        )
-        if needs_stage:
-            suggestions.append("run: xdb sim restage")
-            suggestions.append("run: xdb sim relaunch --fresh")
-        if meta is not None:
-            requested_simset = resolve_simset_arg(None)
-            requested_mode = resolve_mode_arg(None)
-            requested_top = resolve_top_arg(None, meta)
-            matches = _config_matches(meta, launch_spec, requested_simset, requested_mode, requested_top)
-            checks.append(
-                _doctor_check(
-                    "live_session_matches_request",
-                    matches,
-                    severity="warning",
-                    detail="cached/live session metadata differs from requested runtime inputs"
-                    if not matches
-                    else "",
-                )
-            )
-            if not matches:
-                suggestions.append("run: xdb sim relaunch --fresh")
-
-    log_info: dict[str, Any] = {}
-    for name, path in (
-        ("daemon_log", paths.daemon_log_path),
-        ("vivado_log", paths.vivado_log_path),
-    ):
-        exists = path.is_file()
-        tail = _tail_text(path)
-        log_info[name] = {"path": str(path), "exists": exists, "tail": tail}
-        checks.append(
-            _doctor_check(
-                f"{name}_exists",
-                exists,
-                severity="warning",
-                detail=f"{name.replace('_', ' ')} does not exist" if not exists else "",
-                data={"path": str(path)},
-            )
-        )
-
-    seen_suggestions: list[str] = []
-    for suggestion in suggestions:
-        if suggestion not in seen_suggestions:
-            seen_suggestions.append(suggestion)
-    ok = all(check.get("ok", False) or check.get("severity") != "error" for check in checks)
-    return {
-        "ok": ok,
-        "session": paths.session_name,
-        "session_id": paths.session_id,
-        "anchor_dir": str(paths.anchor_dir),
-        "paths": {
-            "xdb_root": str(paths.xdb_root),
-            "cache_root": str(paths.cache_root),
-            "session_dir": str(paths.session_dir),
-            "meta": str(paths.meta_path),
-            "socket": str(paths.socket_path),
-            "daemon_log": str(paths.daemon_log_path),
-            "vivado_log": str(paths.vivado_log_path),
-        },
-        "checks": checks,
-        "runtime": runtime,
-        "metadata": meta or None,
-        "logs": log_info,
-        "suggestions": seen_suggestions,
-    }
-
-
-def provenance_session(session_name: str | None) -> dict[str, Any]:
-    paths = session_paths(session_name)
-    cleanup_stale_session(paths)
-    meta = load_meta(paths)
-    live_meta = meta if is_live_session(meta) else None
-
-    requested_simset = resolve_simset_arg(None)
-    requested_mode = resolve_mode_arg(None)
-    requested_top = resolve_top_arg(None, meta)
-
-    result: dict[str, Any] = {
-        "session": paths.session_name,
-        "session_id": paths.session_id,
-        "anchor_dir": str(paths.anchor_dir),
-        "requested": {
-            "simset": requested_simset,
-            "mode": requested_mode,
-            "top": requested_top,
-        },
-        "live_session": {
-            "present": live_meta is not None,
-            "state": None if meta is None else meta.get("state"),
-            "pid": None if live_meta is None else live_meta.get("pid"),
-            "launched_at": None if meta is None else meta.get("created_at"),
-            "updated_at": None if meta is None else meta.get("updated_at"),
-            "package_runtime": None if meta is None else meta.get("package_runtime"),
-            "runtime_root": None if meta is None else meta.get("runtime_root"),
-            "socket_path": None if meta is None else meta.get("socket_path"),
-        },
-    }
-
-    try:
-        launch_spec = resolve_launch_spec(stage=False)
-    except XdbError as e:
-        result["runtime"] = {
-            "available": False,
-            "error": str(e),
-        }
-        return result
-
-    package_runtime = str(launch_spec.get("package_runtime") or "")
-    workspace = str(launch_spec.get("workspace") or "")
-    runtime_root = str(launch_spec.get("runtime_root") or "")
-    package_fingerprint = tree_fingerprint(package_runtime)
-    workspace_fingerprint = tree_fingerprint(workspace)
-    stage_stamp = read_runtime_stage_stamp(workspace)
-
-    result["runtime"] = {
-        "available": True,
-        **_launch_spec_summary(launch_spec),
-        "package_fingerprint": package_fingerprint,
-        "workspace_fingerprint": workspace_fingerprint,
-        "workspace_exists": Path(workspace).exists(),
-        "staged_at": None if stage_stamp is None else stage_stamp.get("updated_at"),
-        "stage_source_root": None if stage_stamp is None else stage_stamp.get("source_root"),
-        "stage_source_matches_package": None
-        if stage_stamp is None
-        else stage_stamp.get("source_root") == package_runtime,
-        "stage_fingerprint_matches_package": None
-        if stage_stamp is None
-        else stage_stamp.get("source_fingerprint") == package_fingerprint,
-    }
-    result["comparisons"] = {
-        "live_session_matches_request": None
-        if live_meta is None
-        else _config_matches(
-            live_meta,
-            launch_spec,
-            requested_simset,
-            requested_mode,
-            requested_top,
-        ),
-        "live_session_uses_workspace": None
-        if live_meta is None
-        else str(live_meta.get("runtime_root") or "") == workspace,
-        "runtime_root_matches_workspace": runtime_root == workspace,
-    }
-    return result
-
-
-def _axis_trace_collect(
-    session_name: str | None,
-    interface_paths: list[str],
-    duration_tokens: list[str],
-    *,
-    step_tokens: list[str],
-    decode_bytes: bool = False,
-    lane_order: str = "low-to-high",
-    include_idle: bool = False,
-    only_handshakes: bool = False,
-) -> dict[str, Any]:
-    if not interface_paths:
-        raise XdbError("missing AXIS interface path")
-    if lane_order not in {"low-to-high", "high-to-low"}:
-        raise XdbError("lane order must be 'low-to-high' or 'high-to-low'")
-
-    duration_text, duration_value = _parse_duration_tokens(duration_tokens)
-    step_text, step_value = _parse_duration_tokens(step_tokens)
-    if duration_value <= 0:
-        raise XdbError("AXIS trace duration must be > 0")
-    if step_value <= 0:
-        raise XdbError("AXIS trace step must be > 0")
-
-    interfaces = {
-        path: _axis_child_signal_map(session_name, path)
-        for path in interface_paths
-    }
-    signal_paths = [
-        str(meta.get("path") or "")
-        for signal_map in interfaces.values()
-        for meta in signal_map.values()
-        if str(meta.get("path") or "")
-    ]
-
-    start_time_text = str(time_session(session_name).get("time") or "")
-    current_time_text = start_time_text
-    current_time_value = _parse_sim_time(current_time_text)
-    end_time_value = current_time_value + duration_value
-
-    records: list[dict[str, Any]] = []
-    beat_counts = {path: 0 for path in interface_paths}
-    iterations = 0
-    while current_time_value < end_time_value:
-        sampled = read_signals(session_name, signal_paths)
-        sampled_signals = [
-            cast(dict[str, Any], item)
-            for item in list(sampled.get("signals") or [])
-            if isinstance(item, dict)
-        ]
-        for interface_path, signal_map in interfaces.items():
-            signal_values = _axis_signal_value_map(signal_map, sampled_signals)
-            tvalid = str((signal_values.get("tvalid") or {}).get("value") or "")
-            tready = str((signal_values.get("tready") or {}).get("value") or "")
-            handshake = tvalid == "1" and tready == "1"
-            if only_handshakes and not handshake:
-                continue
-            if not include_idle and not handshake:
-                continue
-            beat_index = None
-            if handshake:
-                beat_index = beat_counts[interface_path]
-                beat_counts[interface_path] += 1
-            records.append(
-                _axis_record(
-                    interface_path=interface_path,
-                    time_text=current_time_text,
-                    signal_values=signal_values,
-                    beat_index=beat_index,
-                    lane_order=lane_order,
-                    decode_bytes=decode_bytes,
-                )
-            )
-        run_result = run_session(session_name, step_tokens)
-        next_time_text = str(run_result.get("time_after") or "")
-        next_time_value = _parse_sim_time(next_time_text)
-        iterations += 1
-        if next_time_value <= current_time_value:
-            raise XdbError("simulation did not advance while tracing AXIS activity")
-        current_time_text = next_time_text
-        current_time_value = next_time_value
-
-    return {
-        "interfaces": interface_paths,
-        "duration": duration_text,
-        "step": step_text,
-        "time_before": start_time_text,
-        "time_after": current_time_text,
-        "iterations": iterations,
-        "decode_bytes": bool(decode_bytes),
-        "lane_order": lane_order,
-        "include_idle": bool(include_idle),
-        "only_handshakes": bool(only_handshakes),
-        "records": records,
     }
 
 
@@ -1096,8 +469,21 @@ def axis_trace_session(
     include_idle: bool = False,
     only_handshakes: bool = False,
 ) -> dict[str, Any]:
-    return _axis_trace_collect(
-        session_name,
+    class _ClientAxisTraceDriver:
+        def objects(self, scope: str) -> dict[str, Any]:
+            return get_objects(session_name, scope)
+
+        def read_signals(self, signals: list[str]) -> dict[str, Any]:
+            return read_signals(session_name, signals)
+
+        def time(self) -> dict[str, Any]:
+            return time_session(session_name)
+
+        def run(self, tokens: list[str]) -> dict[str, Any]:
+            return run_session(session_name, tokens)
+
+    return collect_axis_trace(
+        _ClientAxisTraceDriver(),
         interface_paths,
         duration_tokens,
         step_tokens=step_tokens,
@@ -1701,260 +1087,6 @@ def exec_session(
     }
 
 
-class _WithTraceArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> NoReturn:
-        raise XdbError(message)
-
-    def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
-        if status:
-            raise XdbError((message or "invalid wrapped command arguments").strip())
-        raise XdbError((message or "unexpected parser exit").strip())
-
-
-def _with_trace_parser() -> argparse.ArgumentParser:
-    return _WithTraceArgumentParser(add_help=False)
-
-
-def _parse_with_trace_wait_args(
-    rest: list[str], *, positional_count: int
-) -> tuple[list[str], float | None, int | None, list[str]]:
-    step_tokens = ["10", "ns"]
-    timeout_seconds: float | None = None
-    max_iterations: int | None = None
-    positionals: list[str] = []
-    index = 0
-    while index < len(rest):
-        token = rest[index]
-        if token == "--timeout":
-            if index + 1 >= len(rest):
-                raise XdbError("--timeout requires a value")
-            timeout_seconds = float(rest[index + 1])
-            index += 2
-            continue
-        if token == "--max-iterations":
-            if index + 1 >= len(rest):
-                raise XdbError("--max-iterations requires a value")
-            max_iterations = int(rest[index + 1])
-            index += 2
-            continue
-        if token == "--step":
-            step_start = index + 1
-            step_end = step_start
-            while step_end < len(rest) and not rest[step_end].startswith("--"):
-                remaining_after = len(rest) - (step_end + 1)
-                if remaining_after < positional_count:
-                    break
-                step_end += 1
-            if step_end == step_start:
-                raise XdbError("--step requires a duration")
-            step_tokens = rest[step_start:step_end]
-            index = step_end
-            continue
-        positionals = rest[index:]
-        break
-    if len(positionals) < positional_count:
-        raise XdbError("missing wrapped wait command argument")
-    return step_tokens, timeout_seconds, max_iterations, positionals
-
-
-def _parse_with_trace_command(command: list[str]) -> SimRequest:
-    if not command:
-        raise XdbError("missing command after '--'")
-    tokens = list(command)
-    if tokens and tokens[0] == "--":
-        tokens = tokens[1:]
-    if tokens[:2] == ["xdb", "sim"]:
-        tokens = tokens[2:]
-    elif tokens[:1] == ["sim"]:
-        tokens = tokens[1:]
-    else:
-        raise XdbError("with-trace currently only supports wrapped 'xdb sim ...' commands")
-    if not tokens:
-        raise XdbError("missing wrapped 'xdb sim' subcommand")
-
-    subcommand, rest = tokens[0], tokens[1:]
-    if subcommand == "run":
-        if not rest:
-            raise XdbError("with-trace wrapped 'xdb sim run' requires an explicit duration")
-        return make_request(OP_RUN, tokens=rest)
-    if subcommand == "step":
-        if not rest:
-            return make_request(OP_STEP, count=1)
-        if len(rest) == 1 and rest[0].isdigit():
-            count = int(rest[0])
-            if count <= 0:
-                raise XdbError("step count must be > 0")
-            return make_request(OP_STEP, count=count)
-        return make_request(OP_STEP, time_tokens=rest)
-    if subcommand in {"until", "wait", "wait-on-condition"}:
-        wait_step, wait_timeout, wait_max_iterations, positionals = _parse_with_trace_wait_args(
-            rest,
-            positional_count=1,
-        )
-        return make_request(
-            OP_UNTIL,
-            expr=" ".join(positionals),
-            step_tokens=wait_step,
-            timeout_seconds=wait_timeout,
-            max_iterations=wait_max_iterations,
-        )
-    if subcommand in {"until-signal", "wait-signal", "wait-on-signal"}:
-        wait_step, wait_timeout, wait_max_iterations, positionals = _parse_with_trace_wait_args(
-            rest,
-            positional_count=2,
-        )
-        return make_request(
-            OP_UNTIL_SIGNAL,
-            signal=positionals[0],
-            value=positionals[1],
-            step_tokens=wait_step,
-            timeout_seconds=wait_timeout,
-            max_iterations=wait_max_iterations,
-        )
-    if subcommand == "coyote-status":
-        if rest:
-            raise XdbError("xdb sim coyote-status does not accept extra arguments in with-trace")
-        return make_request(OP_COYOTE_STATUS)
-    if subcommand == "clear-completed":
-        if rest:
-            raise XdbError("xdb sim clear-completed does not accept extra arguments in with-trace")
-        return make_request(OP_CLEAR_COMPLETED)
-    if subcommand == "invoke":
-        parser = _with_trace_parser()
-        parser.add_argument("opcode")
-        parser.add_argument("--addr", default=None)
-        parser.add_argument("--len", dest="length", default=None)
-        parser.add_argument("--stream", default="host")
-        parser.add_argument("--dest", default="0")
-        parser.add_argument("--last", default=True)
-        parser.add_argument("--src-addr", default=None)
-        parser.add_argument("--src-len", default=None)
-        parser.add_argument("--src-stream", default="host")
-        parser.add_argument("--src-dest", default="0")
-        parser.add_argument("--dst-addr", default=None)
-        parser.add_argument("--dst-len", default=None)
-        parser.add_argument("--dst-stream", default="host")
-        parser.add_argument("--dst-dest", default="0")
-        ns = parser.parse_args(rest)
-        return make_request(
-            OP_INVOKE,
-            opcode=ns.opcode,
-            addr=None if ns.addr is None else int(ns.addr, 0),
-            length=None if ns.length is None else int(ns.length, 0),
-            stream_name=ns.stream,
-            dest=int(ns.dest, 0),
-            last=bool(ns.last),
-            src_addr=None if ns.src_addr is None else int(ns.src_addr, 0),
-            src_length=None if ns.src_len is None else int(ns.src_len, 0),
-            src_stream_name=ns.src_stream,
-            src_dest=int(ns.src_dest, 0),
-            dst_addr=None if ns.dst_addr is None else int(ns.dst_addr, 0),
-            dst_length=None if ns.dst_len is None else int(ns.dst_len, 0),
-            dst_stream_name=ns.dst_stream,
-            dst_dest=int(ns.dst_dest, 0),
-        )
-    if subcommand == "completed":
-        parser = _with_trace_parser()
-        parser.add_argument("opcode")
-        parser.add_argument("--count", type=int, default=None)
-        parser.add_argument("--timeout", type=float, default=None)
-        ns = parser.parse_args(rest)
-        return make_request(
-            OP_COMPLETED,
-            opcode=ns.opcode,
-            target_count=ns.count,
-            timeout_seconds=ns.timeout,
-        )
-    if subcommand == "irq" and rest[:1] == ["wait"]:
-        parser = _with_trace_parser()
-        parser.add_argument("wait")
-        parser.add_argument("--timeout", type=float, default=None)
-        ns = parser.parse_args(rest)
-        return make_request(OP_IRQ_WAIT, timeout_seconds=ns.timeout)
-    if subcommand == "csr":
-        if not rest:
-            raise XdbError("missing xdb sim csr subcommand")
-        csr_sub = rest[0]
-        parser = _with_trace_parser()
-        if csr_sub == "read":
-            parser.add_argument("read")
-            parser.add_argument("addr")
-            parser.add_argument("--timeout", type=float, default=None)
-            ns = parser.parse_args(rest)
-            return make_request(
-                OP_CSR_READ,
-                addr=int(ns.addr, 0),
-                timeout_seconds=ns.timeout,
-            )
-        if csr_sub == "write":
-            parser.add_argument("write")
-            parser.add_argument("addr")
-            parser.add_argument("value")
-            ns = parser.parse_args(rest)
-            return make_request(OP_CSR_WRITE, addr=int(ns.addr, 0), value=int(ns.value, 0))
-        raise XdbError(f"unsupported xdb sim csr subcommand for with-trace: {csr_sub}")
-    if subcommand == "mem":
-        if not rest:
-            raise XdbError("missing xdb sim mem subcommand")
-        mem_sub = rest[0]
-        parser = _with_trace_parser()
-        if mem_sub == "map":
-            parser.add_argument("map")
-            parser.add_argument("space")
-            parser.add_argument("addr")
-            parser.add_argument("size")
-            ns = parser.parse_args(rest)
-            return make_request(OP_MEM_MAP, space=ns.space, addr=int(ns.addr, 0), size=int(ns.size, 0))
-        if mem_sub == "unmap":
-            parser.add_argument("unmap")
-            parser.add_argument("space")
-            parser.add_argument("addr")
-            ns = parser.parse_args(rest)
-            return make_request(OP_MEM_UNMAP, space=ns.space, addr=int(ns.addr, 0))
-        if mem_sub == "list":
-            parser.add_argument("list")
-            parser.add_argument("space", nargs="?", default="host")
-            ns = parser.parse_args(rest)
-            return make_request(OP_MEM_LIST, space=ns.space)
-        if mem_sub == "reset":
-            parser.add_argument("reset")
-            parser.add_argument("space", nargs="?", default="host")
-            ns = parser.parse_args(rest)
-            return make_request(OP_MEM_RESET, space=ns.space)
-        if mem_sub == "read":
-            parser.add_argument("read")
-            parser.add_argument("space")
-            parser.add_argument("addr")
-            parser.add_argument("size")
-            ns = parser.parse_args(rest)
-            return make_request(OP_MEM_READ, space=ns.space, addr=int(ns.addr, 0), size=int(ns.size, 0))
-        if mem_sub == "write":
-            parser.add_argument("write")
-            parser.add_argument("space")
-            parser.add_argument("addr")
-            parser.add_argument("--hex", dest="hex_data", default=None)
-            parser.add_argument("--text", dest="text_data", default=None)
-            parser.add_argument("--file", default=None)
-            ns = parser.parse_args(rest)
-            data_bytes = b""
-            if ns.hex_data is not None:
-                data_bytes = parse_hex_bytes(ns.hex_data)
-            elif ns.text_data is not None:
-                data_bytes = ns.text_data.encode("utf-8")
-            elif ns.file is not None:
-                data_bytes = Path(ns.file).expanduser().read_bytes()
-            else:
-                raise XdbError("xdb sim mem write requires --hex, --text, or --file")
-            return make_request(
-                OP_MEM_WRITE,
-                space=ns.space,
-                addr=int(ns.addr, 0),
-                data_hex=data_bytes.hex(),
-            )
-        raise XdbError(f"unsupported xdb sim mem subcommand for with-trace: {mem_sub}")
-    raise XdbError(f"unsupported wrapped xdb sim subcommand for with-trace: {subcommand}")
-
-
 def with_trace_session(
     session_name: str | None,
     command: list[str],
@@ -1999,7 +1131,7 @@ def with_trace_session(
             exec_base_env={} if exec_clean_env else dict(os.environ),
         )
     else:
-        request_args["action_request"] = _parse_with_trace_command(command)
+        request_args["action_request"] = parse_with_trace_command(command)
     request = make_request(
         OP_WITH_TRACE,
         **request_args,
