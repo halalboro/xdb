@@ -69,6 +69,7 @@ from xdb.sim.client import (
     diff_snapshot_session,
     watch_changes_session,
 )
+from xdb.sim.bundles import create_sim_bundle
 from xdb.sim.coyote import parse_hex_bytes
 from xdb.sim.daemon import run_daemon
 from xdb.sim.trace_profiles import get_trace_profile, list_trace_profiles
@@ -882,7 +883,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_with_trace_output.add_argument("--ndjson", action="store_true")
     s_sim_with_trace_output.add_argument("--summary", action="store_true")
     s_sim_with_trace.add_argument("--out", default=None, help="write trace output to a file")
+    s_sim_with_trace.add_argument("--bundle", default=None, nargs="?", const="", help="write a trace artifact bundle under XDB_ROOT/artifacts/bundles")
     s_sim_with_trace.add_argument("command", nargs=argparse.REMAINDER)
+
+    s_sim_bundle = sim_sub.add_parser("bundle", help="export a simulation debug artifact bundle")
+    _add_debug_flag(s_sim_bundle)
+    add_sim_session_arg(s_sim_bundle)
+    s_sim_bundle.add_argument("--out", default=None, help="bundle directory name/path; relative paths are under XDB_ROOT/artifacts/bundles")
 
     s_sim_release = sim_sub.add_parser("release")
     _add_debug_flag(s_sim_release)
@@ -1279,12 +1286,21 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 )
                 if args.profile:
                     result["profile"] = {"name": profile["name"], "source": profile["source"]}
+                if args.bundle is not None:
+                    bundle = create_sim_bundle(
+                        args.session,
+                        out=args.bundle or None,
+                        trace_result=result,
+                    )
+                    result["bundle"] = bundle
                 if args.ndjson:
                     _emit_text(_format_with_trace_ndjson(result), args.out)
                 elif args.summary:
                     _emit_text(_format_with_trace_summary(result), args.out)
                 else:
                     _emit_json(result, args.out)
+            elif args.sim_cmd == "bundle":
+                _print(create_sim_bundle(args.session, out=args.out))
             elif args.sim_cmd == "release":
                 _print(release_session(args.session, args.signal, all_forces=args.all))
             elif args.sim_cmd == "csr" and args.sim_csr_cmd == "read":

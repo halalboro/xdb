@@ -122,6 +122,9 @@ xdb sim with-trace --profile smoke -- \
 xdb sim exec --stream -- ./host-test --input 01020304
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns --exec -- \
   ./host-test --input 01020304
+xdb sim with-trace --bundle fail-001 --transactions --axis /tb_top/dut/axis_in --for 50 ns --exec -- \
+  ./host-test --input 01020304
+xdb sim bundle --out current-session
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --exec-until-exit --exec -- \
   ./host-test --input 01020304
 
@@ -276,6 +279,12 @@ xdb sim close --force
   repeated `--env KEY=VALUE`, `--timeout <seconds>`, `--expect-exit-code <n>`,
   and `--clean-env` as needed. Use `--stream` to mirror host stdout/stderr live
   to the terminal on stderr while preserving final JSON on stdout.
+- `xdb sim bundle --out <name-or-path>` exports a debug artifact bundle with
+  `manifest.json`, `doctor.json`, `provenance.json`, `metadata.json`, and
+  daemon/Vivado logs when present. Relative bundle paths are created under
+  `XDB_ROOT/artifacts/bundles/`. `xdb sim with-trace --bundle [name] ...`
+  additionally includes `trace.json` and host stdout/stderr for traced host
+  executions.
 - `xdb sim trace profiles` lists named trace profiles from an explicit
   `--profile-file`, `XDB_TRACE_PROFILE_FILE`, or `trace_profile_file` in the
   TOML config file. Profile files are project inputs and are not discovered
