@@ -70,6 +70,7 @@ from xdb.sim.client import (
 )
 from xdb.sim.coyote import parse_hex_bytes
 from xdb.sim.daemon import run_daemon
+from xdb.sim.trace_profiles import get_trace_profile, list_trace_profiles
 
 
 def _json_text(data: dict) -> str:
@@ -340,6 +341,68 @@ def _validate_positive_iteration_limit(value: int | None) -> int | None:
     if value <= 0:
         raise XdbError("--max-iterations must be > 0")
     return value
+
+
+def _profile_tokens(profile: dict, *names: str) -> list[str] | None:
+    for name in names:
+        value = profile.get(name)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            tokens = value.split()
+        elif isinstance(value, list):
+            tokens = [str(item).strip() for item in value if str(item).strip()]
+        else:
+            raise XdbError(f"trace profile field {name!r} must be a string or list")
+        if not tokens:
+            raise XdbError(f"trace profile field {name!r} must not be empty")
+        return tokens
+    return None
+
+
+def _profile_string_list(profile: dict, *names: str) -> list[str]:
+    for name in names:
+        value = profile.get(name)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item)]
+        raise XdbError(f"trace profile field {name!r} must be a string or list")
+    return []
+
+
+def _profile_bool(profile: dict, cli_value: bool | None, name: str, default: bool = False) -> bool:
+    if cli_value is not None:
+        return bool(cli_value)
+    value = profile.get(name)
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise XdbError(f"trace profile field {name!r} must be boolean")
+    return value
+
+
+def _profile_str(profile: dict, cli_value: str | None, name: str, default: str) -> str:
+    if cli_value is not None:
+        return cli_value
+    value = profile.get(name)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise XdbError(f"trace profile field {name!r} must be a string")
+    return value
+
+
+def _load_cli_trace_profile(name: str | None, profile_file: str | None) -> dict:
+    if name is None and profile_file is None:
+        return {"name": None, "source": None, "config": {}}
+    profile = get_trace_profile(name, profile_file)
+    config = profile.get("config")
+    if not isinstance(config, dict):
+        raise XdbError("invalid trace profile config")
+    return profile
 
 
 def _parse_int(value: str, *, what: str) -> int:
@@ -736,17 +799,19 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_axis_trace = sim_axis_sub.add_parser("trace")
     _add_debug_flag(s_sim_axis_trace)
     add_sim_session_arg(s_sim_axis_trace)
-    s_sim_axis_trace.add_argument("paths", nargs="+")
-    s_sim_axis_trace.add_argument("--for", dest="duration", nargs="+", required=True)
-    s_sim_axis_trace.add_argument("--step", nargs="+", default=["1", "ns"])
-    s_sim_axis_trace.add_argument("--decode-bytes", action="store_true")
+    s_sim_axis_trace.add_argument("--profile", default=None, help="trace profile name from .xdb-trace.json")
+    s_sim_axis_trace.add_argument("--profile-file", default=None, help="explicit trace profile JSON file")
+    s_sim_axis_trace.add_argument("paths", nargs="*")
+    s_sim_axis_trace.add_argument("--for", dest="duration", nargs="+")
+    s_sim_axis_trace.add_argument("--step", nargs="+", default=None)
+    s_sim_axis_trace.add_argument("--decode-bytes", action="store_true", default=None)
     s_sim_axis_trace.add_argument(
         "--lane-order",
         choices=["low-to-high", "high-to-low"],
-        default="low-to-high",
+        default=None,
     )
-    s_sim_axis_trace.add_argument("--include-idle", action="store_true")
-    s_sim_axis_trace.add_argument("--only-handshakes", action="store_true")
+    s_sim_axis_trace.add_argument("--include-idle", action="store_true", default=None)
+    s_sim_axis_trace.add_argument("--only-handshakes", action="store_true", default=None)
     s_sim_axis_trace.add_argument("--ndjson", action="store_true")
     s_sim_axis_trace.add_argument("--out", default=None, help="write trace output to a file")
 
@@ -759,6 +824,9 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_trace_transactions.add_argument("--for", dest="duration", nargs="+", required=True)
     s_sim_trace_transactions.add_argument("--opcode", default=None)
     s_sim_trace_transactions.add_argument("--out", default=None, help="write trace output to a file")
+    s_sim_trace_profiles = sim_trace_sub.add_parser("profiles", help="list available named trace profiles")
+    _add_debug_flag(s_sim_trace_profiles)
+    s_sim_trace_profiles.add_argument("--profile-file", default=None, help="explicit trace profile JSON file")
 
     s_sim_exec = sim_sub.add_parser("exec", help="run a host command against the live simulation session")
     _add_debug_flag(s_sim_exec)
@@ -774,7 +842,9 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_with_trace = sim_sub.add_parser("with-trace", help="run a command with scoped tracing")
     _add_debug_flag(s_sim_with_trace)
     add_sim_session_arg(s_sim_with_trace)
-    s_sim_with_trace.add_argument("--transactions", action="store_true")
+    s_sim_with_trace.add_argument("--profile", default=None, help="trace profile name from .xdb-trace.json")
+    s_sim_with_trace.add_argument("--profile-file", default=None, help="explicit trace profile JSON file")
+    s_sim_with_trace.add_argument("--transactions", action="store_true", default=None)
     s_sim_with_trace.add_argument("--axis", dest="axis_paths", action="append", default=[])
     s_sim_with_trace.add_argument("--exec", dest="exec_mode", action="store_true", help="wrap an external host command instead of an xdb sim subcommand")
     s_sim_with_trace.add_argument("--exec-until-exit", action="store_true", help="with --exec, trace until the host command exits instead of requiring --for")
@@ -785,19 +855,19 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_with_trace.add_argument("--clean-env", action="store_true", help="do not inherit current environment for --exec command")
     s_sim_with_trace.add_argument("--stream", action="store_true", help="with --exec, stream host stdout/stderr live to stderr while tracing")
     s_sim_with_trace.add_argument("--for", dest="duration", nargs="+")
-    s_sim_with_trace.add_argument("--step", nargs="+", default=["1", "ns"])
-    s_sim_with_trace.add_argument("--decode-bytes", action="store_true")
+    s_sim_with_trace.add_argument("--step", nargs="+", default=None)
+    s_sim_with_trace.add_argument("--decode-bytes", action="store_true", default=None)
     s_sim_with_trace.add_argument(
         "--lane-order",
         choices=["low-to-high", "high-to-low"],
-        default="low-to-high",
+        default=None,
     )
-    s_sim_with_trace.add_argument("--include-idle", action="store_true")
-    s_sim_with_trace.add_argument("--only-handshakes", action="store_true")
+    s_sim_with_trace.add_argument("--include-idle", action="store_true", default=None)
+    s_sim_with_trace.add_argument("--only-handshakes", action="store_true", default=None)
     s_sim_with_trace.add_argument(
         "--correlate-by",
         choices=["nearest", "opcode", "addr"],
-        default="nearest",
+        default=None,
         help="focus transaction-to-AXIS correlation links",
     )
     s_sim_with_trace.add_argument(
@@ -1111,16 +1181,28 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     )
                 )
             elif args.sim_cmd == "axis" and args.sim_axis_cmd == "trace":
+                profile = _load_cli_trace_profile(args.profile, args.profile_file)
+                profile_config = profile["config"]
+                profile_paths = _profile_string_list(profile_config, "axis", "axis_paths", "paths")
+                axis_paths = [*profile_paths, *list(args.paths or [])]
+                if not axis_paths:
+                    raise XdbError("missing AXIS interface path")
+                duration_tokens = args.duration or _profile_tokens(profile_config, "duration", "for")
+                if duration_tokens is None:
+                    raise XdbError("missing AXIS trace duration: pass --for or use a profile with 'duration'")
+                step_tokens = args.step or _profile_tokens(profile_config, "step") or ["1", "ns"]
                 result = axis_trace_session(
                     args.session,
-                    args.paths,
-                    _resolve_sim_step_tokens(args.duration),
-                    step_tokens=_resolve_sim_step_tokens(args.step),
-                    decode_bytes=bool(args.decode_bytes),
-                    lane_order=args.lane_order,
-                    include_idle=bool(args.include_idle),
-                    only_handshakes=bool(args.only_handshakes),
+                    axis_paths,
+                    _resolve_sim_step_tokens(duration_tokens),
+                    step_tokens=_resolve_sim_step_tokens(step_tokens),
+                    decode_bytes=_profile_bool(profile_config, args.decode_bytes, "decode_bytes"),
+                    lane_order=_profile_str(profile_config, args.lane_order, "lane_order", "low-to-high"),
+                    include_idle=_profile_bool(profile_config, args.include_idle, "include_idle"),
+                    only_handshakes=_profile_bool(profile_config, args.only_handshakes, "only_handshakes"),
                 )
+                if args.profile:
+                    result["profile"] = {"name": profile["name"], "source": profile["source"]}
                 if args.ndjson:
                     _emit_text(
                         "\n".join(
@@ -1141,6 +1223,8 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     ),
                     args.out,
                 )
+            elif args.sim_cmd == "trace" and args.sim_trace_cmd == "profiles":
+                _print(list_trace_profiles(args.profile_file))
             elif args.sim_cmd == "exec":
                 _print(
                     exec_session(
@@ -1155,22 +1239,31 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     )
                 )
             elif args.sim_cmd == "with-trace":
+                profile = _load_cli_trace_profile(args.profile, args.profile_file)
+                profile_config = profile["config"]
+                profile_axis_paths = _profile_string_list(profile_config, "axis", "axis_paths")
+                duration_tokens = args.duration or _profile_tokens(profile_config, "duration", "for") or []
+                step_tokens = args.step or _profile_tokens(profile_config, "step") or ["1", "ns"]
+                correlate_window_tokens = (
+                    args.correlate_window
+                    or _profile_tokens(profile_config, "correlate_window", "correlation_window")
+                )
                 result = with_trace_session(
                     args.session,
                     args.command,
-                    [] if args.duration is None else _resolve_sim_step_tokens(args.duration),
-                    step_tokens=_resolve_sim_step_tokens(args.step),
-                    transactions=bool(args.transactions),
-                    axis_paths=list(args.axis_paths or []),
-                    decode_bytes=bool(args.decode_bytes),
-                    lane_order=args.lane_order,
-                    include_idle=bool(args.include_idle),
-                    only_handshakes=bool(args.only_handshakes),
-                    correlate_by=args.correlate_by,
+                    [] if not duration_tokens else _resolve_sim_step_tokens(duration_tokens),
+                    step_tokens=_resolve_sim_step_tokens(step_tokens),
+                    transactions=_profile_bool(profile_config, args.transactions, "transactions"),
+                    axis_paths=[*profile_axis_paths, *list(args.axis_paths or [])],
+                    decode_bytes=_profile_bool(profile_config, args.decode_bytes, "decode_bytes"),
+                    lane_order=_profile_str(profile_config, args.lane_order, "lane_order", "low-to-high"),
+                    include_idle=_profile_bool(profile_config, args.include_idle, "include_idle"),
+                    only_handshakes=_profile_bool(profile_config, args.only_handshakes, "only_handshakes"),
+                    correlate_by=_profile_str(profile_config, args.correlate_by, "correlate_by", "nearest"),
                     correlate_window_tokens=(
                         None
-                        if args.correlate_window is None
-                        else _resolve_sim_step_tokens(args.correlate_window)
+                        if correlate_window_tokens is None
+                        else _resolve_sim_step_tokens(correlate_window_tokens)
                     ),
                     exec_mode=bool(args.exec_mode),
                     exec_until_exit=bool(args.exec_until_exit),
@@ -1181,6 +1274,8 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     exec_clean_env=bool(args.clean_env),
                     exec_stream_output=bool(args.stream),
                 )
+                if args.profile:
+                    result["profile"] = {"name": profile["name"], "source": profile["source"]}
                 if args.ndjson:
                     _emit_text(_format_with_trace_ndjson(result), args.out)
                 elif args.summary:

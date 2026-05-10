@@ -112,8 +112,12 @@ xdb sim vcd start ./waves/fail.vcd /tb_top/dut
 xdb sim vcd status
 xdb sim vcd stop
 xdb sim axis trace /tb_top/dut/axis_in --for 100 ns --decode-bytes
+xdb sim trace profiles
+xdb sim axis trace --profile host-rx --for 100 ns
 xdb sim trace transactions --for 200 ns
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns -- \
+  xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
+xdb sim with-trace --profile smoke -- \
   xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
 xdb sim exec --stream -- ./host-test --input 01020304
 xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --for 50 ns --exec -- \
@@ -232,7 +236,8 @@ xdb sim close --force
   to control sampling cadence, `--decode-bytes` to decode `tdata`/`tkeep` into
   lane-ordered bytes, `--include-idle` to keep non-handshake samples,
   `--ndjson` for one JSON object per traced record, and `--out <file>` to write
-  the trace instead of printing it.
+  the trace instead of printing it. Use `--profile <name>` to load defaults
+  from `.xdb-trace.json` or `xdb-trace.json`.
 - `xdb sim force <signal> <value...>` wraps `add_force`; use `--radix`,
   `--repeat-every`, and `--cancel-after` for common options.
 - `xdb sim release <signal>` releases forces created through `xdb sim force`.
@@ -259,6 +264,11 @@ xdb sim close --force
   repeated `--env KEY=VALUE`, `--timeout <seconds>`, `--expect-exit-code <n>`,
   and `--clean-env` as needed. Use `--stream` to mirror host stdout/stderr live
   to the terminal on stderr while preserving final JSON on stdout.
+- `xdb sim trace profiles` lists named trace profiles from `.xdb-trace.json`,
+  `xdb-trace.json`, or an explicit `--profile-file`. Profile fields may include
+  `transactions`, `axis`, `duration`, `step`, `decode_bytes`, `lane_order`,
+  `include_idle`, `only_handshakes`, `correlate_by`, and `correlate_window`.
+  CLI options extend or override profile defaults.
 - `xdb sim with-trace -- ...` currently supports a wrapped subset of `xdb sim`
   subcommands, including Coyote operations plus `run`, `step`, `until`, and
   `until-signal`. `xdb sim with-trace --exec -- <command...>` runs an external
