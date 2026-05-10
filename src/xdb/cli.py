@@ -73,6 +73,7 @@ from xdb.sim.client import (
 from xdb.sim.bundles import create_sim_bundle
 from xdb.sim.coyote import parse_hex_bytes
 from xdb.sim.daemon import run_daemon
+from xdb.sim.mem_tools import diff_memory_files, dump_memory_session
 from xdb.sim.trace_profiles import get_trace_profile, list_trace_profiles
 
 
@@ -1013,6 +1014,17 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_mem_read.add_argument("space")
     s_sim_mem_read.add_argument("addr")
     s_sim_mem_read.add_argument("size")
+    s_sim_mem_dump = sim_mem_sub.add_parser("dump")
+    _add_debug_flag(s_sim_mem_dump)
+    add_sim_session_arg(s_sim_mem_dump)
+    s_sim_mem_dump.add_argument("space")
+    s_sim_mem_dump.add_argument("addr")
+    s_sim_mem_dump.add_argument("--size", required=True)
+    s_sim_mem_dump.add_argument("--out", required=True)
+    s_sim_mem_diff = sim_mem_sub.add_parser("diff")
+    _add_debug_flag(s_sim_mem_diff)
+    s_sim_mem_diff.add_argument("before")
+    s_sim_mem_diff.add_argument("after")
     s_sim_mem_write = sim_mem_sub.add_parser("write")
     _add_debug_flag(s_sim_mem_write)
     add_sim_session_arg(s_sim_mem_write)
@@ -1438,6 +1450,18 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         _parse_int(args.size, what="memory size"),
                     )
                 )
+            elif args.sim_cmd == "mem" and args.sim_mem_cmd == "dump":
+                _print(
+                    dump_memory_session(
+                        args.session,
+                        args.space,
+                        _parse_int(args.addr, what="memory address"),
+                        _parse_int(args.size, what="memory dump size"),
+                        args.out,
+                    )
+                )
+            elif args.sim_cmd == "mem" and args.sim_mem_cmd == "diff":
+                _print(diff_memory_files(args.before, args.after))
             elif args.sim_cmd == "invoke":
                 _print(
                     coyote_invoke_session(

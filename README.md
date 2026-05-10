@@ -135,6 +135,8 @@ xdb sim csr read 0x0
 xdb sim mem write host 0x1000 --hex deadbeef
 xdb sim mem list
 xdb sim mem read host 0x1000 4
+xdb sim mem dump host 0x1000 --size 4096 --out before.bin
+xdb sim mem diff before.bin after.bin
 xdb sim invoke local-transfer --src-addr 0x1000 --dst-addr 0x2000 --len 4
 xdb sim completed local-transfer --count 1 --timeout 5
 xdb sim mem read host 0x2000 4
@@ -268,6 +270,10 @@ xdb sim close --force
 - `xdb sim mem reset` unmaps every host-memory segment tracked by `xdb` and
   clears the local host read/write counters and last protocol error string.
   It does not clear pending IRQ events or completion counters.
+- `xdb sim mem dump <space> <addr> --size <bytes> --out <file>` reads live
+  simulation memory and writes raw bytes to a binary file with JSON metadata on
+  stdout. `xdb sim mem diff <before.bin> <after.bin>` compares two dump files
+  and reports changed byte ranges.
 - `xdb sim trace transactions --for <duration>` captures protocol-level Coyote
   activity observed during that simulation window, including host reads/writes,
   IRQs, completion checks/results, and `xdb`-issued invoke or memory commands.
