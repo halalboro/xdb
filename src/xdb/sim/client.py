@@ -561,6 +561,10 @@ def time_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_TIME))
 
 
+def status_session(session_name: str | None) -> dict[str, Any]:
+    return _send_request(session_name, make_request(OP_STATUS))
+
+
 def describe_session(session_name: str | None) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_DESCRIBE))
 

@@ -76,6 +76,7 @@ xdb sim relaunch --fresh
 
 # query the same live session without relaunching Vivado
 xdb sim time
+xdb sim status
 xdb sim describe
 xdb sim get /tb_top/dut/state
 xdb sim read /tb_top/dut/state /tb_top/dut/done /tb_top/clk
@@ -222,6 +223,7 @@ xdb sim close --force
 - `xdb sim source <file.tcl>` loads a Tcl file into the live simulator session
   with Tcl `source`, preserving file-based error locations and proc
   definitions.
+- `xdb sim status` reports the current live simulation daemon status and time.
 - `xdb sim describe` summarizes the live session with the inferred top scope,
   likely DUT scope, known clocks, known resets, common scopes, time, and
   runtime metadata.

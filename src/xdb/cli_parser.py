@@ -137,6 +137,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_debug_flag(s_sim_time)
     add_sim_session_arg(s_sim_time)
 
+    s_sim_status = sim_sub.add_parser("status", help="current simulation daemon status")
+    _add_debug_flag(s_sim_status)
+    add_sim_session_arg(s_sim_status)
+
     s_sim_describe = sim_sub.add_parser("describe", help="summarize the current simulation session")
     _add_debug_flag(s_sim_describe)
     add_sim_session_arg(s_sim_describe)

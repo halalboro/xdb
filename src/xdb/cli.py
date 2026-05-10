@@ -65,6 +65,7 @@ from xdb.sim.client import (
     set_top,
     source_session,
     snapshot_session,
+    status_session,
     step_session,
     time_session,
     trace_transactions_session,
@@ -420,6 +421,8 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 )
             elif args.sim_cmd == "time":
                 _print(time_session(args.session))
+            elif args.sim_cmd == "status":
+                _print(status_session(args.session))
             elif args.sim_cmd == "describe":
                 _print(describe_session(args.session))
             elif args.sim_cmd == "get":
