@@ -187,6 +187,7 @@ class SimDaemon:
 
     def _serve(self) -> None:
         self._cleanup_socket()
+        self.paths.socket_path.parent.mkdir(parents=True, exist_ok=True)
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._server = server
         server.bind(str(self.paths.socket_path))

@@ -21,19 +21,32 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _cache_root() -> Path:
-    base = os.environ.get("XDB_SIM_CACHE_DIR")
-    if base:
-        return Path(base).expanduser()
-    return Path.home() / ".cache" / "xdb" / "sim"
-
-
 def _repo_root_for(path: Path) -> Path:
     current = path.resolve()
     for candidate in [current, *current.parents]:
         if (candidate / ".git").exists():
             return candidate
     return current
+
+
+def _xdb_root(anchor_dir: Path) -> Path:
+    root = os.environ.get("XDB_ROOT")
+    if root:
+        path = Path(root).expanduser()
+        if not path.is_absolute():
+            path = anchor_dir / path
+        return path.resolve()
+    return (anchor_dir / ".xdb").resolve()
+
+
+def _cache_root() -> Path:
+    root = os.environ.get("XDB_CACHE_ROOT")
+    if root:
+        return Path(root).expanduser().resolve()
+    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+    if xdg_cache_home:
+        return (Path(xdg_cache_home).expanduser() / "xdb").resolve()
+    return (Path.home() / ".cache" / "xdb").resolve()
 
 
 def _slug(value: str) -> str:
@@ -67,11 +80,13 @@ class SessionPaths:
     def __init__(self, anchor_dir: Path, session_name: str | None):
         effective_session_name = resolve_session_name_arg(session_name)
         self.anchor_dir = anchor_dir.resolve()
+        self.xdb_root = _xdb_root(self.anchor_dir)
+        self.cache_root = _cache_root()
         self.session_name = effective_session_name or "default"
         self.session_id = _session_id(self.anchor_dir, effective_session_name)
-        self.session_dir = _cache_root() / self.session_id
+        self.session_dir = self.xdb_root / "sessions" / self.session_id
         self.meta_path = self.session_dir / "meta.json"
-        self.socket_path = self.session_dir / "control.sock"
+        self.socket_path = self.cache_root / "sockets" / f"{self.session_id}.sock"
         self.daemon_log_path = self.session_dir / "daemon.log"
         self.vivado_log_path = self.session_dir / "vivado.log"
 
@@ -84,6 +99,8 @@ class SessionPaths:
             "daemon_log": str(self.daemon_log_path),
             "vivado_log": str(self.vivado_log_path),
             "anchor_dir": str(self.anchor_dir),
+            "xdb_root": str(self.xdb_root),
+            "cache_root": str(self.cache_root),
         }
 
 
@@ -95,6 +112,7 @@ def session_paths(session_name: str | None, cwd: Path | None = None) -> SessionP
 
 def ensure_session_dir(paths: SessionPaths) -> None:
     paths.session_dir.mkdir(parents=True, exist_ok=True)
+    paths.socket_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def write_meta(paths: SessionPaths, meta: SessionMeta) -> SessionMeta:
@@ -123,6 +141,10 @@ def load_meta(paths: SessionPaths) -> SessionMeta | None:
 
 
 def remove_session(paths: SessionPaths) -> None:
+    try:
+        paths.socket_path.unlink(missing_ok=True)
+    except OSError:
+        pass
     if paths.session_dir.exists():
         shutil.rmtree(paths.session_dir, ignore_errors=True)
 
@@ -151,7 +173,12 @@ def cleanup_stale_session(paths: SessionPaths) -> None:
         remove_session(paths)
         return
     if meta and not is_live_session(meta):
-        remove_session(paths)
+        pid = int(meta.get("pid", 0) or 0)
+        if not pid_is_alive(pid):
+            try:
+                paths.socket_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def require_live_meta(paths: SessionPaths) -> SessionMeta:

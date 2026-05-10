@@ -159,6 +159,12 @@ xdb sim close --force
 - `xdb sim launch` resolves missing flags from these environment variables when
   present: `XDB_SIM_PACKAGE_RUNTIME`, `XDB_SIM_WORKSPACE`, `XDB_SIM_SIMSET`,
   `XDB_SIM_MODE`, `XDB_SIM_TOP`, `XDB_SIM_SESSION`.
+- `XDB_ROOT` controls project-local `xdb` outputs and defaults to
+  `<repo>/.xdb`. Simulation session metadata and inspectable daemon/Vivado logs
+  live under `XDB_ROOT/sessions/<session-id>/`.
+- `XDB_CACHE_ROOT` controls machine-local ephemeral IPC paths and defaults to
+  `${XDG_CACHE_HOME}/xdb` or `~/.cache/xdb`. Simulation control sockets live
+  under `XDB_CACHE_ROOT/sockets/` to avoid long Unix socket paths in deep repos.
 - In the runtime-backed flow, `xdb sim launch` stages the packaged simulation
   runtime into the writable workspace, runs the packaged compile/elaborate
   scripts there, and then starts a persistent `xsim` session.
@@ -167,7 +173,8 @@ xdb sim close --force
 - `xdb sim close` asks the daemon to shut down and has a wall-clock response
   timeout, defaulting to 5 seconds. Use `xdb sim close --force` to terminate
   the cached daemon process group and remove stale session state when the daemon
-  is unresponsive.
+  is unresponsive. Normal close preserves project-local session logs for later
+  inspection; force close removes the session directory.
 - `xdb sim run <duration>` has a wall-clock daemon response timeout, defaulting
   to 30 seconds. Use `--timeout <seconds>` for slow simulations. If it times
   out, the daemon may still be busy inside Vivado; check responsiveness with
@@ -176,9 +183,9 @@ xdb sim close --force
   workspace state, and any live session metadata so you can see whether the
   active session matches the current packaged runtime.
 - `xdb sim doctor` diagnoses simulation session health without requiring a
-  responsive daemon. It checks cached metadata, daemon PID/socket state,
-  daemon responsiveness, runtime/workspace freshness, and daemon/Vivado log
-  availability, then returns suggested recovery commands.
+  responsive daemon. It checks project-local metadata/logs, daemon PID/socket
+  state, daemon responsiveness, runtime/workspace freshness, and daemon/Vivado
+  log availability, then returns suggested recovery commands.
 - `xdb sim restage` refreshes the writable workspace from the packaged runtime
   without launching a simulator. It refuses to run while a live simulation
   session exists for the same repo/session.

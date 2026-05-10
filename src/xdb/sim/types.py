@@ -12,6 +12,8 @@ class SessionMeta(TypedDict, total=False):
     daemon_log: str
     vivado_log: str
     anchor_dir: str
+    xdb_root: str
+    cache_root: str
     cwd: str
     launch_kind: str
     project: str

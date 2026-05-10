@@ -75,6 +75,32 @@ class FreshnessControlTests(unittest.TestCase):
             self.assertTrue(provenance["runtime"]["stage_fingerprint_matches_package"])
             self.assertTrue(provenance["comparisons"]["runtime_root_matches_workspace"])
 
+    def test_session_paths_split_project_outputs_from_socket_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+            old_cwd = Path.cwd()
+            try:
+                os.chdir(repo)
+                with patch.dict(
+                    os.environ,
+                    {
+                        "XDB_ROOT": str(tmp_path / "xdb-root"),
+                        "XDB_CACHE_ROOT": str(tmp_path / "cache-root"),
+                    },
+                    clear=False,
+                ):
+                    paths = session_paths("unit")
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(paths.session_dir.parent, tmp_path / "xdb-root" / "sessions")
+            self.assertEqual(paths.daemon_log_path.parent, paths.session_dir)
+            self.assertEqual(paths.vivado_log_path.parent, paths.session_dir)
+            self.assertEqual(paths.socket_path.parent, tmp_path / "cache-root" / "sockets")
+
     def test_corrupt_session_meta_is_treated_as_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -85,7 +111,7 @@ class FreshnessControlTests(unittest.TestCase):
             old_cwd = Path.cwd()
             try:
                 os.chdir(repo)
-                with patch.dict(os.environ, {"XDB_SIM_CACHE_DIR": str(cache)}, clear=False):
+                with patch.dict(os.environ, {"XDB_ROOT": str(tmp_path / "xdb-root"), "XDB_CACHE_ROOT": str(cache)}, clear=False):
                     paths = session_paths(None)
                     paths.session_dir.mkdir(parents=True)
                     paths.meta_path.write_text("", encoding="utf-8")

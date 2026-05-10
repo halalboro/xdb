@@ -508,9 +508,7 @@ def _terminate_cached_session(
         terminate_session(remaining, force=True)
         force_killed = True
         _wait_until_stopped(session_name, timeout=2.0)
-    cleanup_stale_session(paths)
-    if paths.session_dir.exists() and not load_meta(paths):
-        remove_session(paths)
+    remove_session(paths)
     return {
         "pid": pid or None,
         "was_alive": was_alive,
@@ -894,6 +892,8 @@ def doctor_session(session_name: str | None, *, timeout_seconds: float = 1.0) ->
         "session_id": paths.session_id,
         "anchor_dir": str(paths.anchor_dir),
         "paths": {
+            "xdb_root": str(paths.xdb_root),
+            "cache_root": str(paths.cache_root),
             "session_dir": str(paths.session_dir),
             "meta": str(paths.meta_path),
             "socket": str(paths.socket_path),
