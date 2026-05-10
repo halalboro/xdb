@@ -65,8 +65,8 @@ export XDB_SIM_TOP=tb_top
 export XDB_SIM_MODE=behavioral
 export XDB_SIM_SESSION=myproj
 xdb sim launch
-xdb sim provenance
-xdb sim doctor
+xdb sim provenance --summary
+xdb sim doctor --summary
 
 # refresh the staged workspace without launching a new simulator
 xdb sim restage
@@ -188,11 +188,13 @@ xdb sim close --force
   `xdb sim time` or recover with `xdb sim close` / `xdb sim relaunch --fresh`.
 - `xdb sim provenance` reports the current requested runtime inputs, staged
   workspace state, and any live session metadata so you can see whether the
-  active session matches the current packaged runtime.
+  active session matches the current packaged runtime. Use `--summary` for
+  compact human-readable output.
 - `xdb sim doctor` diagnoses simulation session health without requiring a
   responsive daemon. It checks project-local metadata/logs, daemon PID/socket
   state, daemon responsiveness, runtime/workspace freshness, and daemon/Vivado
-  log availability, then returns suggested recovery commands.
+  log availability, then returns suggested recovery commands. Use `--summary`
+  for compact human-readable output.
 - `xdb sim restage` refreshes the writable workspace from the packaged runtime
   without launching a simulator. It refuses to run while a live simulation
   session exists for the same repo/session.

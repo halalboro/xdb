@@ -6,6 +6,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
+from typing import Any, cast
 
 from xdb import __version__
 from xdb.config import set_config_file
@@ -131,6 +132,77 @@ def _format_with_trace_ndjson(result: dict) -> str:
                         sort_keys=False,
                     )
                 )
+    return "\n".join(lines)
+
+
+def _format_bool(value: object) -> str:
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    if value is None:
+        return "n/a"
+    return str(value)
+
+
+def _format_doctor_summary(result: dict) -> str:
+    checks = [check for check in list(result.get("checks") or []) if isinstance(check, dict)]
+    errors = [check for check in checks if not check.get("ok", False) and check.get("severity") == "error"]
+    warnings = [check for check in checks if not check.get("ok", False) and check.get("severity") != "error"]
+    lines = [
+        "doctor summary",
+        f"ok: {_format_bool(result.get('ok'))}",
+        f"session: {result.get('session', '?')} ({result.get('session_id', '?')})",
+        f"anchor: {result.get('anchor_dir', '?')}",
+        f"checks: {len(checks)} total, {len(errors)} error(s), {len(warnings)} warning(s)",
+    ]
+    if errors or warnings:
+        lines.append("issues:")
+        for check in [*errors, *warnings]:
+            detail = str(check.get("detail") or "")
+            suffix = f" - {detail}" if detail else ""
+            lines.append(f"  {check.get('severity', 'error')}: {check.get('name', '?')}{suffix}")
+    suggestions = [str(item) for item in list(result.get("suggestions") or []) if str(item)]
+    if suggestions:
+        lines.append("suggestions:")
+        for suggestion in suggestions:
+            lines.append(f"  {suggestion}")
+    paths = result.get("paths") if isinstance(result.get("paths"), dict) else {}
+    if paths:
+        lines.append("paths:")
+        for key in ("session_dir", "daemon_log", "vivado_log", "socket"):
+            if paths.get(key):
+                lines.append(f"  {key}: {paths[key]}")
+    return "\n".join(lines)
+
+
+def _format_provenance_summary(result: dict) -> str:
+    requested = cast(dict[str, Any], result.get("requested") if isinstance(result.get("requested"), dict) else {})
+    live = cast(dict[str, Any], result.get("live_session") if isinstance(result.get("live_session"), dict) else {})
+    runtime = cast(dict[str, Any], result.get("runtime") if isinstance(result.get("runtime"), dict) else {})
+    comparisons = cast(dict[str, Any], result.get("comparisons") if isinstance(result.get("comparisons"), dict) else {})
+    lines = [
+        "provenance summary",
+        f"session: {result.get('session', '?')} ({result.get('session_id', '?')})",
+        f"anchor: {result.get('anchor_dir', '?')}",
+        f"requested: simset={requested.get('simset', '?')} mode={requested.get('mode', '?')} top={requested.get('top', '?')}",
+        f"live: {_format_bool(live.get('present'))} state={live.get('state') or 'n/a'} pid={live.get('pid') or 'n/a'}",
+        f"runtime available: {_format_bool(runtime.get('available'))}",
+    ]
+    if runtime.get("available"):
+        lines.extend(
+            [
+                f"package_runtime: {runtime.get('package_runtime', '?')}",
+                f"workspace: {runtime.get('workspace', '?')}",
+                f"workspace exists: {_format_bool(runtime.get('workspace_exists'))}",
+                f"needs stage: {_format_bool(runtime.get('needs_stage'))}",
+                f"stage source matches package: {_format_bool(runtime.get('stage_source_matches_package'))}",
+                f"stage fingerprint matches package: {_format_bool(runtime.get('stage_fingerprint_matches_package'))}",
+                f"live session matches request: {_format_bool(comparisons.get('live_session_matches_request'))}",
+            ]
+        )
+    elif runtime.get("error"):
+        lines.append(f"runtime error: {runtime.get('error')}")
     return "\n".join(lines)
 
 
@@ -553,11 +625,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_provenance = sim_sub.add_parser("provenance")
     _add_debug_flag(s_sim_provenance)
     add_sim_session_arg(s_sim_provenance)
+    s_sim_provenance.add_argument("--summary", action="store_true", help="print compact human-readable output")
 
     s_sim_doctor = sim_sub.add_parser("doctor", help="diagnose simulation session/runtime health")
     _add_debug_flag(s_sim_doctor)
     add_sim_session_arg(s_sim_doctor)
     s_sim_doctor.add_argument("--timeout", type=float, default=1.0, help="daemon status probe timeout in seconds")
+    s_sim_doctor.add_argument("--summary", action="store_true", help="print compact human-readable output")
 
     s_sim_run = sim_sub.add_parser("run")
     _add_debug_flag(s_sim_run)
@@ -1055,14 +1129,20 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
             elif args.sim_cmd == "restage":
                 _print(restage_session(args.session))
             elif args.sim_cmd == "provenance":
-                _print(provenance_session(args.session))
+                result = provenance_session(args.session)
+                if args.summary:
+                    _emit_text(_format_provenance_summary(result))
+                else:
+                    _print(result)
             elif args.sim_cmd == "doctor":
-                _print(
-                    doctor_session(
-                        args.session,
-                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout) or 1.0,
-                    )
+                result = doctor_session(
+                    args.session,
+                    timeout_seconds=_validate_positive_timeout_seconds(args.timeout) or 1.0,
                 )
+                if args.summary:
+                    _emit_text(_format_doctor_summary(result))
+                else:
+                    _print(result)
             elif args.sim_cmd == "run":
                 _print(
                     run_session(

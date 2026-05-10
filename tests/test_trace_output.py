@@ -8,7 +8,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from xdb.cli import _emit_text, _format_with_trace_ndjson, _format_with_trace_summary
+from xdb.cli import (
+    _emit_text,
+    _format_doctor_summary,
+    _format_provenance_summary,
+    _format_with_trace_ndjson,
+    _format_with_trace_summary,
+)
 from xdb.sim.trace_correlation import correlate_trace
 
 
@@ -64,6 +70,53 @@ class TraceOutputTests(unittest.TestCase):
         self.assertIn("axis: 1 record(s)", summary)
         self.assertIn("correlation links: 1", summary)
         self.assertIn("tx=invoke:local-transfer axis=/axis beat 0", summary)
+
+    def test_doctor_summary_reports_issues_and_suggestions(self) -> None:
+        summary = _format_doctor_summary(
+            {
+                "ok": False,
+                "session": "unit",
+                "session_id": "unit-123",
+                "anchor_dir": "/repo",
+                "checks": [
+                    {"name": "daemon_responsive", "ok": False, "severity": "error", "detail": "timeout"},
+                    {"name": "vivado_log_exists", "ok": False, "severity": "warning"},
+                ],
+                "suggestions": ["run: xdb sim close --force"],
+                "paths": {"session_dir": "/repo/.xdb/sessions/unit", "socket": "/cache/s.sock"},
+            }
+        )
+
+        self.assertIn("doctor summary", summary)
+        self.assertIn("1 error(s), 1 warning(s)", summary)
+        self.assertIn("daemon_responsive", summary)
+        self.assertIn("run: xdb sim close --force", summary)
+
+    def test_provenance_summary_reports_runtime_state(self) -> None:
+        summary = _format_provenance_summary(
+            {
+                "session": "unit",
+                "session_id": "unit-123",
+                "anchor_dir": "/repo",
+                "requested": {"simset": "sim_1", "mode": "behavioral", "top": "tb"},
+                "live_session": {"present": True, "state": "ready", "pid": 42},
+                "runtime": {
+                    "available": True,
+                    "package_runtime": "/nix/store/pkg/project/sim",
+                    "workspace": "/repo/.build/sim",
+                    "workspace_exists": True,
+                    "needs_stage": False,
+                    "stage_source_matches_package": True,
+                    "stage_fingerprint_matches_package": True,
+                },
+                "comparisons": {"live_session_matches_request": True},
+            }
+        )
+
+        self.assertIn("provenance summary", summary)
+        self.assertIn("live: yes state=ready pid=42", summary)
+        self.assertIn("needs stage: no", summary)
+        self.assertIn("live session matches request: yes", summary)
 
     def test_correlation_window_and_mode_filter_links_expected_records(self) -> None:
         result = correlate_trace(
