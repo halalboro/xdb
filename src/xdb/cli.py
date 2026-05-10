@@ -36,7 +36,9 @@ from xdb.sim.client import (
     coyote_mem_write_session,
     coyote_status_session,
     expect_change_session,
+    expect_condition_session,
     expect_signal_session,
+    expect_stream_output_session,
     exec_session,
     describe_session,
     doctor_session,
@@ -832,6 +834,25 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     s_sim_expect_change.add_argument("--within", nargs="+", required=True)
     s_sim_expect_change.add_argument("signal")
 
+    s_sim_expect_condition = sim_sub.add_parser("expect-condition", help="expect a Tcl expression to become true within a simulation time bound")
+    _add_debug_flag(s_sim_expect_condition)
+    add_sim_session_arg(s_sim_expect_condition)
+    s_sim_expect_condition.add_argument("--within", nargs="+", required=True)
+    s_sim_expect_condition.add_argument("expr", nargs="+")
+
+    s_sim_expect_stream_output = sim_sub.add_parser("expect-stream-output", help="expect at least one AXIS handshake within a simulation time bound")
+    _add_debug_flag(s_sim_expect_stream_output)
+    add_sim_session_arg(s_sim_expect_stream_output)
+    s_sim_expect_stream_output.add_argument("--within", nargs="+", required=True)
+    s_sim_expect_stream_output.add_argument("--step", nargs="+", default=["1", "ns"])
+    s_sim_expect_stream_output.add_argument("--decode-bytes", action="store_true")
+    s_sim_expect_stream_output.add_argument(
+        "--lane-order",
+        choices=["low-to-high", "high-to-low"],
+        default="low-to-high",
+    )
+    s_sim_expect_stream_output.add_argument("path")
+
     s_sim_breakpoint = sim_sub.add_parser("breakpoint")
     _add_debug_flag(s_sim_breakpoint)
     sim_bp_sub = s_sim_breakpoint.add_subparsers(dest="sim_bp_cmd", required=True)
@@ -1251,6 +1272,25 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         args.session,
                         args.signal,
                         _resolve_sim_step_tokens(args.within),
+                    )
+                )
+            elif args.sim_cmd == "expect-condition":
+                _print(
+                    expect_condition_session(
+                        args.session,
+                        _join_tokens(args.expr) or "",
+                        _resolve_sim_step_tokens(args.within),
+                    )
+                )
+            elif args.sim_cmd == "expect-stream-output":
+                _print(
+                    expect_stream_output_session(
+                        args.session,
+                        args.path,
+                        _resolve_sim_step_tokens(args.within),
+                        step_tokens=_resolve_sim_step_tokens(args.step),
+                        decode_bytes=bool(args.decode_bytes),
+                        lane_order=args.lane_order,
                     )
                 )
             elif args.sim_cmd == "breakpoint" and args.sim_bp_cmd == "add":

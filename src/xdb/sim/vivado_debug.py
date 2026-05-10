@@ -98,6 +98,11 @@ class VivadoDebugMixin:
     ) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_expect_change", signal, within_tokens))
 
+    def expect_condition(
+        self: _VivadoDebugHost, expr: str, *, within_tokens: list[str]
+    ) -> dict[str, Any]:
+        return self.request(build_proc_request("xdb_api_expect_condition", expr, within_tokens))
+
     def add_breakpoint(
         self: _VivadoDebugHost,
         condition: str,

@@ -38,6 +38,7 @@ from xdb.sim.protocol import (
     OP_CSR_WRITE,
     OP_DESCRIBE,
     OP_EXPECT_CHANGE,
+    OP_EXPECT_CONDITION,
     OP_EXPECT_SIGNAL,
     OP_FORCE,
     OP_GET,
@@ -1303,6 +1304,56 @@ def expect_change_session(
         session_name,
         make_request(OP_EXPECT_CHANGE, signal=signal, within_tokens=within_tokens),
     )
+
+
+def expect_condition_session(
+    session_name: str | None,
+    expr: str,
+    within_tokens: list[str],
+) -> dict[str, Any]:
+    if not expr:
+        raise XdbError("missing Tcl expression")
+    return _send_request(
+        session_name,
+        make_request(OP_EXPECT_CONDITION, expr=expr, within_tokens=within_tokens),
+    )
+
+
+def expect_stream_output_session(
+    session_name: str | None,
+    interface_path: str,
+    within_tokens: list[str],
+    *,
+    step_tokens: list[str],
+    decode_bytes: bool = False,
+    lane_order: str = "low-to-high",
+) -> dict[str, Any]:
+    result = axis_trace_session(
+        session_name,
+        [interface_path],
+        within_tokens,
+        step_tokens=step_tokens,
+        decode_bytes=decode_bytes,
+        lane_order=lane_order,
+        include_idle=False,
+        only_handshakes=True,
+    )
+    records = [record for record in list(result.get("records") or []) if isinstance(record, dict)]
+    if not records:
+        raise XdbError(
+            f"expect-stream-output failed: no AXIS handshake observed on {interface_path} "
+            f"within {' '.join(within_tokens)}"
+        )
+    return {
+        "passed": True,
+        "kind": "expect-stream-output",
+        "interface": interface_path,
+        "within": " ".join(within_tokens),
+        "step": " ".join(step_tokens),
+        "record_count": len(records),
+        "first_record": records[0],
+        "trace": result,
+    }
 
 
 def add_breakpoint(

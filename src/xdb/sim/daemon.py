@@ -25,6 +25,7 @@ from xdb.sim.protocol import (
     OP_CSR_WRITE,
     OP_DESCRIBE,
     OP_EXPECT_CHANGE,
+    OP_EXPECT_CONDITION,
     OP_EXPECT_SIGNAL,
     OP_FORCE,
     OP_GET,
@@ -430,6 +431,14 @@ class SimDaemon:
             if not within_tokens:
                 raise XdbError("missing within duration")
             return self.driver.expect_change(signal_name, within_tokens=within_tokens)
+        if op == OP_EXPECT_CONDITION:
+            expr = str(args.get("expr") or "")
+            within_tokens = [str(v) for v in list(args.get("within_tokens") or [])]
+            if not expr:
+                raise XdbError("missing Tcl expression")
+            if not within_tokens:
+                raise XdbError("missing within duration")
+            return self.driver.expect_condition(expr, within_tokens=within_tokens)
         if op == OP_BREAKPOINT_ADD:
             condition = str(args.get("condition") or "")
             if not condition:

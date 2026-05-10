@@ -701,6 +701,42 @@ proc xdb_api_expect_signal {signal expected within_args} {
   return "\"passed\":true,\"kind\":[xdb_json_string expect-signal],\"signal\":[xdb_json_string $signal],\"expected\":[xdb_json_string $expected],\"initial\":[xdb_json_string $__xdb_initial],\"value\":[xdb_json_string $__xdb_actual],\"within\":[xdb_json_string $__xdb_within],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"iterations\":$__xdb_iterations"
 }
 
+proc xdb_api_expect_condition {expr_text within_args} {
+  set __xdb_expr [xdb_normalize_expr $expr_text]
+  set __xdb_time_before [current_time]
+  set __xdb_within [join $within_args " "]
+  set __xdb_start_fs [xdb_parse_time_to_fs $__xdb_time_before]
+  set __xdb_deadline_fs [expr {$__xdb_start_fs + [xdb_duration_args_to_fs $within_args]}]
+  set __xdb_iterations 0
+  set __xdb_satisfied [expr $__xdb_expr]
+  while {!$__xdb_satisfied} {
+    set __xdb_current_fs [xdb_parse_time_to_fs [current_time]]
+    if {$__xdb_current_fs > $__xdb_deadline_fs} {
+      break
+    }
+    step
+    incr __xdb_iterations
+    set __xdb_satisfied [expr $__xdb_expr]
+    set __xdb_after_step_fs [xdb_parse_time_to_fs [current_time]]
+    if {$__xdb_satisfied && $__xdb_after_step_fs <= $__xdb_deadline_fs} {
+      break
+    }
+    if {$__xdb_after_step_fs > $__xdb_deadline_fs} {
+      break
+    }
+    if {$__xdb_iterations > 1000000} {
+      error [format "expect-condition exceeded iteration limit while waiting for %s" $__xdb_expr]
+    }
+  }
+  set __xdb_time_after [current_time]
+  set __xdb_time_after_fs [xdb_parse_time_to_fs $__xdb_time_after]
+  set __xdb_satisfied [expr $__xdb_expr]
+  if {!$__xdb_satisfied || $__xdb_time_after_fs > $__xdb_deadline_fs} {
+    error [format "expect-condition failed: condition did not become true within %s (expr=%s time_before=%s time_after=%s)" $__xdb_within $__xdb_expr $__xdb_time_before $__xdb_time_after]
+  }
+  return "\"passed\":true,\"kind\":[xdb_json_string expect-condition],\"expr\":[xdb_json_string $__xdb_expr],\"within\":[xdb_json_string $__xdb_within],\"time_before\":[xdb_json_string $__xdb_time_before],\"time_after\":[xdb_json_string $__xdb_time_after],\"iterations\":$__xdb_iterations"
+}
+
 proc xdb_api_expect_change {signal within_args} {
   set __xdb_time_before [current_time]
   set __xdb_within [join $within_args " "]

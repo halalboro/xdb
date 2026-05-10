@@ -89,6 +89,8 @@ xdb sim assert-signal /tb_top/resetn 1
 xdb sim assert-tcl '{[get_value /tb_top/resetn] eq "1"}'
 xdb sim expect-signal --within 1 us /tb_top/done 1
 xdb sim expect-change --within 100 ns /tb_top/dut/state
+xdb sim expect-condition --within 1 us '{[get_value /tb_top/done] eq "1" && [get_value /tb_top/error] eq "0"}'
+xdb sim expect-stream-output --within 1 us /tb_top/dut/axis_out
 xdb sim breakpoint add --poll-step "1 ns" '{[get_value /tb_top/done] eq "1"}'
 xdb sim breakpoint list
 xdb sim breakpoint remove 1
@@ -229,6 +231,11 @@ xdb sim close --force
   to reach an expected value within the given simulation time bound.
 - `xdb sim expect-change --within <duration> <path>` waits for a signal to
   change from its current value within the given simulation time bound.
+- `xdb sim expect-condition --within <duration> <tcl expr>` waits for a Tcl
+  expression to become true within a simulation time bound.
+- `xdb sim expect-stream-output --within <duration> <axis-path>` waits for at
+  least one AXI Stream handshake on an interface. Use `--step`,
+  `--decode-bytes`, and `--lane-order` like `xdb sim axis trace`.
 - `xdb sim breakpoint add <tcl expr>` adds a simulator breakpoint. Vivado
   `when` is used when available; otherwise `xdb` falls back to polling during
   `xdb`-controlled `run`/`step` operations. Use `--poll-step "1 ns"` to choose
