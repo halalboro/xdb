@@ -11,10 +11,15 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb import cli
+from xdb.config import set_config_file
+from xdb.errors import XdbError
 from xdb.sim.trace_profiles import get_trace_profile, list_trace_profiles
 
 
 class TraceProfileTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        set_config_file(None)
+
     def test_lists_profiles_from_explicit_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             profile_file = Path(tmp) / "profiles.json"
@@ -27,6 +32,24 @@ class TraceProfileTests(unittest.TestCase):
 
         self.assertEqual(result["count"], 1)
         self.assertEqual(result["profiles"][0]["name"], "smoke")
+
+    def test_profile_file_can_come_from_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            profile_file = Path(tmp) / "profiles.json"
+            profile_file.write_text(
+                json.dumps({"profiles": {"env-profile": {"transactions": True}}}),
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"XDB_TRACE_PROFILE_FILE": str(profile_file)}, clear=False):
+                result = get_trace_profile("env-profile")
+
+        self.assertTrue(result["config"]["transactions"])
+        self.assertEqual(result["source"], str(profile_file))
+
+    def test_profile_lookup_requires_explicit_file_or_environment(self) -> None:
+        with patch.dict("os.environ", {"XDB_TRACE_PROFILE_FILE": "", "XDB_CONFIG_FILE": ""}, clear=False):
+            with self.assertRaises(XdbError):
+                get_trace_profile("missing")
 
     def test_get_profile_returns_named_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

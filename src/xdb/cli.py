@@ -8,6 +8,7 @@ import traceback
 from pathlib import Path
 
 from xdb import __version__
+from xdb.config import set_config_file
 from xdb.backend.base import Capability
 from xdb.backend.select import select_backend
 from xdb.errors import UnsupportedOperationError, XdbError
@@ -464,6 +465,7 @@ def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
 def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     p = argparse.ArgumentParser(prog="xdb", description="Generic FPGA ILA debug toolkit")
     p.add_argument("--version", action="version", version=f"xdb {__version__}")
+    p.add_argument("--config", default=None, help="path to a project-selected xdb TOML config file")
     _add_debug_flag(p)
 
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -999,6 +1001,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
     args = p.parse_args()
     if not hasattr(args, "debug"):
         args.debug = False
+    set_config_file(args.config)
     _configure_diagnostics(bool(args.debug))
 
     try:

@@ -1,34 +1,27 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
 
+from xdb.config import config_path_value
 from xdb.errors import XdbError
-from xdb.sim.session_store import session_paths
-
-_PROFILE_FILENAMES = (".xdb-trace.json", "xdb-trace.json")
-
-
-def _profile_search_root() -> Path:
-    return session_paths(None).anchor_dir
 
 
 def find_trace_profile_file(profile_file: str | None = None) -> Path | None:
-    if profile_file:
-        path = Path(profile_file).expanduser()
-        if not path.is_absolute():
-            path = Path.cwd() / path
-        path = path.resolve()
-        if not path.is_file():
-            raise XdbError(f"trace profile file not found: {path}")
-        return path
-    root = _profile_search_root()
-    for filename in _PROFILE_FILENAMES:
-        candidate = root / filename
-        if candidate.is_file():
-            return candidate
-    return None
+    value = profile_file or os.environ.get("XDB_TRACE_PROFILE_FILE") or config_path_value(
+        "trace_profile_file"
+    )
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path = path.resolve()
+    if not path.is_file():
+        raise XdbError(f"trace profile file not found: {path}")
+    return path
 
 
 def load_trace_profiles(profile_file: str | None = None) -> dict[str, Any]:
@@ -61,6 +54,10 @@ def get_trace_profile(name: str | None, profile_file: str | None = None) -> dict
         return {"name": None, "source": loaded.get("source"), "config": {}}
     profiles = cast(dict[str, dict[str, Any]], loaded.get("profiles") or {})
     if name not in profiles:
+        if loaded.get("source") is None:
+            raise XdbError(
+                f"trace profile not found: {name!r}; pass --profile-file or set XDB_TRACE_PROFILE_FILE"
+            )
         available = ", ".join(sorted(profiles)) or "<none>"
         raise XdbError(f"trace profile not found: {name!r} (available: {available})")
     return {"name": name, "source": loaded.get("source"), "config": dict(profiles[name])}

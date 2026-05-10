@@ -159,6 +159,10 @@ xdb sim close --force
 - `xdb sim launch` resolves missing flags from these environment variables when
   present: `XDB_SIM_PACKAGE_RUNTIME`, `XDB_SIM_WORKSPACE`, `XDB_SIM_SIMSET`,
   `XDB_SIM_MODE`, `XDB_SIM_TOP`, `XDB_SIM_SESSION`.
+- `xdb --config <path>` or `XDB_CONFIG_FILE=<path>` loads a project-selected
+  TOML config file. Paths inside the config are resolved relative to the config
+  file's directory. Project inputs are not discovered under `XDB_ROOT` by
+  default.
 - `XDB_ROOT` controls project-local `xdb` outputs and defaults to
   `<repo>/.xdb`. Simulation session metadata and inspectable daemon/Vivado logs
   live under `XDB_ROOT/sessions/<session-id>/`.
@@ -243,8 +247,9 @@ xdb sim close --force
   to control sampling cadence, `--decode-bytes` to decode `tdata`/`tkeep` into
   lane-ordered bytes, `--include-idle` to keep non-handshake samples,
   `--ndjson` for one JSON object per traced record, and `--out <file>` to write
-  the trace instead of printing it. Use `--profile <name>` to load defaults
-  from `.xdb-trace.json` or `xdb-trace.json`.
+  the trace instead of printing it. Use `--profile <name>` with
+  `--profile-file <path>` or `XDB_TRACE_PROFILE_FILE` to load defaults from a
+  project-chosen trace profile file.
 - `xdb sim force <signal> <value...>` wraps `add_force`; use `--radix`,
   `--repeat-every`, and `--cancel-after` for common options.
 - `xdb sim release <signal>` releases forces created through `xdb sim force`.
@@ -271,8 +276,11 @@ xdb sim close --force
   repeated `--env KEY=VALUE`, `--timeout <seconds>`, `--expect-exit-code <n>`,
   and `--clean-env` as needed. Use `--stream` to mirror host stdout/stderr live
   to the terminal on stderr while preserving final JSON on stdout.
-- `xdb sim trace profiles` lists named trace profiles from `.xdb-trace.json`,
-  `xdb-trace.json`, or an explicit `--profile-file`. Profile fields may include
+- `xdb sim trace profiles` lists named trace profiles from an explicit
+  `--profile-file`, `XDB_TRACE_PROFILE_FILE`, or `trace_profile_file` in the
+  TOML config file. Profile files are project inputs and are not discovered
+  under `XDB_ROOT` by default; projects choose where checked-in profile files
+  live. Profile fields may include
   `transactions`, `axis`, `duration`, `step`, `decode_bytes`, `lane_order`,
   `include_idle`, `only_handshakes`, `correlate_by`, and `correlate_window`.
   CLI options extend or override profile defaults.
