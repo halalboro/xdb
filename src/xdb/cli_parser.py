@@ -232,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_sim_session_arg(s_sim_until)
     s_sim_until.add_argument(
         "--step",
-        nargs="+",
+        nargs=2,
         default=["10", "ns"],
         metavar="STEP",
         help="simulation time step between condition checks, default: 10 ns",
@@ -271,7 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_sim_session_arg(s_sim_until_signal)
     s_sim_until_signal.add_argument(
         "--step",
-        nargs="+",
+        nargs=2,
         default=["10", "ns"],
         metavar="STEP",
         help="simulation time step between value checks, default: 10 ns",
@@ -305,27 +305,27 @@ def build_parser() -> argparse.ArgumentParser:
     s_sim_expect_signal = sim_sub.add_parser("expect-signal", help="expect a signal to reach a value within a simulation time bound")
     _add_debug_flag(s_sim_expect_signal)
     add_sim_session_arg(s_sim_expect_signal)
-    s_sim_expect_signal.add_argument("--within", nargs="+", required=True)
+    s_sim_expect_signal.add_argument("--within", nargs=2, required=True)
     s_sim_expect_signal.add_argument("signal")
     s_sim_expect_signal.add_argument("value")
 
     s_sim_expect_change = sim_sub.add_parser("expect-change", help="expect a signal to change within a simulation time bound")
     _add_debug_flag(s_sim_expect_change)
     add_sim_session_arg(s_sim_expect_change)
-    s_sim_expect_change.add_argument("--within", nargs="+", required=True)
+    s_sim_expect_change.add_argument("--within", nargs=2, required=True)
     s_sim_expect_change.add_argument("signal")
 
     s_sim_expect_condition = sim_sub.add_parser("expect-condition", help="expect a Tcl expression to become true within a simulation time bound")
     _add_debug_flag(s_sim_expect_condition)
     add_sim_session_arg(s_sim_expect_condition)
-    s_sim_expect_condition.add_argument("--within", nargs="+", required=True)
+    s_sim_expect_condition.add_argument("--within", nargs=2, required=True)
     s_sim_expect_condition.add_argument("expr", nargs="+")
 
     s_sim_expect_stream_output = sim_sub.add_parser("expect-stream-output", help="expect at least one AXIS handshake within a simulation time bound")
     _add_debug_flag(s_sim_expect_stream_output)
     add_sim_session_arg(s_sim_expect_stream_output)
-    s_sim_expect_stream_output.add_argument("--within", nargs="+", required=True)
-    s_sim_expect_stream_output.add_argument("--step", nargs="+", default=["1", "ns"])
+    s_sim_expect_stream_output.add_argument("--within", nargs=2, required=True)
+    s_sim_expect_stream_output.add_argument("--step", nargs=2, default=["1", "ns"])
     s_sim_expect_stream_output.add_argument("--decode-bytes", action="store_true")
     s_sim_expect_stream_output.add_argument(
         "--lane-order",
