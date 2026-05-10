@@ -33,6 +33,11 @@ class _FakeWithTraceDriver:
         self.run_tokens: list[list[str]] = []
         self._sim_advance_hook = None
         self._coyote = None
+        self.eval_scripts: list[str] = []
+
+    def eval_tcl(self, script: str) -> dict[str, str]:
+        self.eval_scripts.append(script)
+        return {"result": "1"}
 
     def time(self) -> dict[str, str]:
         ns_value = self.time_seconds / Decimal("1e-9")
@@ -74,6 +79,13 @@ class _FakeWithTraceDriver:
 
 
 class WithTraceTests(unittest.TestCase):
+    def test_with_trace_condition_eval_uses_shared_tcl_helper(self) -> None:
+        driver = _FakeWithTraceDriver()
+        runner = WithTraceRunner(driver, lambda _op, _args: {})
+
+        self.assertTrue(runner._eval_tcl_condition("{[get_value /done] eq 1}"))
+        self.assertEqual(driver.eval_scripts, ['xdb_eval_expr "{\\[get_value /done\\] eq 1}"'])
+
     def test_with_trace_wraps_xdb_sim_command_into_daemon_request(self) -> None:
         with patch(
             "xdb.sim.client._send_request",

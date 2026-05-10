@@ -382,7 +382,7 @@ class WithTraceRunner:
         }
 
     def _eval_tcl_condition(self, expr: str) -> bool:
-        script = f"set __xdb_expr [xdb_normalize_expr {_tcl_string(expr)}]; expr $__xdb_expr"
+        script = f"xdb_eval_expr {_tcl_string(expr)}"
         result = self.driver.eval_tcl(script)
         value = str(result.get("result") or "").strip().lower()
         return value not in {"", "0", "false", "no"}

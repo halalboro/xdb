@@ -286,6 +286,11 @@ proc xdb_normalize_expr {expr_text} {
   return [string trim $normalized]
 }
 
+proc xdb_eval_expr {expr_text} {
+  set __xdb_expr [xdb_normalize_expr $expr_text]
+  return [uplevel #0 [list expr $__xdb_expr]]
+}
+
 proc xdb_signal_eq_expr {signal expected} {
   return [format {[string equal [get_value %s] %s]} [list $signal] [list $expected]]
 }
@@ -370,7 +375,7 @@ proc xdb_api_wait_until {expr_text step_args timeout_seconds max_iterations} {
     set __xdb_deadline_ms [expr {[clock milliseconds] + int(1000.0 * $timeout_seconds)}]
   }
   while {1} {
-    if {[uplevel #0 [list expr $__xdb_expr]]} {
+    if {[xdb_eval_expr $__xdb_expr]} {
       break
     }
     if {$max_iterations ne "" && $__xdb_iterations >= $max_iterations} {
@@ -384,7 +389,7 @@ proc xdb_api_wait_until {expr_text step_args timeout_seconds max_iterations} {
     incr __xdb_iterations
     set __xdb_current_time [current_time]
     if {$__xdb_current_time eq $__xdb_prev_time} {
-      if {[uplevel #0 [list expr $__xdb_expr]]} {
+      if {[xdb_eval_expr $__xdb_expr]} {
         break
       }
       error "condition not met and simulation did not advance while waiting"
@@ -531,7 +536,7 @@ proc xdb_api_assert_signal {signal expected} {
 proc xdb_api_assert_tcl {expr_text} {
   set __xdb_expr [xdb_normalize_expr $expr_text]
   set __xdb_time [current_time]
-  if {![uplevel #0 [list expr $__xdb_expr]]} {
+  if {![xdb_eval_expr $__xdb_expr]} {
     error [format "assert-tcl failed at %s: %s" $__xdb_time $__xdb_expr]
   }
   return "\"passed\":true,\"kind\":[xdb_json_string assert-tcl],\"expr\":[xdb_json_string $__xdb_expr],\"time\":[xdb_json_string $__xdb_time]"
@@ -604,7 +609,7 @@ proc xdb_poll_breakpoints {} {
       continue
     }
     set __xdb_condition [dict get $__xdb_bp condition]
-    if {[uplevel #0 [list expr $__xdb_condition]]} {
+    if {[xdb_eval_expr $__xdb_condition]} {
       return $__xdb_bp
     }
   }
@@ -708,7 +713,7 @@ proc xdb_api_expect_condition {expr_text within_args} {
   set __xdb_start_fs [xdb_parse_time_to_fs $__xdb_time_before]
   set __xdb_deadline_fs [expr {$__xdb_start_fs + [xdb_duration_args_to_fs $within_args]}]
   set __xdb_iterations 0
-  set __xdb_satisfied [expr $__xdb_expr]
+  set __xdb_satisfied [xdb_eval_expr $__xdb_expr]
   while {!$__xdb_satisfied} {
     set __xdb_current_fs [xdb_parse_time_to_fs [current_time]]
     if {$__xdb_current_fs > $__xdb_deadline_fs} {
@@ -716,7 +721,7 @@ proc xdb_api_expect_condition {expr_text within_args} {
     }
     step
     incr __xdb_iterations
-    set __xdb_satisfied [expr $__xdb_expr]
+    set __xdb_satisfied [xdb_eval_expr $__xdb_expr]
     set __xdb_after_step_fs [xdb_parse_time_to_fs [current_time]]
     if {$__xdb_satisfied && $__xdb_after_step_fs <= $__xdb_deadline_fs} {
       break
@@ -730,7 +735,7 @@ proc xdb_api_expect_condition {expr_text within_args} {
   }
   set __xdb_time_after [current_time]
   set __xdb_time_after_fs [xdb_parse_time_to_fs $__xdb_time_after]
-  set __xdb_satisfied [expr $__xdb_expr]
+  set __xdb_satisfied [xdb_eval_expr $__xdb_expr]
   if {!$__xdb_satisfied || $__xdb_time_after_fs > $__xdb_deadline_fs} {
     error [format "expect-condition failed: condition did not become true within %s (expr=%s time_before=%s time_after=%s)" $__xdb_within $__xdb_expr $__xdb_time_before $__xdb_time_after]
   }
