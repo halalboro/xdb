@@ -84,6 +84,13 @@ from xdb.sim.coyote import parse_hex_bytes
 from xdb.sim.daemon import run_daemon
 from xdb.sim.mem_tools import diff_memory_files, dump_memory_session
 from xdb.sim.trace_profiles import get_trace_profile, list_trace_profiles
+from xdb.reports.utilization import (
+    discover_utilization_report,
+    format_utilization_comparison,
+    format_utilization_csv,
+    format_utilization_table,
+    parse_utilization_report,
+)
 
 
 def _resolve_part_hint(cli_value: str | None) -> str | None:
@@ -333,6 +340,34 @@ def _configure_diagnostics(debug: bool) -> None:
 
 def _print_error(message: str) -> None:
     print(f"error: {message}", file=sys.stderr)
+
+
+def _run_reports_utilization(args: argparse.Namespace) -> None:
+    names = list(args.name or [])
+    paths = list(args.paths or [])
+    if names and len(names) != len(paths):
+        raise XdbError("--name must be passed once per input path")
+    parsed_reports = [
+        parse_utilization_report(discover_utilization_report(path, report=args.report))
+        for path in paths
+    ]
+    if args.json:
+        if len(parsed_reports) == 1:
+            _emit_json(parsed_reports[0])
+        else:
+            _emit_json({"reports": parsed_reports})
+    elif args.csv:
+        _emit_text(format_utilization_csv(parsed_reports, names or None, args.resource))
+    elif len(parsed_reports) == 1:
+        _emit_text(
+            format_utilization_table(
+                parsed_reports[0],
+                args.resource,
+                all_rows=bool(args.all),
+            )
+        )
+    else:
+        _emit_text(format_utilization_comparison(parsed_reports, names or None, args.resource))
 
 
 def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
@@ -781,6 +816,17 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 _print(coyote_status_session(args.session))
             else:
                 p.error("unknown sim command")
+            return
+
+        if args.cmd == "reports":
+            if args.reports_cmd in {"utilization", "util"}:
+                _run_reports_utilization(args)
+            else:
+                p.error("unknown reports command")
+            return
+
+        if args.cmd == "util":
+            _run_reports_utilization(args)
             return
 
         backend = select_backend()

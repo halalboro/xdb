@@ -62,6 +62,35 @@ def build_parser() -> argparse.ArgumentParser:
     s_capture.add_argument("--samples", type=int, default=2048)
     s_capture.add_argument("--timeout", type=int, default=120)
 
+    def add_reports_utilization_args(sp: argparse.ArgumentParser) -> None:
+        _add_debug_flag(sp)
+        sp.add_argument("paths", nargs="+", help="report file or build/package output directory")
+        sp.add_argument("--report", default=None, help="report alias or relative path, e.g. shell or user")
+        sp.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+        sp.add_argument("--csv", action="store_true", help="emit CSV rows")
+        sp.add_argument("--all", action="store_true", help="include every parsed utilization row")
+        sp.add_argument(
+            "--resource",
+            action="append",
+            default=None,
+            help="resource key to include; may be repeated",
+        )
+        sp.add_argument(
+            "--name",
+            action="append",
+            default=None,
+            help="row label for comparison output; may be repeated",
+        )
+
+    s_reports = sub.add_parser("reports", help="inspect FPGA build reports")
+    _add_debug_flag(s_reports)
+    reports_sub = s_reports.add_subparsers(dest="reports_cmd", required=True)
+    s_reports_utilization = reports_sub.add_parser("utilization", aliases=["util"])
+    add_reports_utilization_args(s_reports_utilization)
+
+    s_util = sub.add_parser("util", help="summarize Vivado utilization reports")
+    add_reports_utilization_args(s_util)
+
     s_instruments = sub.add_parser("instruments")
     instruments_sub = s_instruments.add_subparsers(dest="instruments_cmd", required=True)
     s_instruments_list = instruments_sub.add_parser("list")
