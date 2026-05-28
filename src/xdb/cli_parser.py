@@ -25,7 +25,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", default=None, help="path to a project-selected xdb TOML config file")
     _add_debug_flag(p)
 
-    sub = p.add_subparsers(dest="cmd", required=True)
+    visible_commands = [
+        "targets",
+        "program",
+        "ilas",
+        "capture",
+        "reports",
+        "util",
+        "timing",
+        "instruments",
+        "sim",
+    ]
+    sub = p.add_subparsers(
+        dest="cmd",
+        required=True,
+        metavar="{" + ",".join(visible_commands) + "}",
+    )
 
     s_targets = sub.add_parser("targets")
     _add_debug_flag(s_targets)
@@ -673,5 +688,12 @@ def build_parser() -> argparse.ArgumentParser:
     s_simd.add_argument("--compile-script", default="")
     s_simd.add_argument("--elaborate-script", default="")
     s_simd.add_argument("--simulate-script", default="")
+
+    # argparse.SUPPRESS hides the subparser's detail row in some Python versions
+    # but still leaks a literal "==SUPPRESS==" pseudo-action in others. Keep the
+    # private command parseable while removing it from the user-facing help table.
+    sub._choices_actions = [  # noqa: SLF001
+        action for action in sub._choices_actions if action.dest != "_simd"  # noqa: SLF001
+    ]
 
     return p
