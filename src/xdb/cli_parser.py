@@ -99,8 +99,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     s_reports = sub.add_parser("reports", help="inspect FPGA build reports")
     _add_debug_flag(s_reports)
-    reports_sub = s_reports.add_subparsers(dest="reports_cmd", required=True)
-    s_reports_utilization = reports_sub.add_parser("utilization", aliases=["util"])
+    reports_sub = s_reports.add_subparsers(
+        dest="reports_cmd",
+        required=True,
+        metavar="{utilization}",
+    )
+    s_reports_utilization = reports_sub.add_parser(
+        "utilization",
+        aliases=["util"],
+        help="summarize Vivado utilization reports",
+    )
     add_reports_utilization_args(s_reports_utilization)
 
     s_util = sub.add_parser("util", help="summarize Vivado utilization reports")

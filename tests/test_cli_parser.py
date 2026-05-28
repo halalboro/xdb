@@ -34,6 +34,18 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.cmd, "_simd")
         self.assertEqual(args.anchor_dir, "/tmp/xdb")
 
+    def test_reports_util_alias_is_parseable_but_hidden_from_help_usage(self) -> None:
+        parser = build_parser()
+        reports = parser.parse_args(["reports", "util", "build-output"])
+        canonical = parser.parse_args(["reports", "utilization", "build-output"])
+        reports_help = parser._subparsers._group_actions[0].choices["reports"].format_help()  # noqa: SLF001
+
+        self.assertEqual(reports.cmd, "reports")
+        self.assertEqual(reports.reports_cmd, "util")
+        self.assertEqual(canonical.reports_cmd, "utilization")
+        self.assertIn("{utilization}", reports_help)
+        self.assertNotIn("{utilization,util}", reports_help)
+
 
 if __name__ == "__main__":
     unittest.main()
