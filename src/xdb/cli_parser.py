@@ -80,7 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
     def add_reports_utilization_args(sp: argparse.ArgumentParser) -> None:
         _add_debug_flag(sp)
         sp.add_argument("paths", nargs="+", help="report file or build/package output directory")
-        sp.add_argument("--report", default=None, help="report alias or relative path, e.g. shell or user")
+        sp.add_argument(
+            "--report",
+            default=None,
+            help="when <path> is a directory, select report alias or relative report path",
+        )
         sp.add_argument("--json", action="store_true", help="emit machine-readable JSON")
         sp.add_argument("--csv", action="store_true", help="emit CSV rows")
         sp.add_argument("--all", action="store_true", help="include every parsed utilization row")
@@ -98,12 +102,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
 
     reports_utilization_epilog = """\
-Report selection:
-  --report shell    routed top-level Coyote design utilization
-                    (reports/shell_utilization.rpt)
-  --report user     synthesized vFPGA/user design utilization
-                    (reports/config_0/user_synthed_c0_0.rpt)
-  --report <path>   explicit report path relative to the build/package output
+Report selection when each positional path is a build/package directory:
+  --report shell            routed top-level Coyote design utilization
+                            (reports/shell_utilization.rpt)
+  --report user             synthesized vFPGA/user design utilization
+                            (reports/config_0/user_synthed_c0_0.rpt)
+  --report <relative-path>  same report path under each build/package directory
+
+If the positional path is already a report file, omit --report.
 
 Examples:
   xdb reports utilization result --report shell

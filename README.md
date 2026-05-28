@@ -160,13 +160,18 @@ xdb reports utilization result --report shell
 # synthesized vFPGA/user design utilization
 xdb reports utilization result --report user
 
-# explicit report file or relative path also works
+# explicit report file also works
 xdb reports utilization result/reports/shell_utilization.rpt
+
+# for build/package directories, --report can also select the same relative
+# report path under each directory
 xdb reports utilization result --report reports/config_0/user_synthed_c0_0.rpt
 ```
 
 `--report shell` resolves to `reports/shell_utilization.rpt`. `--report user`
-resolves to `reports/config_0/user_synthed_c0_0.rpt`.
+resolves to `reports/config_0/user_synthed_c0_0.rpt`. Use `--report` only when
+the positional path is a build/package directory; if the positional path is
+already a report file, omit `--report`.
 
 ## Notes
 
