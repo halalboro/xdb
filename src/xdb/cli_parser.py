@@ -91,6 +91,54 @@ def build_parser() -> argparse.ArgumentParser:
     s_util = sub.add_parser("util", help="summarize Vivado utilization reports")
     add_reports_utilization_args(s_util)
 
+    def add_timing_common_args(sp: argparse.ArgumentParser) -> None:
+        _add_debug_flag(sp)
+        sp.add_argument("path", nargs="?", help="build/package output directory or routed DCP")
+        sp.add_argument("--dcp", default=None, help="routed DCP checkpoint")
+        sp.add_argument("--reports", default=None, help="Vivado reports directory")
+        sp.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+        sp.add_argument("--timeout", type=int, default=1800, help="Vivado timeout in seconds")
+
+    s_timing = sub.add_parser("timing", help="inspect routed FPGA timing reports/checkpoints")
+    _add_debug_flag(s_timing)
+    timing_sub = s_timing.add_subparsers(dest="timing_cmd", required=True)
+
+    s_timing_summary = timing_sub.add_parser("summary")
+    add_timing_common_args(s_timing_summary)
+    s_timing_summary.add_argument("--max-paths", type=int, default=10)
+
+    s_timing_paths = timing_sub.add_parser("paths")
+    add_timing_common_args(s_timing_paths)
+    s_timing_paths.add_argument("--max-paths", type=int, default=20)
+    s_timing_paths.add_argument("--delay-type", choices=["max", "min"], default="max")
+
+    s_timing_clocks = timing_sub.add_parser("clocks")
+    add_timing_common_args(s_timing_clocks)
+
+    s_timing_drc = timing_sub.add_parser("drc")
+    add_timing_common_args(s_timing_drc)
+
+    s_timing_net = timing_sub.add_parser("net")
+    add_timing_common_args(s_timing_net)
+    s_timing_net.add_argument("--net", required=True, help="hierarchical net name or pattern")
+    s_timing_net.add_argument("--log", default=None, help="Vivado log for related warning lookup")
+
+    s_timing_triage = timing_sub.add_parser("triage")
+    add_timing_common_args(s_timing_triage)
+    s_timing_triage.add_argument("--log", default=None, help="Vivado log for critical warning extraction")
+    s_timing_triage.add_argument("--max-paths", type=int, default=20)
+    s_timing_triage.add_argument("--hierarchy-depth", type=int, default=4)
+
+    s_timing_compare = timing_sub.add_parser("compare")
+    _add_debug_flag(s_timing_compare)
+    s_timing_compare.add_argument("--old", required=True, help="known-good build/report directory")
+    s_timing_compare.add_argument("--new", required=True, help="new/bad build/report directory")
+    s_timing_compare.add_argument("--old-name", default="old")
+    s_timing_compare.add_argument("--new-name", default="new")
+    s_timing_compare.add_argument("--hierarchy-depth", type=int, default=4)
+    s_timing_compare.add_argument("--timeout", type=int, default=1800)
+    s_timing_compare.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+
     s_instruments = sub.add_parser("instruments")
     instruments_sub = s_instruments.add_subparsers(dest="instruments_cmd", required=True)
     s_instruments_list = instruments_sub.add_parser("list")

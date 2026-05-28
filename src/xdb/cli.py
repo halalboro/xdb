@@ -91,6 +91,22 @@ from xdb.reports.utilization import (
     format_utilization_table,
     parse_utilization_report,
 )
+from xdb.timing.analysis import (
+    format_timing_clocks,
+    format_timing_compare,
+    format_timing_drc,
+    format_timing_net,
+    format_timing_paths,
+    format_timing_summary,
+    format_timing_triage,
+    timing_clocks,
+    timing_compare,
+    timing_drc,
+    timing_net,
+    timing_paths,
+    timing_summary,
+    timing_triage,
+)
 
 
 def _resolve_part_hint(cli_value: str | None) -> str | None:
@@ -368,6 +384,67 @@ def _run_reports_utilization(args: argparse.Namespace) -> None:
         )
     else:
         _emit_text(format_utilization_comparison(parsed_reports, names or None, args.resource))
+
+
+def _run_timing(args: argparse.Namespace) -> None:
+    cmd = args.timing_cmd
+    if cmd == "summary":
+        data = timing_summary(
+            args.path,
+            dcp=args.dcp,
+            reports=args.reports,
+            max_paths=args.max_paths,
+            timeout=args.timeout,
+        )
+        _emit_json(data) if args.json else _emit_text(format_timing_summary(data))
+    elif cmd == "paths":
+        data = timing_paths(
+            args.path,
+            dcp=args.dcp,
+            max_paths=args.max_paths,
+            delay_type=args.delay_type,
+            timeout=args.timeout,
+        )
+        _emit_json(data) if args.json else _emit_text(format_timing_paths(data))
+    elif cmd == "clocks":
+        data = timing_clocks(args.path, dcp=args.dcp, reports=args.reports, timeout=args.timeout)
+        _emit_json(data) if args.json else _emit_text(format_timing_clocks(data))
+    elif cmd == "drc":
+        data = timing_drc(args.path, dcp=args.dcp, reports=args.reports, timeout=args.timeout)
+        _emit_json(data) if args.json else _emit_text(format_timing_drc(data))
+    elif cmd == "net":
+        data = timing_net(
+            args.path,
+            dcp=args.dcp,
+            net=args.net,
+            log=args.log,
+            reports=args.reports,
+            timeout=args.timeout,
+        )
+        _emit_json(data) if args.json else _emit_text(format_timing_net(data))
+    elif cmd == "triage":
+        data = timing_triage(
+            args.path,
+            dcp=args.dcp,
+            reports=args.reports,
+            log=args.log,
+            max_paths=args.max_paths,
+            hierarchy_depth=args.hierarchy_depth,
+            timeout=args.timeout,
+        )
+        _emit_json(data) if args.json else _emit_text(format_timing_triage(data))
+    elif cmd == "compare":
+        data = timing_compare(
+            args.old,
+            args.new,
+            old_name=args.old_name,
+            new_name=args.new_name,
+            hierarchy_depth=args.hierarchy_depth,
+            timeout=args.timeout,
+        )
+        _emit_json(data) if args.json else _emit_text(format_timing_compare(data))
+    else:
+        raise XdbError(f"unknown timing command: {cmd}")
 
 
 def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
@@ -827,6 +904,10 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
 
         if args.cmd == "util":
             _run_reports_utilization(args)
+            return
+
+        if args.cmd == "timing":
+            _run_timing(args)
             return
 
         backend = select_backend()
