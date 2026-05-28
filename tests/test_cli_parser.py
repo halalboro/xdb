@@ -46,6 +46,17 @@ class CliParserTests(unittest.TestCase):
         self.assertIn("{utilization}", reports_help)
         self.assertNotIn("{utilization,util}", reports_help)
 
+    def test_reports_utilization_help_documents_report_aliases(self) -> None:
+        parser = build_parser()
+        reports_parser = parser._subparsers._group_actions[0].choices["reports"]  # noqa: SLF001
+        utilization_parser = reports_parser._subparsers._group_actions[0].choices["utilization"]  # noqa: SLF001
+        help_text = utilization_parser.format_help()
+
+        self.assertIn("--report shell", help_text)
+        self.assertIn("reports/shell_utilization.rpt", help_text)
+        self.assertIn("--report user", help_text)
+        self.assertIn("reports/config_0/user_synthed_c0_0.rpt", help_text)
+
 
 if __name__ == "__main__":
     unittest.main()

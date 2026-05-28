@@ -97,6 +97,20 @@ def build_parser() -> argparse.ArgumentParser:
             help="row label for comparison output; may be repeated",
         )
 
+    reports_utilization_epilog = """\
+Report selection:
+  --report shell    routed top-level Coyote design utilization
+                    (reports/shell_utilization.rpt)
+  --report user     synthesized vFPGA/user design utilization
+                    (reports/config_0/user_synthed_c0_0.rpt)
+  --report <path>   explicit report path relative to the build/package output
+
+Examples:
+  xdb reports utilization result --report shell
+  xdb reports utilization result --report user
+  xdb reports utilization result/reports/shell_utilization.rpt
+"""
+
     s_reports = sub.add_parser("reports", help="inspect FPGA build reports")
     _add_debug_flag(s_reports)
     reports_sub = s_reports.add_subparsers(
@@ -108,10 +122,17 @@ def build_parser() -> argparse.ArgumentParser:
         "utilization",
         aliases=["util"],
         help="summarize Vivado utilization reports",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=reports_utilization_epilog,
     )
     add_reports_utilization_args(s_reports_utilization)
 
-    s_util = sub.add_parser("util", help="summarize Vivado utilization reports")
+    s_util = sub.add_parser(
+        "util",
+        help="summarize Vivado utilization reports",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=reports_utilization_epilog,
+    )
     add_reports_utilization_args(s_util)
 
     def add_timing_common_args(sp: argparse.ArgumentParser) -> None:

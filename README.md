@@ -151,6 +151,23 @@ xdb sim close
 xdb sim close --force
 ```
 
+## Build reports
+
+```bash
+# routed top-level Coyote design utilization
+xdb reports utilization result --report shell
+
+# synthesized vFPGA/user design utilization
+xdb reports utilization result --report user
+
+# explicit report file or relative path also works
+xdb reports utilization result/reports/shell_utilization.rpt
+xdb reports utilization result --report reports/config_0/user_synthed_c0_0.rpt
+```
+
+`--report shell` resolves to `reports/shell_utilization.rpt`. `--report user`
+resolves to `reports/config_0/user_synthed_c0_0.rpt`.
+
 ## Notes
 
 - `FPGA_PART_HINT` is used by default to select the hardware target.
