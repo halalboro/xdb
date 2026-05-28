@@ -17,8 +17,11 @@ from xdb.reports.utilization import (
     discover_utilization_report,
     format_utilization_comparison,
     format_utilization_csv,
+    format_utilization_delta_comparison,
+    format_utilization_delta_csv,
     format_utilization_table,
     parse_utilization_report,
+    utilization_compare_data,
 )
 
 
@@ -137,6 +140,31 @@ class UtilizationReportTests(unittest.TestCase):
         self.assertIn("116420 4.52%", text)
         self.assertIn("120000 4.52%", text)
 
+    def test_delta_comparison_output_includes_absolute_and_relative_deltas(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = parse_utilization_report(self._write_report(root / "d13"))
+            new = parse_utilization_report(self._write_report(root / "d17", REPORT_TEXT.replace("116420", "232840", 1)))
+            data = utilization_compare_data(old, new, old_name="d13", new_name="d17", resources=["clb_luts"])
+            text = format_utilization_delta_comparison(data)
+
+        self.assertIn("baseline: d13", text)
+        self.assertIn("new:      d17", text)
+        self.assertIn("+116420", text)
+        self.assertIn("+100.00%", text)
+        self.assertIn("Δ Util", text)
+
+    def test_delta_comparison_csv_output_has_expected_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = parse_utilization_report(self._write_report(root / "d13"))
+            new = parse_utilization_report(self._write_report(root / "d17", REPORT_TEXT.replace("116420", "232840", 1)))
+            data = utilization_compare_data(old, new, resources=["clb_luts"])
+            text = format_utilization_delta_csv(data)
+
+        self.assertEqual(text.splitlines()[0], "resource,old_used,new_used,delta_used,delta_used_percent,old_util_percent,new_util_percent,delta_util_percent_points")
+        self.assertIn("clb_luts,116420,232840,116420,100.0,4.52,4.52,0.0", text)
+
     def test_csv_output_has_expected_columns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             parsed = parse_utilization_report(self._write_report(Path(tmp)))
@@ -160,6 +188,57 @@ class UtilizationReportTests(unittest.TestCase):
             result = json.loads(stdout.getvalue())
 
         self.assertEqual(result["resources"]["registers"]["used"], 233693)
+
+    def test_cli_reports_compare_prints_deltas(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = self._write_report(root / "d13")
+            new = self._write_report(root / "d17", REPORT_TEXT.replace("116420", "232840", 1))
+            stdout = io.StringIO()
+            with patch.object(
+                sys,
+                "argv",
+                ["xdb", "reports", "compare", "--old-name", "d13", "--new-name", "d17", str(old), str(new)],
+            ):
+                with patch("sys.stdout", stdout):
+                    main()
+
+        self.assertIn("baseline: d13", stdout.getvalue())
+        self.assertIn("+116420", stdout.getvalue())
+
+    def test_cli_reports_compare_supports_multiple_new_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = self._write_report(root / "d13")
+            new_a = self._write_report(root / "d15", REPORT_TEXT.replace("116420", "120000", 1))
+            new_b = self._write_report(root / "d17", REPORT_TEXT.replace("116420", "232840", 1))
+            stdout = io.StringIO()
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "xdb",
+                    "reports",
+                    "compare",
+                    "--old-name",
+                    "d13",
+                    "--new-name",
+                    "d15",
+                    "--new-name",
+                    "d17",
+                    str(old),
+                    str(new_a),
+                    str(new_b),
+                ],
+            ):
+                with patch("sys.stdout", stdout):
+                    main()
+
+        text = stdout.getvalue()
+        self.assertIn("new:      d15", text)
+        self.assertIn("new:      d17", text)
+        self.assertIn("+3580", text)
+        self.assertIn("+116420", text)
 
     def test_cli_top_level_util_supports_comparison_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

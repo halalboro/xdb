@@ -83,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument(
             "--report",
             default=None,
-            help="when <path> is a directory, select report alias or relative report path",
+            help=reports_report_selection_help,
         )
         sp.add_argument("--json", action="store_true", help="emit machine-readable JSON")
         sp.add_argument("--csv", action="store_true", help="emit CSV rows")
@@ -98,9 +98,10 @@ def build_parser() -> argparse.ArgumentParser:
             "--name",
             action="append",
             default=None,
-            help="row label for comparison output; may be repeated",
+            help="build label for compact multi-report output; may be repeated",
         )
 
+    reports_report_selection_help = "when <path> is a directory, select report alias or relative report path"
     reports_utilization_epilog = """\
 Report selection when each positional path is a build/package directory:
   --report shell            routed top-level Coyote design utilization
@@ -122,7 +123,7 @@ Examples:
     reports_sub = s_reports.add_subparsers(
         dest="reports_cmd",
         required=True,
-        metavar="{utilization}",
+        metavar="{utilization,compare}",
     )
     s_reports_utilization = reports_sub.add_parser(
         "utilization",
@@ -132,6 +133,36 @@ Examples:
         epilog=reports_utilization_epilog,
     )
     add_reports_utilization_args(s_reports_utilization)
+
+    reports_compare_epilog = """\
+Compares one baseline utilization report against one or more new reports. Paths
+may be report files or build/package directories. Use --report to select the
+same report under every directory.
+
+Examples:
+  xdb reports compare results/fpga-builds/helios-d13-v80 results/fpga-builds/helios-d17-v80
+  xdb reports compare d13 d15 d17 --report user --old-name d13 --new-name d15 --new-name d17
+"""
+    s_reports_compare = reports_sub.add_parser(
+        "compare",
+        help="compare two Vivado utilization reports",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=reports_compare_epilog,
+    )
+    _add_debug_flag(s_reports_compare)
+    s_reports_compare.add_argument("old", help="baseline report file or build/package output directory")
+    s_reports_compare.add_argument("new", nargs="+", help="new report file or build/package output directory")
+    s_reports_compare.add_argument("--report", default=None, help=reports_report_selection_help)
+    s_reports_compare.add_argument("--old-name", default=None, help="baseline label")
+    s_reports_compare.add_argument("--new-name", action="append", default=None, help="new-build label; may be repeated")
+    s_reports_compare.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    s_reports_compare.add_argument("--csv", action="store_true", help="emit CSV rows")
+    s_reports_compare.add_argument(
+        "--resource",
+        action="append",
+        default=None,
+        help="resource key to include; may be repeated",
+    )
 
     s_util = sub.add_parser(
         "util",

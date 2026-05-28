@@ -166,7 +166,16 @@ xdb reports utilization result/reports/shell_utilization.rpt
 # for build/package directories, --report can also select the same relative
 # report path under each directory
 xdb reports utilization result --report reports/config_0/user_synthed_c0_0.rpt
+
+# compare builds with deltas; first path is the baseline
+xdb reports compare results/fpga-builds/helios-d13-v80 results/fpga-builds/helios-d17-v80
+xdb reports compare d13 d15 d17 --report user --old-name d13 --new-name d15 --new-name d17
 ```
+
+`xdb reports utilization` prints compact one-or-many report summaries. `xdb
+reports compare` compares one baseline against one or more new reports and
+includes absolute deltas, relative deltas, and utilization percentage-point
+deltas.
 
 `--report shell` resolves to `reports/shell_utilization.rpt`. `--report user`
 resolves to `reports/config_0/user_synthed_c0_0.rpt`. Use `--report` only when

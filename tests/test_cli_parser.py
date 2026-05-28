@@ -43,8 +43,30 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(reports.cmd, "reports")
         self.assertEqual(reports.reports_cmd, "util")
         self.assertEqual(canonical.reports_cmd, "utilization")
-        self.assertIn("{utilization}", reports_help)
-        self.assertNotIn("{utilization,util}", reports_help)
+        self.assertIn("{utilization,compare}", reports_help)
+        self.assertNotIn("{utilization,util", reports_help)
+
+    def test_reports_compare_command_is_parseable(self) -> None:
+        args = build_parser().parse_args([
+            "reports",
+            "compare",
+            "old-build",
+            "new-build-a",
+            "new-build-b",
+            "--report",
+            "shell",
+            "--new-name",
+            "a",
+            "--new-name",
+            "b",
+        ])
+
+        self.assertEqual(args.cmd, "reports")
+        self.assertEqual(args.reports_cmd, "compare")
+        self.assertEqual(args.old, "old-build")
+        self.assertEqual(args.new, ["new-build-a", "new-build-b"])
+        self.assertEqual(args.report, "shell")
+        self.assertEqual(args.new_name, ["a", "b"])
 
     def test_reports_utilization_help_documents_report_aliases(self) -> None:
         parser = build_parser()

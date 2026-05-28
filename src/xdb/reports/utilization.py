@@ -409,3 +409,164 @@ def format_utilization_csv(
                 ]
             )
     return out.getvalue().rstrip("\r\n")
+
+
+def _numeric_delta(old: object, new: object) -> int | float | None:
+    if not isinstance(old, (int, float)) or not isinstance(new, (int, float)):
+        return None
+    delta = new - old
+    if isinstance(old, int) and isinstance(new, int):
+        return int(delta)
+    return float(delta)
+
+
+def _relative_delta_percent(old: object, new: object) -> float | None:
+    if not isinstance(old, (int, float)) or not isinstance(new, (int, float)):
+        return None
+    if old == 0:
+        return None
+    return float((new - old) / old * 100.0)
+
+
+def _format_signed_number(value: object, *, suffix: str = "") -> str:
+    if value is None:
+        return "-"
+    if not isinstance(value, (int, float)):
+        return str(value)
+    sign = "+" if value > 0 else ""
+    if isinstance(value, float):
+        return f"{sign}{value:.2f}{suffix}"
+    return f"{sign}{value}{suffix}"
+
+
+def utilization_compare_data(
+    old: dict[str, Any],
+    new: dict[str, Any],
+    *,
+    old_name: str = "old",
+    new_name: str = "new",
+    resources: list[str] | None = None,
+) -> dict[str, Any]:
+    keys = resources or DEFAULT_SUMMARY_RESOURCES
+    old_resources = _resource_map(old)
+    new_resources = _resource_map(new)
+    rows: list[dict[str, Any]] = []
+    for key in keys:
+        old_resource = old_resources.get(key)
+        new_resource = new_resources.get(key)
+        if not isinstance(old_resource, dict) and not isinstance(new_resource, dict):
+            continue
+        label = RESOURCE_LABELS.get(key, key)
+        if isinstance(new_resource, dict):
+            label = str(new_resource.get("label") or label)
+        elif isinstance(old_resource, dict):
+            label = str(old_resource.get("label") or label)
+
+        old_used = old_resource.get("used") if isinstance(old_resource, dict) else None
+        new_used = new_resource.get("used") if isinstance(new_resource, dict) else None
+        old_util = old_resource.get("util_percent") if isinstance(old_resource, dict) else None
+        new_util = new_resource.get("util_percent") if isinstance(new_resource, dict) else None
+        rows.append(
+            {
+                "resource": key,
+                "label": label,
+                "old_used": old_used,
+                "new_used": new_used,
+                "delta_used": _numeric_delta(old_used, new_used),
+                "delta_used_percent": _relative_delta_percent(old_used, new_used),
+                "old_util_percent": old_util,
+                "new_util_percent": new_util,
+                "delta_util_percent_points": _numeric_delta(old_util, new_util),
+            }
+        )
+    return {
+        "old": {"name": old_name, "report": old.get("report") or old.get("path")},
+        "new": {"name": new_name, "report": new.get("report") or new.get("path")},
+        "rows": rows,
+    }
+
+
+def format_utilization_delta_comparison(data: dict[str, Any]) -> str:
+    raw_rows = data.get("rows")
+    rows: list[Any] = raw_rows if isinstance(raw_rows, list) else []
+    old_info_raw = data.get("old")
+    new_info_raw = data.get("new")
+    old_info: dict[str, Any] = old_info_raw if isinstance(old_info_raw, dict) else {}
+    new_info: dict[str, Any] = new_info_raw if isinstance(new_info_raw, dict) else {}
+    old_name = str(old_info.get("name") or "old")
+    new_name = str(new_info.get("name") or "new")
+
+    table_rows: list[list[str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        table_rows.append(
+            [
+                str(row.get("label") or row.get("resource") or "?"),
+                _format_value(row.get("old_used")),
+                _format_value(row.get("new_used")),
+                _format_signed_number(row.get("delta_used")),
+                _format_signed_number(row.get("delta_used_percent"), suffix="%"),
+                f"{_format_value(row.get('old_util_percent'))}%",
+                f"{_format_value(row.get('new_util_percent'))}%",
+                _format_signed_number(row.get("delta_util_percent_points"), suffix=" pp"),
+            ]
+        )
+
+    lines = [
+        f"baseline: {old_name}",
+        f"new:      {new_name}",
+        "",
+    ]
+    if table_rows:
+        lines.append(
+            _format_table(
+                [
+                    "Resource",
+                    f"{old_name} Used",
+                    f"{new_name} Used",
+                    "Δ Used",
+                    "Δ Used%",
+                    f"{old_name} Util",
+                    f"{new_name} Util",
+                    "Δ Util",
+                ],
+                table_rows,
+            )
+        )
+    else:
+        lines.append("no requested resources found")
+    return "\n".join(lines)
+
+
+def format_utilization_delta_csv(data: dict[str, Any]) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(
+        [
+            "resource",
+            "old_used",
+            "new_used",
+            "delta_used",
+            "delta_used_percent",
+            "old_util_percent",
+            "new_util_percent",
+            "delta_util_percent_points",
+        ]
+    )
+    for row in data.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        writer.writerow(
+            [
+                row.get("resource"),
+                row.get("old_used"),
+                row.get("new_used"),
+                row.get("delta_used"),
+                row.get("delta_used_percent"),
+                row.get("old_util_percent"),
+                row.get("new_util_percent"),
+                row.get("delta_util_percent_points"),
+            ]
+        )
+    return out.getvalue().rstrip("\r\n")

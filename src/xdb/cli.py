@@ -88,8 +88,11 @@ from xdb.reports.utilization import (
     discover_utilization_report,
     format_utilization_comparison,
     format_utilization_csv,
+    format_utilization_delta_comparison,
+    format_utilization_delta_csv,
     format_utilization_table,
     parse_utilization_report,
+    utilization_compare_data,
 )
 from xdb.timing.analysis import (
     format_timing_clocks,
@@ -384,6 +387,66 @@ def _run_reports_utilization(args: argparse.Namespace) -> None:
         )
     else:
         _emit_text(format_utilization_comparison(parsed_reports, names or None, args.resource))
+
+
+def _default_report_input_name(path: str) -> str:
+    name = os.path.basename(os.path.normpath(path))
+    return name or path
+
+
+def _format_multi_utilization_delta_csv(comparisons: list[dict]) -> str:
+    lines = [
+        "baseline,new,resource,old_used,new_used,delta_used,delta_used_percent,old_util_percent,new_util_percent,delta_util_percent_points"
+    ]
+    for comparison in comparisons:
+        old_info_raw = comparison.get("old")
+        new_info_raw = comparison.get("new")
+        old_info = old_info_raw if isinstance(old_info_raw, dict) else {}
+        new_info = new_info_raw if isinstance(new_info_raw, dict) else {}
+        old_name = str(old_info.get("name") or "old")
+        new_name = str(new_info.get("name") or "new")
+        body = format_utilization_delta_csv(comparison).splitlines()[1:]
+        lines.extend(f"{old_name},{new_name},{line}" for line in body)
+    return "\n".join(lines)
+
+
+def _run_reports_compare(args: argparse.Namespace) -> None:
+    new_paths = list(args.new or [])
+    new_names = list(args.new_name or [])
+    if new_names and len(new_names) != len(new_paths):
+        raise XdbError("--new-name must be passed once per new input path")
+
+    old = parse_utilization_report(discover_utilization_report(args.old, report=args.report))
+    old_name = args.old_name or _default_report_input_name(args.old)
+    comparisons = []
+    for index, new_path in enumerate(new_paths):
+        new = parse_utilization_report(discover_utilization_report(new_path, report=args.report))
+        comparisons.append(
+            utilization_compare_data(
+                old,
+                new,
+                old_name=old_name,
+                new_name=new_names[index] if new_names else _default_report_input_name(new_path),
+                resources=args.resource,
+            )
+        )
+
+    if len(comparisons) == 1:
+        data = comparisons[0]
+        if args.json:
+            _emit_json(data)
+        elif args.csv:
+            _emit_text(format_utilization_delta_csv(data))
+        else:
+            _emit_text(format_utilization_delta_comparison(data))
+        return
+
+    if args.json:
+        _emit_json({"comparisons": comparisons})
+    elif args.csv:
+        _emit_text(_format_multi_utilization_delta_csv(comparisons))
+    else:
+        _emit_text("\n\n".join(format_utilization_delta_comparison(comparison) for comparison in comparisons))
 
 
 def _run_timing(args: argparse.Namespace) -> None:
@@ -898,6 +961,8 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
         if args.cmd == "reports":
             if args.reports_cmd in {"utilization", "util"}:
                 _run_reports_utilization(args)
+            elif args.reports_cmd == "compare":
+                _run_reports_compare(args)
             else:
                 p.error("unknown reports command")
             return
