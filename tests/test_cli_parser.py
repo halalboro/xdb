@@ -52,6 +52,24 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.max_items, 3)
         self.assertTrue(args.full)
 
+    def test_vivado_ip_info_command_is_parseable(self) -> None:
+        args = build_parser().parse_args([
+            "vivado",
+            "ip-info",
+            "build-dir",
+            "--all",
+            "--param",
+            "GT*",
+            "--param",
+            "LINE_RATE",
+        ])
+
+        self.assertEqual(args.cmd, "vivado")
+        self.assertEqual(args.vivado_cmd, "ip-info")
+        self.assertEqual(args.path, "build-dir")
+        self.assertTrue(args.all)
+        self.assertEqual(args.param, ["GT*", "LINE_RATE"])
+
     def test_reports_util_alias_is_parseable_but_hidden_from_help_usage(self) -> None:
         parser = build_parser()
         reports = parser.parse_args(["reports", "util", "build-output"])

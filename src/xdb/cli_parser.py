@@ -246,6 +246,25 @@ Examples:
         help="show full diagnostic messages in text output; also enabled by --verbose",
     )
 
+    s_vivado_ip_info = vivado_sub.add_parser(
+        "ip-info",
+        help="inspect Vivado XCI IP metadata",
+    )
+    _add_debug_flag(s_vivado_ip_info)
+    s_vivado_ip_info.add_argument("path", help="XCI file or directory to search for .xci files")
+    s_vivado_ip_info.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    s_vivado_ip_info.add_argument(
+        "--all",
+        action="store_true",
+        help="include all parsed parameters instead of only likely user/key parameters",
+    )
+    s_vivado_ip_info.add_argument(
+        "--param",
+        action="append",
+        default=None,
+        help="parameter name glob/substring to include; may be repeated",
+    )
+
     s_instruments = sub.add_parser("instruments")
     instruments_sub = s_instruments.add_subparsers(dest="instruments_cmd", required=True)
     s_instruments_list = instruments_sub.add_parser("list")

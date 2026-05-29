@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import sys
 import traceback
 from xdb.cli_output import (
@@ -94,6 +95,7 @@ from xdb.reports.utilization import (
     parse_utilization_report,
     utilization_compare_data,
 )
+from xdb.vivado_ip import format_vivado_ip_info, vivado_ip_info
 from xdb.vivado_log import format_vivado_log_summary, summarize_vivado_log_text
 from xdb.timing.analysis import (
     format_timing_clocks,
@@ -478,6 +480,14 @@ def _run_vivado(args: argparse.Namespace) -> None:
             )
         )
         return
+    if args.vivado_cmd == "ip-info":
+        data = vivado_ip_info(
+            args.path,
+            include_all=bool(args.all),
+            param_patterns=args.param,
+        )
+        _emit_json(data) if args.json else _emit_text(format_vivado_ip_info(data))
+        return
     raise XdbError(f"unknown vivado command: {args.vivado_cmd}")
 
 
@@ -543,6 +553,10 @@ def _run_timing(args: argparse.Namespace) -> None:
 
 
 def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
+    try:
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    except (AttributeError, ValueError):
+        pass
     p = build_parser()
     args = p.parse_args()
     if not hasattr(args, "debug"):
