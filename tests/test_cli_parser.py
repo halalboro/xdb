@@ -34,6 +34,24 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.cmd, "_simd")
         self.assertEqual(args.anchor_dir, "/tmp/xdb")
 
+    def test_vivado_summarize_log_command_is_parseable(self) -> None:
+        args = build_parser().parse_args([
+            "vivado",
+            "summarize-log",
+            "vivado.log",
+            "--json",
+            "--max-items",
+            "3",
+            "--full",
+        ])
+
+        self.assertEqual(args.cmd, "vivado")
+        self.assertEqual(args.vivado_cmd, "summarize-log")
+        self.assertEqual(args.log, "vivado.log")
+        self.assertTrue(args.json)
+        self.assertEqual(args.max_items, 3)
+        self.assertTrue(args.full)
+
     def test_reports_util_alias_is_parseable_but_hidden_from_help_usage(self) -> None:
         parser = build_parser()
         reports = parser.parse_args(["reports", "util", "build-output"])

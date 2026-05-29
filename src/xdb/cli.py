@@ -94,6 +94,7 @@ from xdb.reports.utilization import (
     parse_utilization_report,
     utilization_compare_data,
 )
+from xdb.vivado_log import format_vivado_log_summary, summarize_vivado_log_text
 from xdb.timing.analysis import (
     format_timing_clocks,
     format_timing_compare,
@@ -447,6 +448,37 @@ def _run_reports_compare(args: argparse.Namespace) -> None:
         _emit_text(_format_multi_utilization_delta_csv(comparisons))
     else:
         _emit_text("\n\n".join(format_utilization_delta_comparison(comparison) for comparison in comparisons))
+
+
+def _read_text_input(path: str, description: str) -> tuple[str, str]:
+    if path == "-":
+        return sys.stdin.read(), "stdin"
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read(), path
+    except OSError as e:
+        raise XdbError(f"failed to read {description}: {path}") from e
+
+
+def _run_vivado(args: argparse.Namespace) -> None:
+    if args.vivado_cmd == "summarize-log":
+        if args.max_items < 0:
+            raise XdbError("--max-items must be >= 0")
+        text, source = _read_text_input(args.log, "Vivado log")
+        data = summarize_vivado_log_text(text, source=source)
+        if data.get("looks_like_vivado_log") is False:
+            print("not a Vivado log", file=sys.stderr)
+            raise SystemExit(2)
+        full_text = bool(args.full or args.debug)
+        _emit_json(data) if args.json else _emit_text(
+            format_vivado_log_summary(
+                data,
+                max_items=None if full_text else args.max_items,
+                verbose=full_text,
+            )
+        )
+        return
+    raise XdbError(f"unknown vivado command: {args.vivado_cmd}")
 
 
 def _run_timing(args: argparse.Namespace) -> None:
@@ -973,6 +1005,10 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
 
         if args.cmd == "timing":
             _run_timing(args)
+            return
+
+        if args.cmd == "vivado":
+            _run_vivado(args)
             return
 
         backend = select_backend()

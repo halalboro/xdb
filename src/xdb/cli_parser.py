@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
         "reports",
         "util",
         "timing",
+        "vivado",
         "instruments",
         "sim",
     ]
@@ -219,6 +220,31 @@ Examples:
     s_timing_compare.add_argument("--hierarchy-depth", type=int, default=4)
     s_timing_compare.add_argument("--timeout", type=int, default=1800)
     s_timing_compare.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+
+    s_vivado = sub.add_parser("vivado", help="inspect Vivado logs and artifacts")
+    _add_debug_flag(s_vivado)
+    vivado_sub = s_vivado.add_subparsers(dest="vivado_cmd", required=True)
+
+    s_vivado_summarize_log = vivado_sub.add_parser(
+        "summarize-log",
+        help="summarize Vivado diagnostics from a log file or stdin",
+    )
+    _add_debug_flag(s_vivado_summarize_log)
+    s_vivado_summarize_log.add_argument("log", help="Vivado log file, or '-' to read stdin")
+    s_vivado_summarize_log.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    s_vivado_summarize_log.add_argument(
+        "--max-items",
+        type=int,
+        default=10,
+        help="maximum diagnostics to show per section in text output",
+    )
+    s_vivado_summarize_log.add_argument(
+        "--full",
+        "--no-compact",
+        dest="full",
+        action="store_true",
+        help="show full diagnostic messages in text output; also enabled by --verbose",
+    )
 
     s_instruments = sub.add_parser("instruments")
     instruments_sub = s_instruments.add_subparsers(dest="instruments_cmd", required=True)
