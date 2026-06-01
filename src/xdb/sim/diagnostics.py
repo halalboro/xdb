@@ -25,6 +25,41 @@ from xdb.sim.session_store import (
 from xdb.sim.types import SessionMeta
 
 
+def _launch_spec_from_session_meta(meta: SessionMeta | None) -> dict[str, Any] | None:
+    if not meta or str(meta.get("launch_kind") or "") != "runtime":
+        return None
+    package_runtime = str(meta.get("package_runtime") or "")
+    runtime_root = str(meta.get("runtime_root") or "")
+    workspace = str(meta.get("workspace") or runtime_root)
+    if not package_runtime or not workspace:
+        return None
+
+    package_fingerprint = tree_fingerprint(package_runtime)
+    stage_stamp = read_runtime_stage_stamp(workspace) if workspace else None
+    needs_stage = not (
+        stage_stamp is not None
+        and stage_stamp.get("source_root") == package_runtime
+        and stage_stamp.get("source_fingerprint") == package_fingerprint
+        and (Path(workspace) / "xdb-runtime.json").is_file()
+    )
+
+    return {
+        "launch_kind": "runtime",
+        "package_runtime": package_runtime,
+        "runtime_root": runtime_root or workspace,
+        "workspace": workspace,
+        "project": str(meta.get("project") or ""),
+        "work_dir": str(meta.get("work_dir") or ""),
+        "compile_script": str(meta.get("compile_script") or ""),
+        "elaborate_script": str(meta.get("elaborate_script") or ""),
+        "simulate_script": str(meta.get("simulate_script") or ""),
+        "staged": False,
+        "workspace_reused": not needs_stage,
+        "needs_stage": needs_stage,
+        "source": "session_metadata",
+    }
+
+
 def _recv_all(sock: socket.socket) -> bytes:
     chunks: list[bytes] = []
     while True:
@@ -164,18 +199,19 @@ def doctor_session(session_name: str | None, *, timeout_seconds: float = 1.0) ->
     try:
         launch_spec = resolve_launch_spec(stage=False)
     except XdbError as e:
-        checks.append(
-            _doctor_check(
-                "runtime_configuration",
-                False,
-                severity="warning",
-                detail=str(e),
+        launch_spec = _launch_spec_from_session_meta(meta)
+        if launch_spec is None:
+            checks.append(
+                _doctor_check(
+                    "runtime_configuration",
+                    False,
+                    severity="warning",
+                    detail=str(e),
+                )
             )
-        )
-        suggestions.append(
-            "set XDB_SIM_PACKAGE_RUNTIME and XDB_SIM_WORKSPACE, or enter the project simulation shell"
-        )
-        launch_spec = None
+            suggestions.append(
+                "set XDB_SIM_PACKAGE_RUNTIME and XDB_SIM_WORKSPACE, or launch with a package argument"
+            )
 
     runtime: dict[str, Any] = {"available": launch_spec is not None}
     if launch_spec is not None:
@@ -189,6 +225,7 @@ def doctor_session(session_name: str | None, *, timeout_seconds: float = 1.0) ->
         runtime.update(
             {
                 **launch_spec_summary(launch_spec),
+                "source": launch_spec.get("source", "environment"),
                 "package_exists": package_path.is_dir(),
                 "workspace_exists": workspace_path.exists(),
                 "package_fingerprint": package_fingerprint,
@@ -318,11 +355,13 @@ def provenance_session(session_name: str | None) -> dict[str, Any]:
     try:
         launch_spec = resolve_launch_spec(stage=False)
     except XdbError as e:
-        result["runtime"] = {
-            "available": False,
-            "error": str(e),
-        }
-        return result
+        launch_spec = _launch_spec_from_session_meta(meta)
+        if launch_spec is None:
+            result["runtime"] = {
+                "available": False,
+                "error": str(e),
+            }
+            return result
 
     package_runtime = str(launch_spec.get("package_runtime") or "")
     workspace = str(launch_spec.get("workspace") or "")
@@ -334,6 +373,7 @@ def provenance_session(session_name: str | None) -> dict[str, Any]:
     result["runtime"] = {
         "available": True,
         **launch_spec_summary(launch_spec),
+        "source": launch_spec.get("source", "environment"),
         "package_fingerprint": package_fingerprint,
         "workspace_fingerprint": workspace_fingerprint,
         "workspace_exists": Path(workspace).exists(),

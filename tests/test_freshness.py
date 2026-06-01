@@ -11,7 +11,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb.sim.client import provenance_session, restage_session
-from xdb.sim.session_store import cleanup_stale_session, load_meta, resolve_launch_spec, session_paths
+from xdb.sim.session_store import cleanup_stale_session, load_meta, resolve_launch_spec, session_paths, write_meta
 
 
 class FreshnessControlTests(unittest.TestCase):
@@ -73,6 +73,71 @@ class FreshnessControlTests(unittest.TestCase):
             self.assertIsNotNone(provenance["runtime"]["staged_at"])
             self.assertTrue(provenance["runtime"]["stage_source_matches_package"])
             self.assertTrue(provenance["runtime"]["stage_fingerprint_matches_package"])
+            self.assertTrue(provenance["comparisons"]["runtime_root_matches_workspace"])
+
+    def test_provenance_uses_session_metadata_after_positional_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+            package = self._create_runtime_package(tmp_path)
+            workspace = tmp_path / "workspace"
+
+            old_cwd = Path.cwd()
+            try:
+                os.chdir(repo)
+                with patch.dict(
+                    os.environ,
+                    {
+                        "XDB_ROOT": str(tmp_path / "xdb-root"),
+                        "XDB_CACHE_ROOT": str(tmp_path / "cache-root"),
+                        "XDB_SIM_PACKAGE_RUNTIME": str(package),
+                        "XDB_SIM_WORKSPACE": str(workspace),
+                    },
+                    clear=True,
+                ):
+                    spec = resolve_launch_spec(stage=True)
+
+                with patch.dict(
+                    os.environ,
+                    {
+                        "XDB_ROOT": str(tmp_path / "xdb-root"),
+                        "XDB_CACHE_ROOT": str(tmp_path / "cache-root"),
+                    },
+                    clear=True,
+                ):
+                    paths = session_paths("unit")
+                    write_meta(
+                        paths,
+                        {
+                            "pid": 0,
+                            "launch_kind": "runtime",
+                            "project": spec["project"],
+                            "simset": "sim_1",
+                            "mode": "behavioral",
+                            "top": "tb_top",
+                            "package_runtime": spec["package_runtime"],
+                            "runtime_root": spec["workspace"],
+                            "workspace": spec["workspace"],
+                            "work_dir": spec["work_dir"],
+                            "compile_script": spec["compile_script"],
+                            "elaborate_script": spec["elaborate_script"],
+                            "simulate_script": spec["simulate_script"],
+                            "state": "closed",
+                        },
+                    )
+                    provenance = provenance_session("unit")
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertTrue(provenance["runtime"]["available"])
+            self.assertEqual(provenance["runtime"]["source"], "session_metadata")
+            self.assertEqual(provenance["runtime"]["package_runtime"], str(package))
+            self.assertEqual(provenance["runtime"]["workspace"], str(workspace))
+            self.assertTrue(provenance["runtime"]["workspace_exists"])
+            self.assertFalse(provenance["runtime"]["needs_stage"])
+            self.assertTrue(provenance["runtime"]["stage_source_matches_package"])
             self.assertTrue(provenance["comparisons"]["runtime_root_matches_workspace"])
 
     def test_launch_spec_accepts_cli_package_runtime_override(self) -> None:

@@ -137,6 +137,7 @@ class SimDaemon:
                 "top": self.top,
                 "package_runtime": self.package_runtime,
                 "runtime_root": self.runtime_root,
+                "workspace": self.runtime_root,
                 "work_dir": self.work_dir,
                 "compile_script": self.compile_script,
                 "elaborate_script": self.elaborate_script,
