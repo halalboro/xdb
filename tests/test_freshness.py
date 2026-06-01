@@ -75,6 +75,48 @@ class FreshnessControlTests(unittest.TestCase):
             self.assertTrue(provenance["runtime"]["stage_fingerprint_matches_package"])
             self.assertTrue(provenance["comparisons"]["runtime_root_matches_workspace"])
 
+    def test_launch_spec_accepts_cli_package_runtime_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            package = self._create_runtime_package(tmp_path)
+            workspace = tmp_path / "workspace"
+
+            with patch.dict(
+                os.environ,
+                {
+                    "XDB_SIM_WORKSPACE": str(workspace),
+                    "XDB_SIM_SIMSET": "sim_1",
+                    "XDB_SIM_MODE": "behavioral",
+                    "XDB_SIM_TOP": "tb_top",
+                },
+                clear=False,
+            ):
+                spec = resolve_launch_spec(stage=True, package_runtime=str(package))
+
+            self.assertEqual(spec["package_runtime"], str(package))
+            self.assertEqual(spec["workspace"], str(workspace))
+            self.assertTrue((workspace / "payload.txt").is_file())
+
+    def test_launch_spec_accepts_package_output_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            package_out = tmp_path / "package-out"
+            runtime = package_out / "project" / "sim"
+            runtime.mkdir(parents=True)
+            self._create_runtime_package(tmp_path)
+            source_runtime = tmp_path / "runtime-package"
+            for child in source_runtime.iterdir():
+                target = runtime / child.name
+                if child.is_file():
+                    target.write_bytes(child.read_bytes())
+
+            workspace = tmp_path / "workspace"
+            with patch.dict(os.environ, {"XDB_SIM_WORKSPACE": str(workspace)}, clear=False):
+                spec = resolve_launch_spec(stage=True, package_runtime=str(package_out))
+
+            self.assertEqual(spec["package_runtime"], str(runtime.resolve()))
+            self.assertTrue((workspace / "payload.txt").is_file())
+
     def test_session_paths_split_project_outputs_from_socket_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

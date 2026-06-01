@@ -360,6 +360,7 @@ def launch_session(
     session_name: str | None,
     replace: bool,
     timeout: int,
+    package_runtime: str | None = None,
 ) -> dict[str, Any]:
     paths = session_paths(session_name)
     cleanup_stale_session(paths)
@@ -367,7 +368,7 @@ def launch_session(
     effective_simset = resolve_simset_arg(simset)
     effective_mode = resolve_mode_arg(mode)
     effective_top = resolve_top_arg(top, live_meta)
-    launch_spec = resolve_launch_spec(stage=False)
+    launch_spec = resolve_launch_spec(stage=False, package_runtime=package_runtime)
 
     if live_meta and Path(str(live_meta.get("socket_path", ""))).exists() and pid_is_alive(int(live_meta.get("pid", 0) or 0)):
         if replace:
@@ -388,7 +389,7 @@ def launch_session(
                 "use --replace or choose another --session"
             )
 
-    launch_spec = resolve_launch_spec(stage=True)
+    launch_spec = resolve_launch_spec(stage=True, package_runtime=package_runtime)
 
     remove_session(paths)
     proc = _spawn_daemon(

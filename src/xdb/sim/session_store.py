@@ -346,11 +346,19 @@ def _resolve_packaged_runtime_layout(package_value: str, workspace_value: str) -
     if package_path.is_file():
         if package_path.name != _RUNTIME_META:
             raise XdbError(
-                "XDB_SIM_PACKAGE_RUNTIME must point to a runtime directory or xdb-runtime.json"
+                "XDB_SIM_PACKAGE_RUNTIME must point to a runtime directory, package output, or xdb-runtime.json"
             )
         source_root = package_path.parent.resolve()
     elif package_path.is_dir():
-        source_root = package_path.resolve()
+        if (package_path / _RUNTIME_META).is_file():
+            source_root = package_path.resolve()
+        elif (package_path / "project" / "sim" / _RUNTIME_META).is_file():
+            source_root = (package_path / "project" / "sim").resolve()
+        else:
+            raise XdbError(
+                f"packaged simulation runtime metadata not found under {package_path}; "
+                f"expected {_RUNTIME_META} or project/sim/{_RUNTIME_META}"
+            )
     else:
         raise XdbError(
             f"packaged simulation runtime not found: {package_path} "
@@ -397,8 +405,13 @@ def _stage_runtime_tree(source_root: Path, workspace: Path) -> bool:
     return True
 
 
-def resolve_launch_spec(*, stage: bool) -> dict[str, str | bool]:
-    runtime_value = _env_value("XDB_SIM_PACKAGE_RUNTIME")
+def resolve_launch_spec(
+    *,
+    stage: bool,
+    package_runtime: str | None = None,
+    workspace: str | None = None,
+) -> dict[str, str | bool]:
+    runtime_value = package_runtime or _env_value("XDB_SIM_PACKAGE_RUNTIME")
     if runtime_value is None:
         legacy_values = {
             name: _env_value(name)
@@ -413,7 +426,7 @@ def resolve_launch_spec(*, stage: bool) -> dict[str, str | bool]:
             "missing packaged simulation runtime: set XDB_SIM_PACKAGE_RUNTIME"
         )
 
-    workspace_value = _env_value("XDB_SIM_WORKSPACE")
+    workspace_value = workspace or _env_value("XDB_SIM_WORKSPACE")
     if workspace_value is None:
         raise XdbError(
             "XDB_SIM_PACKAGE_RUNTIME is set but XDB_SIM_WORKSPACE is missing"

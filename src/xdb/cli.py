@@ -592,6 +592,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         session_name=args.session,
                         replace=args.replace,
                         timeout=args.timeout,
+                        package_runtime=args.package_runtime,
                     )
                 )
             elif args.sim_cmd == "relaunch":

@@ -282,6 +282,12 @@ Examples:
     s_sim_launch = sim_sub.add_parser("launch")
     _add_debug_flag(s_sim_launch)
     add_sim_session_arg(s_sim_launch)
+    s_sim_launch.add_argument(
+        "package_runtime",
+        nargs="?",
+        default=None,
+        help="packaged simulation output, runtime directory, or xdb-runtime.json; overrides XDB_SIM_PACKAGE_RUNTIME",
+    )
     s_sim_launch.add_argument("--simset", default=None)
     s_sim_launch.add_argument(
         "--mode",

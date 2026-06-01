@@ -58,13 +58,12 @@ xdb capture \
 
 # launch a persistent simulation session from a packaged runtime bundle
 # exported by an integration shell
-export XDB_SIM_PACKAGE_RUNTIME=/nix/store/.../project/sim
 export XDB_SIM_WORKSPACE=$PWD/.build/sim-workspace
 export XDB_SIM_SIMSET=sim_1
 export XDB_SIM_TOP=tb_top
 export XDB_SIM_MODE=behavioral
 export XDB_SIM_SESSION=myproj
-xdb sim launch
+xdb sim launch /nix/store/...-my-sim-package
 xdb sim provenance --summary
 xdb sim doctor --summary
 
@@ -195,6 +194,10 @@ already a report file, omit `--report`.
 - `xdb sim` currently supports the packaged runtime-backed flow, not the direct
   project-backed `.xpr` flow.
 - Direct project launch via `xdb sim launch --project ...` is not supported yet.
+- `xdb sim launch [package-runtime]` accepts a packaged simulation output,
+  runtime directory, or `xdb-runtime.json` as an optional positional argument.
+  Package output roots are expected to contain `project/sim/xdb-runtime.json`.
+  If omitted, it falls back to `XDB_SIM_PACKAGE_RUNTIME`.
 - `xdb sim launch` resolves missing flags from these environment variables when
   present: `XDB_SIM_PACKAGE_RUNTIME`, `XDB_SIM_WORKSPACE`, `XDB_SIM_SIMSET`,
   `XDB_SIM_MODE`, `XDB_SIM_TOP`, `XDB_SIM_SESSION`.
