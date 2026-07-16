@@ -213,7 +213,10 @@ already a report file, omit `--report`.
   under `XDB_CACHE_ROOT/sockets/` to avoid long Unix socket paths in deep repos.
 - In the runtime-backed flow, `xdb sim launch` stages the packaged simulation
   runtime into the writable workspace, runs the packaged compile/elaborate
-  scripts there, and then starts a persistent `xsim` session.
+  scripts there, and then starts a persistent `xsim` session through the
+  packaged simulate script. Environment setup performed by that script is
+  retained; only its `-tclbatch <script>` arguments are omitted so the session
+  remains interactive.
 - `xdb sim launch` starts a persistent background session; later
   `xdb sim ...` commands talk to that live simulator process.
 - `xdb sim close` asks the daemon to shut down and has a wall-clock response

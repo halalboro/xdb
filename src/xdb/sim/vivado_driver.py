@@ -26,6 +26,44 @@ from xdb.sim.vivado_debug import VivadoDebugMixin
 from xdb.sim.vivado_queries import VivadoQueryMixin
 
 
+# Vivado's simulate script establishes the matching toolchain environment, but its
+# Tcl batch file exits XSim. Source that script with a narrow xsim shim so the
+# generated shell expansion is retained while the simulator stays interactive.
+_RUNTIME_SIMULATE_LAUNCHER = r"""
+xsim() {
+  local -a _xdb_xsim_args=()
+  while (( $# > 0 )); do
+    if [[ "$1" == "-tclbatch" ]]; then
+      if (( $# < 2 )); then
+        printf 'xdb: -tclbatch is missing its script argument in %s\n' "$0" >&2
+        return 2
+      fi
+      shift 2
+      continue
+    fi
+    _xdb_xsim_args+=("$1")
+    shift
+  done
+
+  local _xdb_xsim_executable
+  _xdb_xsim_executable="$(type -P xsim || true)"
+  if [[ -z "$_xdb_xsim_executable" ]]; then
+    printf 'xdb: xsim executable not found after loading %s\n' "$0" >&2
+    return 127
+  fi
+  exec "$_xdb_xsim_executable" "${_xdb_xsim_args[@]}"
+}
+
+source "$0"
+_xdb_simulate_status=$?
+if (( _xdb_simulate_status != 0 )); then
+  exit "$_xdb_simulate_status"
+fi
+printf 'xdb: simulate script completed without launching xsim: %s\n' "$0" >&2
+exit 127
+"""
+
+
 class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
     def __init__(
         self,
@@ -172,41 +210,19 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
 
     def _runtime_simulate_command(self) -> list[str]:
         simulate_path = Path(self.simulate_script)
-        try:
-            lines = simulate_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError as e:
-            raise XdbError(f"failed to read simulate script: {simulate_path}") from e
-        for line in lines:
-            stripped = line.strip()
-            if not stripped.startswith("xsim "):
-                continue
-            tokens = shlex.split(stripped)
-            out: list[str] = []
-            skip_next = False
-            for token in tokens:
-                if skip_next:
-                    skip_next = False
-                    continue
-                if token == "-tclbatch":
-                    skip_next = True
-                    continue
-                out.append(token)
-            return out
-        raise XdbError(f"failed to determine xsim launch command from {simulate_path}")
+        if not simulate_path.is_file():
+            raise XdbError(f"failed to read simulate script: {simulate_path}")
+        return ["bash", "-f", "-c", _RUNTIME_SIMULATE_LAUNCHER, str(simulate_path)]
 
     def _start_runtime_simulator(self) -> None:
         cmd = self._runtime_simulate_command()
         if self._debug_enabled():
-            self._record_debug_line(
-                "[xdb debug] xsim argv: " + " ".join(shlex.quote(arg) for arg in cmd)
-            )
+            self._record_debug_line(f"[xdb debug] runtime simulate script: {self.simulate_script}")
             self._record_debug_line(f"[xdb debug] xsim cwd: {self.work_dir}")
         try:
             self._start_pty_process(cmd, cwd=self.work_dir)
         except FileNotFoundError as e:
-            raise XdbError(
-                "xsim executable not found in PATH. Run inside a Xilinx-enabled shell or set PATH accordingly."
-            ) from e
+            raise XdbError("failed to start the packaged simulate script: bash not found") from e
 
     def _wait_for_runtime_prompt(self, timeout: int) -> None:
         deadline = time.monotonic() + timeout
