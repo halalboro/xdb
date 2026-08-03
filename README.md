@@ -169,12 +169,25 @@ xdb reports utilization result --report reports/config_0/user_synthed_c0_0.rpt
 # compare builds with deltas; first path is the baseline
 xdb reports compare results/fpga-builds/helios-d13-v80 results/fpga-builds/helios-d17-v80
 xdb reports compare d13 d15 d17 --report user --old-name d13 --new-name d15 --new-name d17
+
+# inspect Versal CIPS connectivity and boot-image partitions
+xdb reports cips result
+xdb reports cips result/bitstreams/cyt_top.bif
+xdb reports cips result --dcp checkpoints/shell_routed.dcp --json
 ```
 
 `xdb reports utilization` prints compact one-or-many report summaries. `xdb
 reports compare` compares one baseline against one or more new reports and
 includes absolute deltas, relative deltas, and utilization percentage-point
 deltas.
+
+`xdb reports cips` accepts a Vivado DCP, a Versal BIF, or a build/package
+directory containing those artifacts. DCP inspection launches Vivado in batch
+mode without connecting to hardware and reports retained CIPS properties and
+implemented pin connectivity. BIF inspection is tool-free and distinguishes
+A72/R5 application partitions from PLM/PSM management firmware. A
+`not_observed` result means the selected artifacts contain no evidence; it does
+not prove that the silicon or card lacks the feature.
 
 `--report shell` resolves to `reports/shell_utilization.rpt`. `--report user`
 resolves to `reports/config_0/user_synthed_c0_0.rpt`. Use `--report` only when

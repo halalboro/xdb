@@ -79,7 +79,7 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(reports.cmd, "reports")
         self.assertEqual(reports.reports_cmd, "util")
         self.assertEqual(canonical.reports_cmd, "utilization")
-        self.assertIn("{utilization,compare}", reports_help)
+        self.assertIn("{utilization,compare,cips}", reports_help)
         self.assertNotIn("{utilization,util", reports_help)
 
     def test_reports_compare_command_is_parseable(self) -> None:

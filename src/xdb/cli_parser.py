@@ -124,7 +124,7 @@ Examples:
     reports_sub = s_reports.add_subparsers(
         dest="reports_cmd",
         required=True,
-        metavar="{utilization,compare}",
+        metavar="{utilization,compare,cips}",
     )
     s_reports_utilization = reports_sub.add_parser(
         "utilization",
@@ -164,6 +164,29 @@ Examples:
         default=None,
         help="resource key to include; may be repeated",
     )
+
+    reports_cips_epilog = """\
+Inspect a Vivado DCP, a Versal BIF, or a build/package directory containing
+checkpoints and bitstreams. DCP inspection launches Vivado in batch mode but
+never connects to hardware. BIF-only inspection requires no Xilinx tools.
+
+Examples:
+  xdb reports cips result
+  xdb reports cips result/bitstreams/cyt_top.bif
+  xdb reports cips result --dcp checkpoints/shell_routed.dcp --json
+"""
+    s_reports_cips = reports_sub.add_parser(
+        "cips",
+        help="inspect Versal CIPS connectivity and boot partitions",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=reports_cips_epilog,
+    )
+    _add_debug_flag(s_reports_cips)
+    s_reports_cips.add_argument("path", help="DCP, BIF, or build/package output directory")
+    s_reports_cips.add_argument("--dcp", default=None, help="checkpoint path, relative to <path>")
+    s_reports_cips.add_argument("--bif", default=None, help="BIF path, relative to <path>")
+    s_reports_cips.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    s_reports_cips.add_argument("--timeout", type=int, default=1800, help="Vivado timeout in seconds")
 
     s_util = sub.add_parser(
         "util",

@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from xdb.reports.cips import (
+    discover_cips_artifacts,
+    format_cips_report,
+    inspect_cips,
+    inspect_cips_checkpoint,
+    parse_bif,
+)
 from xdb.reports.utilization import (
     DEFAULT_SUMMARY_RESOURCES,
     discover_utilization_report,
@@ -11,6 +18,11 @@ from xdb.reports.utilization import (
 
 __all__ = [
     "DEFAULT_SUMMARY_RESOURCES",
+    "discover_cips_artifacts",
+    "format_cips_report",
+    "inspect_cips",
+    "inspect_cips_checkpoint",
+    "parse_bif",
     "discover_utilization_report",
     "format_utilization_comparison",
     "format_utilization_csv",

@@ -85,6 +85,7 @@ from xdb.sim.coyote import parse_hex_bytes
 from xdb.sim.daemon import run_daemon
 from xdb.sim.mem_tools import diff_memory_files, dump_memory_session
 from xdb.sim.trace_profiles import get_trace_profile, list_trace_profiles
+from xdb.reports.cips import format_cips_report, inspect_cips
 from xdb.reports.utilization import (
     discover_utilization_report,
     format_utilization_comparison,
@@ -390,6 +391,18 @@ def _run_reports_utilization(args: argparse.Namespace) -> None:
         )
     else:
         _emit_text(format_utilization_comparison(parsed_reports, names or None, args.resource))
+
+
+def _run_reports_cips(args: argparse.Namespace) -> None:
+    if args.timeout <= 0:
+        raise XdbError("--timeout must be > 0")
+    data = inspect_cips(
+        args.path,
+        dcp=args.dcp,
+        bif=args.bif,
+        timeout=args.timeout,
+    )
+    _emit_json(data) if args.json else _emit_text(format_cips_report(data))
 
 
 def _default_report_input_name(path: str) -> str:
@@ -1010,6 +1023,8 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 _run_reports_utilization(args)
             elif args.reports_cmd == "compare":
                 _run_reports_compare(args)
+            elif args.reports_cmd == "cips":
+                _run_reports_cips(args)
             else:
                 p.error("unknown reports command")
             return
