@@ -226,6 +226,57 @@ class FloorplanReportTests(unittest.TestCase):
         self.assertEqual(tiny["occupied_sites"], 1)
         self.assertIn('data-hierarchy="tiny_shared_module"', first)
 
+    def test_large_resource_and_placement_paths_are_chunked(self) -> None:
+        site_count = 2050
+        records = [
+            "XDB_FLOORPLAN_BEGIN",
+            "META\tschema\txdb-floorplan-records-v1",
+            "META\tdesign\tlarge",
+            "META\tdevice\txcv80-test",
+            "META\ttool_version\t2025.1",
+        ]
+        records.extend(
+            f"SITE\tSLICE_X0Y{index}\tSLICEL\t0\t{index}" for index in range(site_count)
+        )
+        records.extend(
+            f"OCC\tSLICE_X0Y{index}\ttop\t1" for index in range(site_count)
+        )
+        records.extend(
+            [
+                f"STAT\tprimitive_cells\t{site_count}",
+                f"STAT\tplaced_cells\t{site_count}",
+                "STAT\tunplaced_cells\t0",
+                f"STAT\tsites_with_coordinates\t{site_count}",
+                "STAT\tsites_without_coordinates\t0",
+                "STAT\trouting_errors\t0",
+                "XDB_FLOORPLAN_END",
+            ]
+        )
+        design = parse_floorplan_records("\n".join(records), "large.dcp")
+
+        svg, metadata = render_floorplan_svg(
+            design,
+            checkpoint_sha256="a" * 64,
+        )
+
+        root = ET.fromstring(svg)
+        namespace = "{http://www.w3.org/2000/svg}"
+        resource = root.find(f".//{namespace}g[@id='resource-logic']")
+        placed = root.find(f".//{namespace}g[@id='placed-hierarchies']")
+        document_width = float(root.attrib["viewBox"].split()[2])
+        self.assertIsNotNone(resource)
+        self.assertIsNotNone(placed)
+        assert resource is not None
+        assert placed is not None
+        resource_paths = resource.findall(f"{namespace}path")
+        placed_paths = placed.findall(f"{namespace}path")
+        self.assertEqual(len(resource_paths), 3)
+        self.assertEqual(len(placed_paths), 3)
+        self.assertLess(max(len(item.attrib["d"]) for item in resource_paths), 100_000)
+        self.assertLess(max(len(item.attrib["d"]) for item in placed_paths), 100_000)
+        self.assertEqual(metadata["occupied_sites"], site_count)
+        self.assertGreaterEqual(document_width, 1100.0)
+
     def test_renderer_rejects_xml_control_characters_in_title(self) -> None:
         design = parse_floorplan_records(FLOORPLAN_RECORDS, "shell_routed.dcp")
 

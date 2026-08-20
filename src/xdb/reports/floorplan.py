@@ -99,6 +99,8 @@ _GROUP_COLORS = (
     "#b07aa1",
     "#ff9da7",
 )
+_MAX_PATH_RECTANGLES = 1024
+_MIN_DOCUMENT_WIDTH = 1100.0
 _MARK_SIZE = {
     "logic": (1.25, 1.25),
     "bram": (2.2, 3.4),
@@ -514,20 +516,32 @@ def _fmt(value: float) -> str:
     return f"{rounded:.2f}".rstrip("0").rstrip(".")
 
 
-def _rectangle_path(rectangles: Iterable[tuple[float, float, float, float]]) -> str:
-    commands = []
-    for x, y, width, height in sorted(
+def _rectangle_path_chunks(
+    rectangles: Iterable[tuple[float, float, float, float]],
+) -> Iterable[tuple[str, int]]:
+    ordered = sorted(
         rectangles,
         key=lambda item: (item[1], item[0], item[2], item[3]),
-    ):
-        commands.append(f"M{_fmt(x)} {_fmt(y)}h{_fmt(width)}v{_fmt(height)}h-{_fmt(width)}z")
-    return "".join(commands)
+    )
+    for start in range(0, len(ordered), _MAX_PATH_RECTANGLES):
+        chunk = ordered[start : start + _MAX_PATH_RECTANGLES]
+        commands = [
+            f"M{_fmt(x)} {_fmt(y)}h{_fmt(width)}v{_fmt(height)}h-{_fmt(width)}z"
+            for x, y, width, height in chunk
+        ]
+        yield "".join(commands), len(chunk)
 
 
-def _mark_path(points: Iterable[tuple[float, float]], width: float, height: float) -> str:
+def _mark_path_chunks(
+    points: Iterable[tuple[float, float]],
+    width: float,
+    height: float,
+) -> Iterable[tuple[str, int]]:
     half_width = width / 2.0
     half_height = height / 2.0
-    return _rectangle_path((x - half_width, y - half_height, width, height) for x, y in points)
+    return _rectangle_path_chunks(
+        (x - half_width, y - half_height, width, height) for x, y in points
+    )
 
 
 def _site_occupancy(
@@ -674,7 +688,10 @@ def _svg_document(
     top = 92.0
     legend_gap = 48.0
     legend_width = 390.0
-    document_width = left + plot_width + legend_gap + legend_width + 36.0
+    document_width = max(
+        _MIN_DOCUMENT_WIDTH,
+        left + plot_width + legend_gap + legend_width + 36.0,
+    )
 
     groups = sorted(group for group, count in group_sites.items() if count)
     if len(groups) > max_groups:
@@ -728,7 +745,6 @@ def _svg_document(
     occupied_rectangles: dict[tuple[str, str], list[tuple[float, float, float, float]]] = (
         defaultdict(list)
     )
-    occupied_group_resource_sites: Counter[tuple[str, str]] = Counter()
     mixed_sites = 0
     for site in drawable_sites:
         point = transform(site)
@@ -752,7 +768,6 @@ def _svg_document(
             occupied_rectangles[(group, site.resource)].append(
                 (x + segment_width * index, y, current_width, height)
             )
-            occupied_group_resource_sites[(group, site.resource)] += 1
 
     color_by_group = {group: _group_color(index) for index, group in enumerate(groups)}
     display_title = title or f"FPGA placement — {design.design or design.source.stem}"
@@ -841,20 +856,21 @@ def _svg_document(
         if not points:
             continue
         width, height = _MARK_SIZE[resource]
-        path = _mark_path(points, width, height)
         lines.extend(
             [
                 (
-                    f'    <path id="resource-{resource}" d="{path}" '
+                    f'    <g id="resource-{resource}" '
                     f'fill="{_RESOURCE_COLORS[resource]}" opacity="0.86">'
                 ),
                 (
                     f"      <title>{xml_escape(_RESOURCE_LABELS[resource])}: "
                     f"{resource_counts[resource]} sites</title>"
                 ),
-                "    </path>",
             ]
         )
+        for path, _count in _mark_path_chunks(points, width, height):
+            lines.append(f'      <path d="{path}"/>')
+        lines.append("    </g>")
     lines.append("  </g>")
 
     lines.append('  <g id="placed-hierarchies">')
@@ -863,22 +879,21 @@ def _svg_document(
             rectangles = occupied_rectangles.get((group, resource), [])
             if not rectangles:
                 continue
-            path = _rectangle_path(rectangles)
-            site_count = occupied_group_resource_sites[(group, resource)]
-            lines.extend(
-                [
-                    (
-                        f'    <path d="{path}" fill="{color_by_group[group]}" opacity="0.94" '
-                        f"data-hierarchy={quoteattr(group)} "
-                        f'data-resource="{resource}">'
-                    ),
-                    (
-                        f"      <title>{xml_escape(group)} — {_RESOURCE_LABELS[resource]}: "
-                        f"{site_count} occupied sites</title>"
-                    ),
-                    "    </path>",
-                ]
-            )
+            for path, site_count in _rectangle_path_chunks(rectangles):
+                lines.extend(
+                    [
+                        (
+                            f'    <path d="{path}" fill="{color_by_group[group]}" '
+                            f'opacity="0.94" data-hierarchy={quoteattr(group)} '
+                            f'data-resource="{resource}">'
+                        ),
+                        (
+                            f"      <title>{xml_escape(group)} — {_RESOURCE_LABELS[resource]}: "
+                            f"{site_count} occupied sites</title>"
+                        ),
+                        "    </path>",
+                    ]
+                )
     lines.append("  </g>")
 
     if pblock_regions:
@@ -901,7 +916,7 @@ def _svg_document(
                     )
         lines.append("  </g>")
 
-    legend_x = left + plot_width + legend_gap
+    legend_x = document_width - legend_width - 36.0
     legend_y = top
     lines.extend(
         [
