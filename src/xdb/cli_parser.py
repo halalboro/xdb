@@ -124,7 +124,7 @@ Examples:
     reports_sub = s_reports.add_subparsers(
         dest="reports_cmd",
         required=True,
-        metavar="{utilization,compare,cips}",
+        metavar="{utilization,compare,cips,floorplan}",
     )
     s_reports_utilization = reports_sub.add_parser(
         "utilization",
@@ -187,6 +187,79 @@ Examples:
     s_reports_cips.add_argument("--bif", default=None, help="BIF path, relative to <path>")
     s_reports_cips.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     s_reports_cips.add_argument("--timeout", type=int, default=1800, help="Vivado timeout in seconds")
+
+    reports_floorplan_epilog = """\
+Opens a routed checkpoint in Vivado batch mode, extracts physical site and
+placement data, then writes a deterministic SVG without launching the GUI.
+Occupied sites are colored by hierarchy; device resource types remain visible
+in the background. Existing pblocks are drawn as dashed outlines by default.
+
+Examples:
+  xdb reports floorplan result --out figures/floorplan.svg
+  xdb reports floorplan result --dcp checkpoints/shell_routed.dcp \\
+    --hierarchy-depth 2 --out figures/floorplan.svg
+"""
+    s_reports_floorplan = reports_sub.add_parser(
+        "floorplan",
+        help="render routed FPGA placement as publication-ready SVG",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=reports_floorplan_epilog,
+    )
+    _add_debug_flag(s_reports_floorplan)
+    s_reports_floorplan.add_argument(
+        "path",
+        help="routed DCP or build/package output directory",
+    )
+    s_reports_floorplan.add_argument(
+        "--dcp",
+        default=None,
+        help="checkpoint path relative to <path> when <path> is a directory",
+    )
+    s_reports_floorplan.add_argument(
+        "--out",
+        required=True,
+        help="output SVG path",
+    )
+    s_reports_floorplan.add_argument(
+        "--hierarchy-depth",
+        type=int,
+        default=1,
+        help="hierarchy components used for placement colors (default: 1)",
+    )
+    s_reports_floorplan.add_argument(
+        "--max-groups",
+        type=int,
+        default=32,
+        help="maximum hierarchy color groups before refusing to render (default: 32)",
+    )
+    s_reports_floorplan.add_argument(
+        "--title",
+        default=None,
+        help="figure title (default: design name)",
+    )
+    s_reports_floorplan.add_argument(
+        "--no-pblocks",
+        dest="show_pblocks",
+        action="store_false",
+        help="omit pblock outlines",
+    )
+    s_reports_floorplan.set_defaults(show_pblocks=True)
+    s_reports_floorplan.add_argument(
+        "--force",
+        action="store_true",
+        help="replace an existing output file",
+    )
+    s_reports_floorplan.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable render metadata",
+    )
+    s_reports_floorplan.add_argument(
+        "--timeout",
+        type=int,
+        default=1800,
+        help="Vivado timeout in seconds",
+    )
 
     s_util = sub.add_parser(
         "util",

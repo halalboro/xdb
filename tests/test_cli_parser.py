@@ -79,7 +79,7 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(reports.cmd, "reports")
         self.assertEqual(reports.reports_cmd, "util")
         self.assertEqual(canonical.reports_cmd, "utilization")
-        self.assertIn("{utilization,compare,cips}", reports_help)
+        self.assertIn("{utilization,compare,cips,floorplan}", reports_help)
         self.assertNotIn("{utilization,util", reports_help)
 
     def test_reports_compare_command_is_parseable(self) -> None:
@@ -103,6 +103,35 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.new, ["new-build-a", "new-build-b"])
         self.assertEqual(args.report, "shell")
         self.assertEqual(args.new_name, ["a", "b"])
+
+    def test_reports_floorplan_command_is_parseable(self) -> None:
+        args = build_parser().parse_args([
+            "reports",
+            "floorplan",
+            "build-output",
+            "--dcp",
+            "checkpoints/shell_routed.dcp",
+            "--out",
+            "figure.svg",
+            "--hierarchy-depth",
+            "2",
+            "--max-groups",
+            "32",
+            "--no-pblocks",
+            "--force",
+            "--json",
+        ])
+
+        self.assertEqual(args.cmd, "reports")
+        self.assertEqual(args.reports_cmd, "floorplan")
+        self.assertEqual(args.path, "build-output")
+        self.assertEqual(args.dcp, "checkpoints/shell_routed.dcp")
+        self.assertEqual(args.out, "figure.svg")
+        self.assertEqual(args.hierarchy_depth, 2)
+        self.assertEqual(args.max_groups, 32)
+        self.assertFalse(args.show_pblocks)
+        self.assertTrue(args.force)
+        self.assertTrue(args.json)
 
     def test_reports_utilization_help_documents_report_aliases(self) -> None:
         parser = build_parser()

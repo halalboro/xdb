@@ -86,6 +86,7 @@ from xdb.sim.daemon import run_daemon
 from xdb.sim.mem_tools import diff_memory_files, dump_memory_session
 from xdb.sim.trace_profiles import get_trace_profile, list_trace_profiles
 from xdb.reports.cips import format_cips_report, inspect_cips
+from xdb.reports.floorplan import format_floorplan_report, generate_floorplan_svg
 from xdb.reports.utilization import (
     discover_utilization_report,
     format_utilization_comparison,
@@ -403,6 +404,27 @@ def _run_reports_cips(args: argparse.Namespace) -> None:
         timeout=args.timeout,
     )
     _emit_json(data) if args.json else _emit_text(format_cips_report(data))
+
+
+def _run_reports_floorplan(args: argparse.Namespace) -> None:
+    if args.hierarchy_depth <= 0:
+        raise XdbError("--hierarchy-depth must be > 0")
+    if args.timeout <= 0:
+        raise XdbError("--timeout must be > 0")
+    if args.max_groups <= 0:
+        raise XdbError("--max-groups must be > 0")
+    data = generate_floorplan_svg(
+        args.path,
+        output=args.out,
+        dcp=args.dcp,
+        hierarchy_depth=args.hierarchy_depth,
+        title=args.title,
+        show_pblocks=bool(args.show_pblocks),
+        max_groups=args.max_groups,
+        force=bool(args.force),
+        timeout=args.timeout,
+    )
+    _emit_json(data) if args.json else _emit_text(format_floorplan_report(data))
 
 
 def _default_report_input_name(path: str) -> str:
@@ -1025,6 +1047,8 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 _run_reports_compare(args)
             elif args.reports_cmd == "cips":
                 _run_reports_cips(args)
+            elif args.reports_cmd == "floorplan":
+                _run_reports_floorplan(args)
             else:
                 p.error("unknown reports command")
             return

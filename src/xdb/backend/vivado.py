@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import signal
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -91,6 +92,28 @@ class VivadoBackend:
         }
 
 
+def _stop_process_tree(process: subprocess.Popen[str]) -> tuple[str, str]:
+    if process.poll() is None:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
+        except OSError:
+            process.terminate()
+    try:
+        return process.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except OSError:
+            process.kill()
+        return process.communicate()
+
+
 def _run_vivado_tcl(tcl: str, args: list[str], timeout: int = 120) -> VivadoResult:
     with tempfile.NamedTemporaryFile("w", suffix=".tcl", delete=False) as tf:
         tf.write(tcl)
@@ -101,26 +124,46 @@ def _run_vivado_tcl(tcl: str, args: list[str], timeout: int = 120) -> VivadoResu
         cmd += ["-tclargs", *args]
 
     env = os.environ.copy()
+    process: subprocess.Popen[str] | None = None
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
-    except FileNotFoundError as e:
-        raise VivadoError(
-            "vivado executable not found in PATH. Run inside a Xilinx-enabled shell "
-            "(e.g., xilinx-shell) or source Vivado settings first."
-        ) from e
-    try:
-        Path(tcl_path).unlink(missing_ok=True)
-    except Exception:
-        pass
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                start_new_session=os.name == "posix",
+            )
+        except FileNotFoundError as e:
+            raise VivadoError(
+                "vivado executable not found in PATH. Run inside a Xilinx-enabled shell "
+                "(e.g., xilinx-shell) or source Vivado settings first."
+            ) from e
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as e:
+            stdout, stderr = _stop_process_tree(process)
+            raise VivadoError(
+                f"vivado timed out after {timeout} seconds\n"
+                f"cmd: {' '.join(shlex.quote(x) for x in cmd)}\n"
+                f"stdout:\n{stdout}\n"
+                f"stderr:\n{stderr}"
+            ) from e
+    finally:
+        try:
+            Path(tcl_path).unlink(missing_ok=True)
+        except OSError:
+            pass
 
-    if p.returncode != 0:
+    if process.returncode != 0:
         raise VivadoError(
-            f"vivado failed (rc={p.returncode})\n"
+            f"vivado failed (rc={process.returncode})\n"
             f"cmd: {' '.join(shlex.quote(x) for x in cmd)}\n"
-            f"stdout:\n{p.stdout}\n"
-            f"stderr:\n{p.stderr}"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}"
         )
-    return VivadoResult(stdout=p.stdout, stderr=p.stderr)
+    return VivadoResult(stdout=stdout, stderr=stderr)
 
 
 def _extract_json(stdout: str) -> dict[str, Any]:

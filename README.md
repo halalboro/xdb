@@ -18,6 +18,7 @@ This repo provides a standalone CLI so ILA debug automation is not tied to any o
 - Capture from an ILA and export CSV
 - Persistent XSim/Vivado simulation sessions for packaged runtime-backed flows
 - Coyote-aware simulation commands for CSR access, host memory, invoke/completion, and IRQs
+- Headless, publication-ready SVG floorplans from routed Vivado checkpoints
 
 ## Requirements
 
@@ -174,7 +175,30 @@ xdb reports compare d13 d15 d17 --report user --old-name d13 --new-name d15 --ne
 xdb reports cips result
 xdb reports cips result/bitstreams/cyt_top.bif
 xdb reports cips result --dcp checkpoints/shell_routed.dcp --json
+
+# render the routed device resources and placement as deterministic SVG
+xdb reports floorplan result --out figures/floorplan.svg
+
+# use deeper hierarchy names for finer-grained placement colors
+xdb reports floorplan result \
+  --dcp checkpoints/shell_routed.dcp \
+  --hierarchy-depth 2 \
+  --out figures/floorplan.svg \
+  --force
 ```
+
+`xdb reports floorplan` opens a routed DCP in Vivado batch mode and asks Vivado
+for its physical site grid, placed primitive locations, hierarchy, and pblocks.
+XDB then renders a deterministic SVG itself; it does not require the Vivado GUI
+or a display server. Available CLB, BRAM, URAM, DSP, I/O, transceiver, clocking,
+and hard-IP sites form the muted device background. Occupied sites are colored
+by hierarchy and listed in a legend. Pblocks are shown as dashed outlines when
+their site ranges can be resolved; pass `--no-pblocks` to omit them. Use
+`--hierarchy-depth` to control how many leading instance-name components define
+a color group. To prevent accidentally producing an enormous, unreadable
+legend, rendering stops above 32 groups by default; use `--max-groups` to raise
+that explicit limit. The input must be a routed checkpoint; XDB rejects a
+checkpoint when Vivado reports routing errors.
 
 `xdb reports utilization` prints compact one-or-many report summaries. `xdb
 reports compare` compares one baseline against one or more new reports and

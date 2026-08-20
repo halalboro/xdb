@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -11,6 +12,30 @@ from xdb.backend import vivado
 
 
 class VivadoBackendTests(unittest.TestCase):
+    def test_vivado_timeout_is_reported_as_vivado_error(self) -> None:
+        expired = subprocess.TimeoutExpired(
+            ["vivado"],
+            3,
+            output="partial output",
+            stderr="partial error",
+        )
+        process = MagicMock()
+        process.pid = 123
+        process.poll.return_value = None
+        process.communicate.side_effect = [expired, ("partial output", "partial error")]
+        with patch("xdb.backend.vivado.subprocess.Popen", return_value=process) as popen:
+            with patch("xdb.backend.vivado.os.killpg") as killpg:
+                with self.assertRaisesRegex(
+                    vivado.VivadoError,
+                    "timed out after 3 seconds",
+                ) as error:
+                    vivado._run_vivado_tcl("exit 0", [], timeout=3)
+
+        self.assertIn("partial output", str(error.exception))
+        self.assertIn("partial error", str(error.exception))
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        killpg.assert_called_once_with(123, vivado.signal.SIGTERM)
+
     def test_list_ilas_passes_ltx_and_sets_probes_before_refresh(self) -> None:
         captured: dict[str, object] = {}
 
