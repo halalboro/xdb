@@ -20,6 +20,15 @@ from xdb.cli_parser import build_parser
 from xdb.backend.base import Capability
 from xdb.backend.select import select_backend
 from xdb.errors import UnsupportedOperationError, XdbError
+from xdb.hls import (
+    create_hls_bundle,
+    format_hls_doctor_summary,
+    format_hls_provenance_summary,
+    format_hls_sim_summary,
+    hls_doctor,
+    hls_provenance,
+    run_hls_sim,
+)
 from xdb.sim.client import (
     add_breakpoint,
     add_wave,
@@ -618,6 +627,58 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 elaborate_script=args.elaborate_script,
                 simulate_script=args.simulate_script,
             )
+            return
+
+        if args.cmd == "hls":
+            if args.hls_cmd == "sim":
+                result = run_hls_sim(
+                    args.package_runtime,
+                    workspace=args.workspace,
+                    case_name=args.case,
+                    all_cases=bool(args.all),
+                    continue_on_failure=bool(args.continue_on_failure),
+                    timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                    force_restage=bool(args.restage),
+                )
+                if args.summary:
+                    _emit_text(format_hls_sim_summary(result))
+                else:
+                    _print(result)
+                if not result.get("ok", False):
+                    raise SystemExit(130 if result.get("status") == "interrupted" else 1)
+            elif args.hls_cmd == "provenance":
+                result = hls_provenance(
+                    args.package_runtime,
+                    workspace=args.workspace,
+                    case_name=args.case,
+                )
+                if args.summary:
+                    _emit_text(format_hls_provenance_summary(result))
+                else:
+                    _print(result)
+            elif args.hls_cmd == "doctor":
+                result = hls_doctor(
+                    args.package_runtime,
+                    workspace=args.workspace,
+                    case_name=args.case,
+                )
+                if args.summary:
+                    _emit_text(format_hls_doctor_summary(result))
+                else:
+                    _print(result)
+                if not result.get("ok", False):
+                    raise SystemExit(1)
+            elif args.hls_cmd == "bundle":
+                _print(
+                    create_hls_bundle(
+                        args.package_runtime,
+                        workspace=args.workspace,
+                        out=args.out,
+                        max_bytes=args.max_bytes,
+                    )
+                )
+            else:
+                p.error("unknown hls command")
             return
 
         if args.cmd == "sim":

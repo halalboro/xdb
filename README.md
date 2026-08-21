@@ -19,11 +19,15 @@ This repo provides a standalone CLI so ILA debug automation is not tied to any o
 - Persistent XSim/Vivado simulation sessions for packaged runtime-backed flows
 - Coyote-aware simulation commands for CSR access, host memory, invoke/completion, and IRQs
 - Headless, publication-ready SVG floorplans from routed Vivado checkpoints
+- Finite, packaged Vitis HLS C-simulation orchestration with provenance and bundles
 
 ## Requirements
 
 - Python 3.10+
-- `vivado` available in `PATH` (typically through your cluster `xilinx-shell`)
+- `vivado` available in `PATH` for FPGA/RTL operations
+- `vitis_hls` available in `PATH` for `xdb hls` operations, with the exact version declared by the runtime package
+
+Both tools should be provided by the consuming project's pinned Xilinx/Nix shell.
 
 ## Install (editable)
 
@@ -161,6 +165,37 @@ xdb sim close
 # force cleanup if the daemon is unresponsive
 xdb sim close --force
 ```
+
+## HLS C simulation
+
+HLS C simulation is a finite packaged process and is intentionally separate
+from persistent RTL `xdb sim`:
+
+```bash
+# stage the immutable package and run its default case
+xdb hls sim result-hls-csim --summary
+
+# select one named case or run every case in deterministic order
+xdb hls sim result-hls-csim --case empty
+xdb hls sim result-hls-csim --all --continue-on-failure
+
+# inspect reproducibility and health evidence
+xdb hls provenance result-hls-csim --summary
+xdb hls doctor result-hls-csim --summary
+
+# export bounded logs, results, provenance, and declared artifacts
+xdb hls bundle result-hls-csim --out failure-001
+```
+
+The consuming project supplies an immutable `xdb-hls-csim.json`, package-local
+prepare/run entry points, fixtures, exact tool version, flags, permitted
+environment, and source/configuration hashes. XDB validates the contract,
+stages it into a writable fingerprinted workspace, verifies the observed tool
+version, enforces per-process timeouts with process-group cleanup, and retains
+normalized results plus raw logs. See
+[`docs/hls-csim-runtime-v1.md`](docs/hls-csim-runtime-v1.md) for the complete
+version-1 schema and package layout. This command does not run HLS synthesis,
+RTL export/co-simulation, Vivado implementation, deployment, or hardware.
 
 ## Build reports
 

@@ -16,6 +16,7 @@ class CliParserTests(unittest.TestCase):
         self.assertNotIn("_simd", help_text)
         self.assertNotIn("==SUPPRESS==", help_text)
         self.assertIn("timing", help_text)
+        self.assertIn("hls", help_text)
         self.assertIn("sim", help_text)
 
     def test_private_simd_command_remains_parseable(self) -> None:
@@ -140,6 +141,39 @@ class CliParserTests(unittest.TestCase):
         self.assertFalse(args.show_pblocks)
         self.assertTrue(args.force)
         self.assertTrue(args.json)
+
+    def test_hls_command_family_is_parseable(self) -> None:
+        sim = build_parser().parse_args(
+            [
+                "hls",
+                "sim",
+                "runtime",
+                "--workspace",
+                "workspace",
+                "--all",
+                "--continue-on-failure",
+                "--timeout",
+                "12.5",
+                "--restage",
+                "--summary",
+            ]
+        )
+        provenance = build_parser().parse_args(
+            ["hls", "provenance", "runtime", "--case", "empty", "--summary"]
+        )
+        doctor = build_parser().parse_args(["hls", "doctor", "runtime", "--summary"])
+        bundle = build_parser().parse_args(
+            ["hls", "bundle", "runtime", "--out", "failure", "--max-bytes", "4096"]
+        )
+
+        self.assertEqual(sim.hls_cmd, "sim")
+        self.assertTrue(sim.all)
+        self.assertTrue(sim.continue_on_failure)
+        self.assertEqual(sim.timeout, 12.5)
+        self.assertTrue(sim.restage)
+        self.assertEqual(provenance.case, "empty")
+        self.assertEqual(doctor.hls_cmd, "doctor")
+        self.assertEqual(bundle.max_bytes, 4096)
 
     def test_reports_utilization_help_documents_report_aliases(self) -> None:
         parser = build_parser()

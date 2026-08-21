@@ -13,7 +13,7 @@ def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
         dest="debug",
         action="store_true",
         default=argparse.SUPPRESS,
-        help="print tracebacks and detailed Vivado diagnostics on failure",
+        help="print tracebacks and detailed backend/tool diagnostics on failure",
     )
 
 
@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
         "timing",
         "vivado",
         "instruments",
+        "hls",
         "sim",
     ]
     sub = p.add_subparsers(
@@ -381,6 +382,111 @@ Examples:
         "--part-hint", "--fpga-part-hint", dest="part_hint", default=None
     )
     s_instruments_list.add_argument("--timeout", type=int, default=180)
+
+    hls_epilog = """\
+Run finite, packaged Vitis HLS C simulations in a writable staged workspace.
+This command family is separate from persistent RTL `xdb sim`; it provides no
+RTL signals, Tcl state, simulator time, synthesis, or co-simulation.
+
+Examples:
+  xdb hls sim result-hls-csim --case empty --summary
+  xdb hls sim result-hls-csim --all --continue-on-failure
+  xdb hls provenance result-hls-csim --summary
+  xdb hls doctor result-hls-csim --summary
+  xdb hls bundle result-hls-csim --out failure-001
+"""
+    s_hls = sub.add_parser(
+        "hls",
+        help="run and inspect packaged HLS C simulation",
+        description="Finite packaged Vitis HLS C-simulation orchestration",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=hls_epilog,
+    )
+    _add_debug_flag(s_hls)
+    hls_sub = s_hls.add_subparsers(
+        dest="hls_cmd",
+        required=True,
+        metavar="{sim,provenance,doctor,bundle}",
+    )
+
+    def add_hls_runtime_args(sp: argparse.ArgumentParser) -> None:
+        sp.add_argument(
+            "package_runtime",
+            nargs="?",
+            default=None,
+            help=(
+                "HLS C-simulation package, runtime directory, or xdb-hls-csim.json; "
+                "overrides XDB_HLS_PACKAGE_RUNTIME"
+            ),
+        )
+        sp.add_argument(
+            "--workspace",
+            default=None,
+            help="writable staged workspace; overrides XDB_HLS_WORKSPACE",
+        )
+
+    s_hls_sim = hls_sub.add_parser("sim", help="run finite packaged HLS C simulation")
+    _add_debug_flag(s_hls_sim)
+    add_hls_runtime_args(s_hls_sim)
+    hls_case_selection = s_hls_sim.add_mutually_exclusive_group()
+    hls_case_selection.add_argument("--case", default=None, help="named manifest test case")
+    hls_case_selection.add_argument(
+        "--all",
+        action="store_true",
+        help="run all manifest cases in deterministic name order",
+    )
+    s_hls_sim.add_argument(
+        "--continue-on-failure",
+        action="store_true",
+        help="run remaining selected cases after a failure (default: fail fast)",
+    )
+    s_hls_sim.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="per-tool/prepare/case wall-clock timeout in seconds (default: manifest)",
+    )
+    s_hls_sim.add_argument(
+        "--restage",
+        action="store_true",
+        help="discard and recreate the writable workspace before running",
+    )
+    s_hls_sim.add_argument(
+        "--summary",
+        action="store_true",
+        help="print concise human-readable output instead of JSON",
+    )
+
+    s_hls_provenance = hls_sub.add_parser(
+        "provenance", help="report HLS package, staging, invocation, and result provenance"
+    )
+    _add_debug_flag(s_hls_provenance)
+    add_hls_runtime_args(s_hls_provenance)
+    s_hls_provenance.add_argument("--case", default=None, help="named manifest test case")
+    s_hls_provenance.add_argument("--summary", action="store_true")
+
+    s_hls_doctor = hls_sub.add_parser(
+        "doctor", help="diagnose HLS package, workspace, tool, and prior-run health"
+    )
+    _add_debug_flag(s_hls_doctor)
+    add_hls_runtime_args(s_hls_doctor)
+    s_hls_doctor.add_argument("--case", default=None, help="named manifest test case")
+    s_hls_doctor.add_argument("--summary", action="store_true")
+
+    s_hls_bundle = hls_sub.add_parser("bundle", help="export a bounded HLS failure bundle")
+    _add_debug_flag(s_hls_bundle)
+    add_hls_runtime_args(s_hls_bundle)
+    s_hls_bundle.add_argument(
+        "--out",
+        required=True,
+        help="bundle directory name/path; relative names are under the staged workspace",
+    )
+    s_hls_bundle.add_argument(
+        "--max-bytes",
+        type=int,
+        default=16 * 1024 * 1024,
+        help="maximum copied log/artifact payload bytes (default: 16777216)",
+    )
 
     s_sim = sub.add_parser("sim", description="Persistent Vivado simulation session control")
     _add_debug_flag(s_sim)

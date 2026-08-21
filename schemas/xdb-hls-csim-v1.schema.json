@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/taugoust/xdb/schemas/xdb-hls-csim-v1.schema.json",
+  "title": "XDB packaged HLS C-simulation runtime",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "runtime_kind",
+    "project",
+    "top",
+    "prepare",
+    "run",
+    "cases",
+    "default_case",
+    "default_timeout_seconds",
+    "expected_exit_code",
+    "tool",
+    "environment",
+    "provenance",
+    "compile_flags",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "runtime_kind": {
+      "const": "hls-csim"
+    },
+    "project": {
+      "$ref": "#/$defs/name"
+    },
+    "top": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prepare": {
+      "$ref": "#/$defs/entrypoint"
+    },
+    "run": {
+      "$ref": "#/$defs/entrypoint"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    },
+    "default_case": {
+      "$ref": "#/$defs/name"
+    },
+    "default_timeout_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 86400
+    },
+    "expected_exit_code": {
+      "$ref": "#/$defs/exitCode"
+    },
+    "success_marker": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "version",
+        "executable",
+        "version_args",
+        "version_regex"
+      ],
+      "properties": {
+        "family": {
+          "$ref": "#/$defs/name"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executable": {
+          "$ref": "#/$defs/name"
+        },
+        "version_args": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "version_regex": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pass",
+        "set"
+      ],
+      "properties": {
+        "pass": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/envName"
+          }
+        },
+        "set": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/envName"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "pass": {
+              "contains": {
+                "const": "PATH"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "set": {
+              "required": [
+                "PATH"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "source_sha256",
+        "configuration_sha256"
+      ],
+      "properties": {
+        "source_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "configuration_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "compile_flags": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "envName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          {
+            "pattern": "^(?:/|\\\\)"
+          },
+          {
+            "pattern": "(?:^|/)\\.\\.(?:/|$)"
+          }
+        ]
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exitCode": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "entrypoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "args": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "args": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "fixtures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relativePath"
+          }
+        },
+        "expected_exit_code": {
+          "$ref": "#/$defs/exitCode"
+        },
+        "success_marker": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "required",
+        "max_bytes"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        }
+      }
+    }
+  }
+}

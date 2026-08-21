@@ -1,3 +1,5 @@
+/.xdb/
+/issues/
 __pycache__/
 *.egg-info/
 .direnv/
