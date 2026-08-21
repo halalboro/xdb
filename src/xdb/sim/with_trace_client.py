@@ -232,7 +232,9 @@ def parse_with_trace_command(command: list[str]) -> SimRequest:
             parser.add_argument("addr")
             parser.add_argument("size")
             ns = parser.parse_args(rest)
-            return make_request(OP_MEM_MAP, space=ns.space, addr=int(ns.addr, 0), size=int(ns.size, 0))
+            return make_request(
+                OP_MEM_MAP, space=ns.space, addr=int(ns.addr, 0), size=int(ns.size, 0)
+            )
         if mem_sub == "unmap":
             parser.add_argument("unmap")
             parser.add_argument("space")
@@ -255,7 +257,9 @@ def parse_with_trace_command(command: list[str]) -> SimRequest:
             parser.add_argument("addr")
             parser.add_argument("size")
             ns = parser.parse_args(rest)
-            return make_request(OP_MEM_READ, space=ns.space, addr=int(ns.addr, 0), size=int(ns.size, 0))
+            return make_request(
+                OP_MEM_READ, space=ns.space, addr=int(ns.addr, 0), size=int(ns.size, 0)
+            )
         if mem_sub == "write":
             parser.add_argument("write")
             parser.add_argument("space")
@@ -281,5 +285,3 @@ def parse_with_trace_command(command: list[str]) -> SimRequest:
             )
         raise XdbError(f"unsupported xdb sim mem subcommand for with-trace: {mem_sub}")
     raise XdbError(f"unsupported wrapped xdb sim subcommand for with-trace: {subcommand}")
-
-

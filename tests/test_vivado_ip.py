@@ -115,7 +115,9 @@ class VivadoIpTests(unittest.TestCase):
             info = vivado_ip_info(root)
 
         self.assertEqual(info["count"], 2)
-        self.assertEqual([ip["name"] for ip in info["ips"]], ["axis_register_slice_meta_8", "fifo_0"])
+        self.assertEqual(
+            [ip["name"] for ip in info["ips"]], ["axis_register_slice_meta_8", "fifo_0"]
+        )
 
     def test_format_vivado_ip_info_text(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

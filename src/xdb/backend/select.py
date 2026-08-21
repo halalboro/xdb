@@ -21,6 +21,4 @@ def select_backend(name: str | None = None) -> DebugBackend:
             return ChipScoPyBackend()
         return VivadoBackend()
 
-    raise XdbError(
-        f"unsupported backend: {backend_name} (supported: auto, vivado, chipscopy)"
-    )
+    raise XdbError(f"unsupported backend: {backend_name} (supported: auto, vivado, chipscopy)")

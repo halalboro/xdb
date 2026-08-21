@@ -17,8 +17,6 @@ def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
-
-
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="xdb", description="Generic FPGA ILA debug toolkit")
     p.add_argument("--version", action="version", version=f"xdb {__version__}")
@@ -102,7 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
             help="build label for compact multi-report output; may be repeated",
         )
 
-    reports_report_selection_help = "when <path> is a directory, select report alias or relative report path"
+    reports_report_selection_help = (
+        "when <path> is a directory, select report alias or relative report path"
+    )
     reports_utilization_epilog = """\
 Report selection when each positional path is a build/package directory:
   --report shell            routed top-level Coyote design utilization
@@ -151,11 +151,17 @@ Examples:
         epilog=reports_compare_epilog,
     )
     _add_debug_flag(s_reports_compare)
-    s_reports_compare.add_argument("old", help="baseline report file or build/package output directory")
-    s_reports_compare.add_argument("new", nargs="+", help="new report file or build/package output directory")
+    s_reports_compare.add_argument(
+        "old", help="baseline report file or build/package output directory"
+    )
+    s_reports_compare.add_argument(
+        "new", nargs="+", help="new report file or build/package output directory"
+    )
     s_reports_compare.add_argument("--report", default=None, help=reports_report_selection_help)
     s_reports_compare.add_argument("--old-name", default=None, help="baseline label")
-    s_reports_compare.add_argument("--new-name", action="append", default=None, help="new-build label; may be repeated")
+    s_reports_compare.add_argument(
+        "--new-name", action="append", default=None, help="new-build label; may be repeated"
+    )
     s_reports_compare.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     s_reports_compare.add_argument("--csv", action="store_true", help="emit CSV rows")
     s_reports_compare.add_argument(
@@ -186,7 +192,9 @@ Examples:
     s_reports_cips.add_argument("--dcp", default=None, help="checkpoint path, relative to <path>")
     s_reports_cips.add_argument("--bif", default=None, help="BIF path, relative to <path>")
     s_reports_cips.add_argument("--json", action="store_true", help="emit machine-readable JSON")
-    s_reports_cips.add_argument("--timeout", type=int, default=1800, help="Vivado timeout in seconds")
+    s_reports_cips.add_argument(
+        "--timeout", type=int, default=1800, help="Vivado timeout in seconds"
+    )
 
     reports_floorplan_epilog = """\
 Opens a routed checkpoint in Vivado batch mode, extracts physical site and
@@ -303,7 +311,9 @@ Examples:
 
     s_timing_triage = timing_sub.add_parser("triage")
     add_timing_common_args(s_timing_triage)
-    s_timing_triage.add_argument("--log", default=None, help="Vivado log for critical warning extraction")
+    s_timing_triage.add_argument(
+        "--log", default=None, help="Vivado log for critical warning extraction"
+    )
     s_timing_triage.add_argument("--max-paths", type=int, default=20)
     s_timing_triage.add_argument("--hierarchy-depth", type=int, default=4)
 
@@ -327,7 +337,9 @@ Examples:
     )
     _add_debug_flag(s_vivado_summarize_log)
     s_vivado_summarize_log.add_argument("log", help="Vivado log file, or '-' to read stdin")
-    s_vivado_summarize_log.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    s_vivado_summarize_log.add_argument(
+        "--json", action="store_true", help="emit machine-readable JSON"
+    )
     s_vivado_summarize_log.add_argument(
         "--max-items",
         type=int,
@@ -365,7 +377,9 @@ Examples:
     instruments_sub = s_instruments.add_subparsers(dest="instruments_cmd", required=True)
     s_instruments_list = instruments_sub.add_parser("list")
     _add_debug_flag(s_instruments_list)
-    s_instruments_list.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
+    s_instruments_list.add_argument(
+        "--part-hint", "--fpga-part-hint", dest="part_hint", default=None
+    )
     s_instruments_list.add_argument("--timeout", type=int, default=180)
 
     s_sim = sub.add_parser("sim", description="Persistent Vivado simulation session control")
@@ -414,18 +428,26 @@ Examples:
     s_sim_provenance = sim_sub.add_parser("provenance")
     _add_debug_flag(s_sim_provenance)
     add_sim_session_arg(s_sim_provenance)
-    s_sim_provenance.add_argument("--summary", action="store_true", help="print compact human-readable output")
+    s_sim_provenance.add_argument(
+        "--summary", action="store_true", help="print compact human-readable output"
+    )
 
     s_sim_doctor = sim_sub.add_parser("doctor", help="diagnose simulation session/runtime health")
     _add_debug_flag(s_sim_doctor)
     add_sim_session_arg(s_sim_doctor)
-    s_sim_doctor.add_argument("--timeout", type=float, default=1.0, help="daemon status probe timeout in seconds")
-    s_sim_doctor.add_argument("--summary", action="store_true", help="print compact human-readable output")
+    s_sim_doctor.add_argument(
+        "--timeout", type=float, default=1.0, help="daemon status probe timeout in seconds"
+    )
+    s_sim_doctor.add_argument(
+        "--summary", action="store_true", help="print compact human-readable output"
+    )
 
     s_sim_run = sim_sub.add_parser("run")
     _add_debug_flag(s_sim_run)
     add_sim_session_arg(s_sim_run)
-    s_sim_run.add_argument("--timeout", type=float, default=30.0, help="wall-clock daemon response timeout in seconds")
+    s_sim_run.add_argument(
+        "--timeout", type=float, default=30.0, help="wall-clock daemon response timeout in seconds"
+    )
     s_sim_run.add_argument("time", nargs="*")
 
     s_sim_restart = sim_sub.add_parser("restart")
@@ -435,8 +457,14 @@ Examples:
     s_sim_close = sim_sub.add_parser("close")
     _add_debug_flag(s_sim_close)
     add_sim_session_arg(s_sim_close)
-    s_sim_close.add_argument("--force", action="store_true", help="terminate cached daemon PID if the session is unresponsive")
-    s_sim_close.add_argument("--timeout", type=float, default=5.0, help="wall-clock daemon response timeout in seconds")
+    s_sim_close.add_argument(
+        "--force",
+        action="store_true",
+        help="terminate cached daemon PID if the session is unresponsive",
+    )
+    s_sim_close.add_argument(
+        "--timeout", type=float, default=5.0, help="wall-clock daemon response timeout in seconds"
+    )
 
     s_sim_time = sim_sub.add_parser("time")
     _add_debug_flag(s_sim_time)
@@ -480,7 +508,9 @@ Examples:
     add_sim_session_arg(s_sim_top)
     s_sim_top.add_argument("module")
 
-    s_sim_snapshot = sim_sub.add_parser("snapshot", help="capture a structured snapshot of a scope subtree")
+    s_sim_snapshot = sim_sub.add_parser(
+        "snapshot", help="capture a structured snapshot of a scope subtree"
+    )
     _add_debug_flag(s_sim_snapshot)
     add_sim_session_arg(s_sim_snapshot)
     s_sim_snapshot.add_argument("scope")
@@ -492,7 +522,9 @@ Examples:
     s_sim_diff_snapshot.add_argument("before")
     s_sim_diff_snapshot.add_argument("after")
 
-    s_sim_watch_changes = sim_sub.add_parser("watch-changes", help="snapshot a scope, run, and diff the result")
+    s_sim_watch_changes = sim_sub.add_parser(
+        "watch-changes", help="snapshot a scope, run, and diff the result"
+    )
     _add_debug_flag(s_sim_watch_changes)
     add_sim_session_arg(s_sim_watch_changes)
     s_sim_watch_changes.add_argument("scope")
@@ -600,7 +632,9 @@ Examples:
     s_sim_until_signal.add_argument("signal", help="hierarchical signal path")
     s_sim_until_signal.add_argument("value", help="exact expected get_value result")
 
-    s_sim_assert_signal = sim_sub.add_parser("assert-signal", help="assert a signal has an exact value now")
+    s_sim_assert_signal = sim_sub.add_parser(
+        "assert-signal", help="assert a signal has an exact value now"
+    )
     _add_debug_flag(s_sim_assert_signal)
     add_sim_session_arg(s_sim_assert_signal)
     s_sim_assert_signal.add_argument("signal")
@@ -611,26 +645,36 @@ Examples:
     add_sim_session_arg(s_sim_assert_tcl)
     s_sim_assert_tcl.add_argument("expr", nargs="+")
 
-    s_sim_expect_signal = sim_sub.add_parser("expect-signal", help="expect a signal to reach a value within a simulation time bound")
+    s_sim_expect_signal = sim_sub.add_parser(
+        "expect-signal", help="expect a signal to reach a value within a simulation time bound"
+    )
     _add_debug_flag(s_sim_expect_signal)
     add_sim_session_arg(s_sim_expect_signal)
     s_sim_expect_signal.add_argument("--within", nargs=2, required=True)
     s_sim_expect_signal.add_argument("signal")
     s_sim_expect_signal.add_argument("value")
 
-    s_sim_expect_change = sim_sub.add_parser("expect-change", help="expect a signal to change within a simulation time bound")
+    s_sim_expect_change = sim_sub.add_parser(
+        "expect-change", help="expect a signal to change within a simulation time bound"
+    )
     _add_debug_flag(s_sim_expect_change)
     add_sim_session_arg(s_sim_expect_change)
     s_sim_expect_change.add_argument("--within", nargs=2, required=True)
     s_sim_expect_change.add_argument("signal")
 
-    s_sim_expect_condition = sim_sub.add_parser("expect-condition", help="expect a Tcl expression to become true within a simulation time bound")
+    s_sim_expect_condition = sim_sub.add_parser(
+        "expect-condition",
+        help="expect a Tcl expression to become true within a simulation time bound",
+    )
     _add_debug_flag(s_sim_expect_condition)
     add_sim_session_arg(s_sim_expect_condition)
     s_sim_expect_condition.add_argument("--within", nargs=2, required=True)
     s_sim_expect_condition.add_argument("expr", nargs="+")
 
-    s_sim_expect_stream_output = sim_sub.add_parser("expect-stream-output", help="expect at least one AXIS handshake within a simulation time bound")
+    s_sim_expect_stream_output = sim_sub.add_parser(
+        "expect-stream-output",
+        help="expect at least one AXIS handshake within a simulation time bound",
+    )
     _add_debug_flag(s_sim_expect_stream_output)
     add_sim_session_arg(s_sim_expect_stream_output)
     s_sim_expect_stream_output.add_argument("--within", nargs=2, required=True)
@@ -649,7 +693,11 @@ Examples:
     s_sim_breakpoint_add = sim_bp_sub.add_parser("add")
     _add_debug_flag(s_sim_breakpoint_add)
     add_sim_session_arg(s_sim_breakpoint_add)
-    s_sim_breakpoint_add.add_argument("--poll-step", default=None, help="polling interval for fallback-polled breakpoints, e.g. '1 ns'")
+    s_sim_breakpoint_add.add_argument(
+        "--poll-step",
+        default=None,
+        help="polling interval for fallback-polled breakpoints, e.g. '1 ns'",
+    )
     s_sim_breakpoint_add.add_argument("condition", nargs="+")
     s_sim_breakpoint_list = sim_bp_sub.add_parser("list")
     _add_debug_flag(s_sim_breakpoint_list)
@@ -688,8 +736,12 @@ Examples:
     s_sim_axis_trace = sim_axis_sub.add_parser("trace")
     _add_debug_flag(s_sim_axis_trace)
     add_sim_session_arg(s_sim_axis_trace)
-    s_sim_axis_trace.add_argument("--profile", default=None, help="trace profile name from .xdb-trace.json")
-    s_sim_axis_trace.add_argument("--profile-file", default=None, help="explicit trace profile JSON file")
+    s_sim_axis_trace.add_argument(
+        "--profile", default=None, help="trace profile name from .xdb-trace.json"
+    )
+    s_sim_axis_trace.add_argument(
+        "--profile-file", default=None, help="explicit trace profile JSON file"
+    )
     s_sim_axis_trace.add_argument("paths", nargs="*")
     s_sim_axis_trace.add_argument("--for", dest="duration", nargs="+")
     s_sim_axis_trace.add_argument("--step", nargs="+", default=None)
@@ -712,37 +764,78 @@ Examples:
     add_sim_session_arg(s_sim_trace_transactions)
     s_sim_trace_transactions.add_argument("--for", dest="duration", nargs="+", required=True)
     s_sim_trace_transactions.add_argument("--opcode", default=None)
-    s_sim_trace_transactions.add_argument("--out", default=None, help="write trace output to a file")
-    s_sim_trace_profiles = sim_trace_sub.add_parser("profiles", help="list available named trace profiles")
+    s_sim_trace_transactions.add_argument(
+        "--out", default=None, help="write trace output to a file"
+    )
+    s_sim_trace_profiles = sim_trace_sub.add_parser(
+        "profiles", help="list available named trace profiles"
+    )
     _add_debug_flag(s_sim_trace_profiles)
-    s_sim_trace_profiles.add_argument("--profile-file", default=None, help="explicit trace profile JSON file")
+    s_sim_trace_profiles.add_argument(
+        "--profile-file", default=None, help="explicit trace profile JSON file"
+    )
 
-    s_sim_exec = sim_sub.add_parser("exec", help="run a host command against the live simulation session")
+    s_sim_exec = sim_sub.add_parser(
+        "exec", help="run a host command against the live simulation session"
+    )
     _add_debug_flag(s_sim_exec)
     add_sim_session_arg(s_sim_exec)
     s_sim_exec.add_argument("--cwd", default=None, help="working directory for the command")
     s_sim_exec.add_argument("--env", dest="env_overrides", action="append", default=[])
-    s_sim_exec.add_argument("--timeout", type=float, default=None, help="wall-clock timeout in seconds")
+    s_sim_exec.add_argument(
+        "--timeout", type=float, default=None, help="wall-clock timeout in seconds"
+    )
     s_sim_exec.add_argument("--expect-exit-code", type=int, default=0)
-    s_sim_exec.add_argument("--clean-env", action="store_true", help="do not inherit the current process environment")
-    s_sim_exec.add_argument("--stream", action="store_true", help="stream host stdout/stderr live to stderr while still capturing final JSON")
+    s_sim_exec.add_argument(
+        "--clean-env", action="store_true", help="do not inherit the current process environment"
+    )
+    s_sim_exec.add_argument(
+        "--stream",
+        action="store_true",
+        help="stream host stdout/stderr live to stderr while still capturing final JSON",
+    )
     s_sim_exec.add_argument("command", nargs=argparse.REMAINDER)
 
     s_sim_with_trace = sim_sub.add_parser("with-trace", help="run a command with scoped tracing")
     _add_debug_flag(s_sim_with_trace)
     add_sim_session_arg(s_sim_with_trace)
-    s_sim_with_trace.add_argument("--profile", default=None, help="trace profile name from .xdb-trace.json")
-    s_sim_with_trace.add_argument("--profile-file", default=None, help="explicit trace profile JSON file")
+    s_sim_with_trace.add_argument(
+        "--profile", default=None, help="trace profile name from .xdb-trace.json"
+    )
+    s_sim_with_trace.add_argument(
+        "--profile-file", default=None, help="explicit trace profile JSON file"
+    )
     s_sim_with_trace.add_argument("--transactions", action="store_true", default=None)
     s_sim_with_trace.add_argument("--axis", dest="axis_paths", action="append", default=[])
-    s_sim_with_trace.add_argument("--exec", dest="exec_mode", action="store_true", help="wrap an external host command instead of an xdb sim subcommand")
-    s_sim_with_trace.add_argument("--exec-until-exit", action="store_true", help="with --exec, trace until the host command exits instead of requiring --for")
-    s_sim_with_trace.add_argument("--cwd", default=None, help="working directory for --exec command")
+    s_sim_with_trace.add_argument(
+        "--exec",
+        dest="exec_mode",
+        action="store_true",
+        help="wrap an external host command instead of an xdb sim subcommand",
+    )
+    s_sim_with_trace.add_argument(
+        "--exec-until-exit",
+        action="store_true",
+        help="with --exec, trace until the host command exits instead of requiring --for",
+    )
+    s_sim_with_trace.add_argument(
+        "--cwd", default=None, help="working directory for --exec command"
+    )
     s_sim_with_trace.add_argument("--env", dest="exec_env_overrides", action="append", default=[])
-    s_sim_with_trace.add_argument("--timeout", type=float, default=None, help="wall-clock timeout for --exec command")
+    s_sim_with_trace.add_argument(
+        "--timeout", type=float, default=None, help="wall-clock timeout for --exec command"
+    )
     s_sim_with_trace.add_argument("--expect-exit-code", type=int, default=0)
-    s_sim_with_trace.add_argument("--clean-env", action="store_true", help="do not inherit current environment for --exec command")
-    s_sim_with_trace.add_argument("--stream", action="store_true", help="with --exec, stream host stdout/stderr live to stderr while tracing")
+    s_sim_with_trace.add_argument(
+        "--clean-env",
+        action="store_true",
+        help="do not inherit current environment for --exec command",
+    )
+    s_sim_with_trace.add_argument(
+        "--stream",
+        action="store_true",
+        help="with --exec, stream host stdout/stderr live to stderr while tracing",
+    )
     s_sim_with_trace.add_argument("--for", dest="duration", nargs="+")
     s_sim_with_trace.add_argument("--step", nargs="+", default=None)
     s_sim_with_trace.add_argument("--decode-bytes", action="store_true", default=None)
@@ -769,13 +862,23 @@ Examples:
     s_sim_with_trace_output.add_argument("--ndjson", action="store_true")
     s_sim_with_trace_output.add_argument("--summary", action="store_true")
     s_sim_with_trace.add_argument("--out", default=None, help="write trace output to a file")
-    s_sim_with_trace.add_argument("--bundle", default=None, nargs="?", const="", help="write a trace artifact bundle under XDB_ROOT/artifacts/bundles")
+    s_sim_with_trace.add_argument(
+        "--bundle",
+        default=None,
+        nargs="?",
+        const="",
+        help="write a trace artifact bundle under XDB_ROOT/artifacts/bundles",
+    )
     s_sim_with_trace.add_argument("command", nargs=argparse.REMAINDER)
 
     s_sim_bundle = sim_sub.add_parser("bundle", help="export a simulation debug artifact bundle")
     _add_debug_flag(s_sim_bundle)
     add_sim_session_arg(s_sim_bundle)
-    s_sim_bundle.add_argument("--out", default=None, help="bundle directory name/path; relative paths are under XDB_ROOT/artifacts/bundles")
+    s_sim_bundle.add_argument(
+        "--out",
+        default=None,
+        help="bundle directory name/path; relative paths are under XDB_ROOT/artifacts/bundles",
+    )
 
     s_sim_release = sim_sub.add_parser("release")
     _add_debug_flag(s_sim_release)
@@ -906,7 +1009,9 @@ Examples:
     # but still leaks a literal "==SUPPRESS==" pseudo-action in others. Keep the
     # private command parseable while removing it from the user-facing help table.
     sub._choices_actions = [  # noqa: SLF001
-        action for action in sub._choices_actions if action.dest != "_simd"  # noqa: SLF001
+        action
+        for action in sub._choices_actions
+        if action.dest != "_simd"  # noqa: SLF001
     ]
 
     return p

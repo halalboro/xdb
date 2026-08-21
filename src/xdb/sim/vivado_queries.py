@@ -24,9 +24,7 @@ class _VivadoQueryHost(Protocol):
 
     def run(self, tokens: list[str]) -> dict[str, Any]: ...
 
-    def snapshot_scope(
-        self, scope: str, *, name: str | None = None
-    ) -> dict[str, Any]: ...
+    def snapshot_scope(self, scope: str, *, name: str | None = None) -> dict[str, Any]: ...
 
 
 class VivadoQueryMixin:
@@ -119,7 +117,9 @@ class VivadoQueryMixin:
     def objects(self: _VivadoQueryHost, scope: str) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_objects", scope))
 
-    def snapshot_scope(self: _VivadoQueryHost, scope: str, *, name: str | None = None) -> dict[str, Any]:
+    def snapshot_scope(
+        self: _VivadoQueryHost, scope: str, *, name: str | None = None
+    ) -> dict[str, Any]:
         result = self.request(build_proc_request("xdb_api_snapshot_scope", scope))
         snapshot_id = name or f"snapshot-{uuid.uuid4().hex[:12]}"
         if snapshot_id in self._snapshots:
@@ -135,9 +135,7 @@ class VivadoQueryMixin:
         return dict(stored)
 
     @staticmethod
-    def _diff_snapshot_payload(
-        before: dict[str, Any], after: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _diff_snapshot_payload(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
         before_map = {str(obj.get("path")): obj for obj in list(before.get("objects") or [])}
         after_map = {str(obj.get("path")): obj for obj in list(after.get("objects") or [])}
         added_paths = sorted(set(after_map) - set(before_map))
@@ -150,7 +148,9 @@ class VivadoQueryMixin:
         for path in shared_paths:
             old_obj = before_map[path]
             new_obj = after_map[path]
-            changed_fields = [field for field in compare_fields if old_obj.get(field) != new_obj.get(field)]
+            changed_fields = [
+                field for field in compare_fields if old_obj.get(field) != new_obj.get(field)
+            ]
             if changed_fields:
                 changed.append(
                     {
@@ -190,7 +190,9 @@ class VivadoQueryMixin:
             raise XdbError(f"unknown snapshot: {after}")
         return VivadoQueryMixin._diff_snapshot_payload(before_snapshot, after_snapshot)
 
-    def watch_changes(self: _VivadoQueryHost, scope: str, *, duration_tokens: list[str]) -> dict[str, Any]:
+    def watch_changes(
+        self: _VivadoQueryHost, scope: str, *, duration_tokens: list[str]
+    ) -> dict[str, Any]:
         before_id = f"watch-before-{uuid.uuid4().hex[:10]}"
         after_id = f"watch-after-{uuid.uuid4().hex[:10]}"
         before = self.snapshot_scope(scope, name=before_id)

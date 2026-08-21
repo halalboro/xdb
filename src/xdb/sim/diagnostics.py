@@ -108,7 +108,9 @@ def _tail_text(path: Path, *, max_lines: int = 20) -> list[str]:
         return []
 
 
-def _probe_daemon_status(meta: SessionMeta, timeout_seconds: float) -> tuple[bool, str, dict[str, Any] | None]:
+def _probe_daemon_status(
+    meta: SessionMeta, timeout_seconds: float
+) -> tuple[bool, str, dict[str, Any] | None]:
     sock_path = str(meta.get("socket_path") or "")
     if not sock_path:
         return False, "session metadata does not contain a socket path", None
@@ -168,7 +170,9 @@ def doctor_session(session_name: str | None, *, timeout_seconds: float = 1.0) ->
             )
         )
         socket_path_text = str(meta.get("socket_path") or "")
-        socket_path = Path(socket_path_text) if socket_path_text else Path("/__xdb_missing_socket__")
+        socket_path = (
+            Path(socket_path_text) if socket_path_text else Path("/__xdb_missing_socket__")
+        )
         socket_exists = bool(socket_path_text) and socket_path.exists()
         checks.append(
             _doctor_check(
@@ -262,7 +266,9 @@ def doctor_session(session_name: str | None, *, timeout_seconds: float = 1.0) ->
             requested_simset = resolve_simset_arg(None)
             requested_mode = resolve_mode_arg(None)
             requested_top = resolve_top_arg(None, meta)
-            matches = config_matches(meta, launch_spec, requested_simset, requested_mode, requested_top)
+            matches = config_matches(
+                meta, launch_spec, requested_simset, requested_mode, requested_top
+            )
             checks.append(
                 _doctor_check(
                     "live_session_matches_request",

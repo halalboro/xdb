@@ -125,8 +125,7 @@ def _require_part_hint(cli_value: str | None) -> str:
     part_hint = _resolve_part_hint(cli_value)
     if not part_hint:
         raise XdbError(
-            "missing FPGA part hint: pass --part-hint "
-            "(or --fpga-part-hint) or set FPGA_PART_HINT"
+            "missing FPGA part hint: pass --part-hint (or --fpga-part-hint) or set FPGA_PART_HINT"
         )
     return part_hint
 
@@ -484,7 +483,11 @@ def _run_reports_compare(args: argparse.Namespace) -> None:
     elif args.csv:
         _emit_text(_format_multi_utilization_delta_csv(comparisons))
     else:
-        _emit_text("\n\n".join(format_utilization_delta_comparison(comparison) for comparison in comparisons))
+        _emit_text(
+            "\n\n".join(
+                format_utilization_delta_comparison(comparison) for comparison in comparisons
+            )
+        )
 
 
 def _read_text_input(path: str, description: str) -> tuple[str, str]:
@@ -813,9 +816,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 axis_paths = [*profile_paths, *list(args.paths or [])]
                 if not axis_paths:
                     raise XdbError("missing AXIS interface path")
-                duration_tokens = args.duration or _profile_tokens(profile_config, "duration", "for")
+                duration_tokens = args.duration or _profile_tokens(
+                    profile_config, "duration", "for"
+                )
                 if duration_tokens is None:
-                    raise XdbError("missing AXIS trace duration: pass --for or use a profile with 'duration'")
+                    raise XdbError(
+                        "missing AXIS trace duration: pass --for or use a profile with 'duration'"
+                    )
                 step_tokens = args.step or _profile_tokens(profile_config, "step") or ["1", "ns"]
                 result = axis_trace_session(
                     args.session,
@@ -823,9 +830,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     _resolve_sim_step_tokens(duration_tokens),
                     step_tokens=_resolve_sim_step_tokens(step_tokens),
                     decode_bytes=_profile_bool(profile_config, args.decode_bytes, "decode_bytes"),
-                    lane_order=_profile_str(profile_config, args.lane_order, "lane_order", "low-to-high"),
+                    lane_order=_profile_str(
+                        profile_config, args.lane_order, "lane_order", "low-to-high"
+                    ),
                     include_idle=_profile_bool(profile_config, args.include_idle, "include_idle"),
-                    only_handshakes=_profile_bool(profile_config, args.only_handshakes, "only_handshakes"),
+                    only_handshakes=_profile_bool(
+                        profile_config, args.only_handshakes, "only_handshakes"
+                    ),
                 )
                 if args.profile:
                     result["profile"] = {"name": profile["name"], "source": profile["source"]}
@@ -868,11 +879,12 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 profile = _load_cli_trace_profile(args.profile, args.profile_file)
                 profile_config = profile["config"]
                 profile_axis_paths = _profile_string_list(profile_config, "axis", "axis_paths")
-                duration_tokens = args.duration or _profile_tokens(profile_config, "duration", "for") or []
+                duration_tokens = (
+                    args.duration or _profile_tokens(profile_config, "duration", "for") or []
+                )
                 step_tokens = args.step or _profile_tokens(profile_config, "step") or ["1", "ns"]
-                correlate_window_tokens = (
-                    args.correlate_window
-                    or _profile_tokens(profile_config, "correlate_window", "correlation_window")
+                correlate_window_tokens = args.correlate_window or _profile_tokens(
+                    profile_config, "correlate_window", "correlation_window"
                 )
                 result = with_trace_session(
                     args.session,
@@ -882,10 +894,16 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     transactions=_profile_bool(profile_config, args.transactions, "transactions"),
                     axis_paths=[*profile_axis_paths, *list(args.axis_paths or [])],
                     decode_bytes=_profile_bool(profile_config, args.decode_bytes, "decode_bytes"),
-                    lane_order=_profile_str(profile_config, args.lane_order, "lane_order", "low-to-high"),
+                    lane_order=_profile_str(
+                        profile_config, args.lane_order, "lane_order", "low-to-high"
+                    ),
                     include_idle=_profile_bool(profile_config, args.include_idle, "include_idle"),
-                    only_handshakes=_profile_bool(profile_config, args.only_handshakes, "only_handshakes"),
-                    correlate_by=_profile_str(profile_config, args.correlate_by, "correlate_by", "nearest"),
+                    only_handshakes=_profile_bool(
+                        profile_config, args.only_handshakes, "only_handshakes"
+                    ),
+                    correlate_by=_profile_str(
+                        profile_config, args.correlate_by, "correlate_by", "nearest"
+                    ),
                     correlate_window_tokens=(
                         None
                         if correlate_window_tokens is None
@@ -1151,9 +1169,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
         if args.debug:
             traceback.print_exc()
         else:
-            _print_error(
-                f"unexpected internal error: {e}. Re-run with --debug for a traceback."
-            )
+            _print_error(f"unexpected internal error: {e}. Re-run with --debug for a traceback.")
         sys.exit(2)
 
 

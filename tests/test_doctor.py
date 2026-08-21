@@ -52,7 +52,14 @@ class DoctorTests(unittest.TestCase):
             old_cwd = Path.cwd()
             try:
                 os.chdir(repo)
-                with patch.dict(os.environ, {"XDB_ROOT": str(tmp_path / "xdb-root"), "XDB_CACHE_ROOT": str(tmp_path / "cache-root")}, clear=False):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "XDB_ROOT": str(tmp_path / "xdb-root"),
+                        "XDB_CACHE_ROOT": str(tmp_path / "cache-root"),
+                    },
+                    clear=False,
+                ):
                     paths = session_paths("unit")
                     paths.session_dir.mkdir(parents=True)
                     paths.meta_path.write_text("", encoding="utf-8")
@@ -74,7 +81,14 @@ class DoctorTests(unittest.TestCase):
             old_cwd = Path.cwd()
             try:
                 os.chdir(repo)
-                with patch.dict(os.environ, {"XDB_ROOT": str(tmp_path / "xdb-root"), "XDB_CACHE_ROOT": str(tmp_path / "cache-root")}, clear=False):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "XDB_ROOT": str(tmp_path / "xdb-root"),
+                        "XDB_CACHE_ROOT": str(tmp_path / "cache-root"),
+                    },
+                    clear=False,
+                ):
                     paths = session_paths("unit")
                     write_meta(
                         paths,

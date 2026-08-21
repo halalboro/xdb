@@ -43,13 +43,17 @@ def _format_with_trace_ndjson(result: dict) -> str:
     if isinstance(transactions, dict):
         for index, event in enumerate(list(transactions.get("events") or [])):
             if isinstance(event, dict):
-                lines.append(json.dumps({"kind": "transaction", "index": index, **event}, sort_keys=False))
+                lines.append(
+                    json.dumps({"kind": "transaction", "index": index, **event}, sort_keys=False)
+                )
 
     axis = result.get("axis")
     if isinstance(axis, dict):
         for index, record in enumerate(list(axis.get("records") or [])):
             if isinstance(record, dict):
-                lines.append(json.dumps({"kind": "axis", "index": index, **record}, sort_keys=False))
+                lines.append(
+                    json.dumps({"kind": "axis", "index": index, **record}, sort_keys=False)
+                )
 
     correlation = result.get("correlation")
     if isinstance(correlation, dict):
@@ -76,8 +80,12 @@ def _format_bool(value: object) -> str:
 
 def _format_doctor_summary(result: dict) -> str:
     checks = [check for check in list(result.get("checks") or []) if isinstance(check, dict)]
-    errors = [check for check in checks if not check.get("ok", False) and check.get("severity") == "error"]
-    warnings = [check for check in checks if not check.get("ok", False) and check.get("severity") != "error"]
+    errors = [
+        check for check in checks if not check.get("ok", False) and check.get("severity") == "error"
+    ]
+    warnings = [
+        check for check in checks if not check.get("ok", False) and check.get("severity") != "error"
+    ]
     lines = [
         "doctor summary",
         f"ok: {_format_bool(result.get('ok'))}",
@@ -106,10 +114,20 @@ def _format_doctor_summary(result: dict) -> str:
 
 
 def _format_provenance_summary(result: dict) -> str:
-    requested = cast(dict[str, Any], result.get("requested") if isinstance(result.get("requested"), dict) else {})
-    live = cast(dict[str, Any], result.get("live_session") if isinstance(result.get("live_session"), dict) else {})
-    runtime = cast(dict[str, Any], result.get("runtime") if isinstance(result.get("runtime"), dict) else {})
-    comparisons = cast(dict[str, Any], result.get("comparisons") if isinstance(result.get("comparisons"), dict) else {})
+    requested = cast(
+        dict[str, Any], result.get("requested") if isinstance(result.get("requested"), dict) else {}
+    )
+    live = cast(
+        dict[str, Any],
+        result.get("live_session") if isinstance(result.get("live_session"), dict) else {},
+    )
+    runtime = cast(
+        dict[str, Any], result.get("runtime") if isinstance(result.get("runtime"), dict) else {}
+    )
+    comparisons = cast(
+        dict[str, Any],
+        result.get("comparisons") if isinstance(result.get("comparisons"), dict) else {},
+    )
     lines = [
         "provenance summary",
         f"session: {result.get('session', '?')} ({result.get('session_id', '?')})",
@@ -138,11 +156,15 @@ def _format_provenance_summary(result: dict) -> str:
 def _format_with_trace_summary(result: dict) -> str:
     action = result.get("action") if isinstance(result.get("action"), dict) else {}
     axis = result.get("axis") if isinstance(result.get("axis"), dict) else {}
-    transactions = result.get("transactions") if isinstance(result.get("transactions"), dict) else {}
+    transactions = (
+        result.get("transactions") if isinstance(result.get("transactions"), dict) else {}
+    )
     correlation = result.get("correlation") if isinstance(result.get("correlation"), dict) else {}
     axis_records = list(axis.get("records") or []) if isinstance(axis, dict) else []
     tx_events = list(transactions.get("events") or []) if isinstance(transactions, dict) else []
-    correlation_links = list(correlation.get("links") or []) if isinstance(correlation, dict) else []
+    correlation_links = (
+        list(correlation.get("links") or []) if isinstance(correlation, dict) else []
+    )
     action_op = str(action.get("op") or "unknown") if isinstance(action, dict) else "unknown"
 
     lines = [
@@ -186,7 +208,9 @@ def _format_with_trace_summary(result: dict) -> str:
                 handshake = record.get("handshake", False)
                 beat = record.get("beat_index")
                 beat_text = "" if beat is None else f" beat={beat}"
-                lines.append(f"  {index}: {interface} time={time_text} handshake={handshake}{beat_text}")
+                lines.append(
+                    f"  {index}: {interface} time={time_text} handshake={handshake}{beat_text}"
+                )
         if len(axis_records) > 10:
             lines.append(f"  ... {len(axis_records) - 10} more")
     if correlation_links:
@@ -202,5 +226,3 @@ def _format_with_trace_summary(result: dict) -> str:
         if len(correlation_links) > 10:
             lines.append(f"  ... {len(correlation_links) - 10} more")
     return "\n".join(lines)
-
-

@@ -16,12 +16,10 @@ def _tcl_string(value: str) -> str:
     return f'"{escaped}"'
 
 
-
 def _tcl_list(values: list[str]) -> str:
     if not values:
         return "[list]"
     return "[list " + " ".join(_tcl_string(v) for v in values) + "]"
-
 
 
 def load_tcl_library() -> str:

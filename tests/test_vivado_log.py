@@ -126,7 +126,11 @@ source /tmp/check_syntax.tcl -notrace
         stderr = io.StringIO()
         stdin = io.StringIO("hello\nERROR: plain tool failed\n")
         with patch.object(sys, "argv", ["xdb", "vivado", "summarize-log", "-"]):
-            with patch("sys.stdin", stdin), patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+            with (
+                patch("sys.stdin", stdin),
+                patch("sys.stdout", stdout),
+                patch("sys.stderr", stderr),
+            ):
                 with self.assertRaises(SystemExit) as cm:
                     main()
 

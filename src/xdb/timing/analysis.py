@@ -216,7 +216,9 @@ def discover_drc_report(reports_dir: str | Path | None) -> Path | None:
 
 def parse_timing_summary_report(path: str | Path) -> dict[str, Any]:
     report = _existing_file(Path(path), "timing summary report")
-    return parse_timing_summary_text(_read_text(report, "timing summary report"), source=str(report))
+    return parse_timing_summary_text(
+        _read_text(report, "timing summary report"), source=str(report)
+    )
 
 
 def _line_tokens(line: str) -> list[str]:
@@ -268,11 +270,11 @@ def _find_section(lines: list[str], title: str) -> tuple[int, int] | None:
 
 def _parse_design_summary(lines: list[str]) -> dict[str, Any]:
     section = _find_section(lines, "Design Timing Summary")
-    search_lines = lines if section is None else lines[section[0]:section[1]]
+    search_lines = lines if section is None else lines[section[0] : section[1]]
     for index, line in enumerate(search_lines):
         if "WNS(ns)" not in line or "TNS(ns)" not in line:
             continue
-        for data_line in search_lines[index + 1:index + 8]:
+        for data_line in search_lines[index + 1 : index + 8]:
             tokens = _line_tokens(data_line)
             parsed = _summary_from_tokens(tokens)
             if parsed is not None:
@@ -290,7 +292,7 @@ def _parse_clock_summary(lines: list[str]) -> list[dict[str, Any]]:
     if section is None:
         return []
     clocks: list[dict[str, Any]] = []
-    for line in lines[section[0]:section[1]]:
+    for line in lines[section[0] : section[1]]:
         match = re.match(r"^(\s*)(\S.*?)\s+\{([^}]+)\}\s+([-0-9.]+)\s+([-0-9.]+)\s*$", line)
         if not match:
             continue
@@ -312,7 +314,7 @@ def _parse_clock_pair_tables(lines: list[str]) -> list[dict[str, Any]]:
 
     intra = _find_section(lines, "Intra Clock Table")
     if intra is not None:
-        for line in lines[intra[0]:intra[1]]:
+        for line in lines[intra[0] : intra[1]]:
             tokens = _line_tokens(line)
             if len(tokens) < 13:
                 continue
@@ -338,7 +340,7 @@ def _parse_clock_pair_tables(lines: list[str]) -> list[dict[str, Any]]:
 
     inter = _find_section(lines, "Inter Clock Table")
     if inter is not None:
-        for line in lines[inter[0]:inter[1]]:
+        for line in lines[inter[0] : inter[1]]:
             tokens = _line_tokens(line)
             if len(tokens) < 10:
                 continue
@@ -363,7 +365,7 @@ def _parse_clock_pair_tables(lines: list[str]) -> list[dict[str, Any]]:
 
     other = _find_section(lines, "Other Path Groups Table")
     if other is not None:
-        for line in lines[other[0]:other[1]]:
+        for line in lines[other[0] : other[1]]:
             tokens = _line_tokens(line)
             if len(tokens) < 11:
                 continue
@@ -572,8 +574,12 @@ def classify_hierarchy(name: str | None) -> str:
 
 def group_timing_paths(paths: Iterable[dict[str, Any]], *, depth: int = 4) -> dict[str, Any]:
     failing = [path for path in paths if (_as_float(path.get("slack")) or 0.0) < 0.0]
-    by_start = Counter(hierarchy_prefix(cast(str | None, path.get("source")), depth=depth) for path in failing)
-    by_end = Counter(hierarchy_prefix(cast(str | None, path.get("destination")), depth=depth) for path in failing)
+    by_start = Counter(
+        hierarchy_prefix(cast(str | None, path.get("source")), depth=depth) for path in failing
+    )
+    by_end = Counter(
+        hierarchy_prefix(cast(str | None, path.get("destination")), depth=depth) for path in failing
+    )
     by_common = Counter(
         common_hierarchy_prefix(
             cast(str | None, path.get("source")),
@@ -584,11 +590,7 @@ def group_timing_paths(paths: Iterable[dict[str, Any]], *, depth: int = 4) -> di
     )
     by_bucket = Counter(
         classify_hierarchy(
-            " ".join(
-                str(part)
-                for part in [path.get("source"), path.get("destination")]
-                if part
-            )
+            " ".join(str(part) for part in [path.get("source"), path.get("destination")] if part)
         )
         for path in failing
     )
@@ -606,7 +608,10 @@ def group_clock_pairs(paths: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     for path in paths:
         if (_as_float(path.get("slack")) or 0.0) >= 0.0:
             continue
-        key = (str(path.get("start_clock") or path.get("path_group") or "?"), str(path.get("end_clock") or path.get("path_group") or "?"))
+        key = (
+            str(path.get("start_clock") or path.get("path_group") or "?"),
+            str(path.get("end_clock") or path.get("path_group") or "?"),
+        )
         row = groups.setdefault(
             key,
             {
@@ -625,7 +630,10 @@ def group_clock_pairs(paths: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             row["worst_slack"] = slack
             row["representative_startpoint"] = path.get("source")
             row["representative_endpoint"] = path.get("destination")
-    return sorted(groups.values(), key=lambda row: (_as_float(row.get("worst_slack")) or 0.0, str(row.get("from_clock"))))
+    return sorted(
+        groups.values(),
+        key=lambda row: (_as_float(row.get("worst_slack")) or 0.0, str(row.get("from_clock"))),
+    )
 
 
 def _counter_rows(counter: Counter[str]) -> list[dict[str, Any]]:
@@ -633,14 +641,28 @@ def _counter_rows(counter: Counter[str]) -> list[dict[str, Any]]:
 
 
 _WARNING_PATTERNS: list[tuple[str, str, re.Pattern[str]]] = [
-    ("route_bufg_route_through", "high", re.compile(r"Route 35-586|BUFG route-thru", re.IGNORECASE)),
-    ("timing_not_met", "high", re.compile(r"Route 35-39|did not meet timing|timing constraints are not met", re.IGNORECASE)),
+    (
+        "route_bufg_route_through",
+        "high",
+        re.compile(r"Route 35-586|BUFG route-thru", re.IGNORECASE),
+    ),
+    (
+        "timing_not_met",
+        "high",
+        re.compile(
+            r"Route 35-39|did not meet timing|timing constraints are not met", re.IGNORECASE
+        ),
+    ),
     ("clocking", "high", re.compile(r"BUFG|MMCM|PLL|clock region|clocking", re.IGNORECASE)),
     ("hbm", "medium", re.compile(r"\bHBM\b|hbm", re.IGNORECASE)),
     ("pcie_dma", "medium", re.compile(r"PCIe|XDMA|QDMA", re.IGNORECASE)),
     ("bitstream_drc", "medium", re.compile(r"bitstream|DRC|check_drc", re.IGNORECASE)),
     ("debug", "low", re.compile(r"debug hub|xsdbm|ILA", re.IGNORECASE)),
-    ("bram_collision", "low", re.compile(r"WRITE_FIRST|READ_FIRST|collision|BRAM|RAMB", re.IGNORECASE)),
+    (
+        "bram_collision",
+        "low",
+        re.compile(r"WRITE_FIRST|READ_FIRST|collision|BRAM|RAMB", re.IGNORECASE),
+    ),
 ]
 
 
@@ -681,7 +703,9 @@ def parse_critical_warnings_text(text: str, *, source: str | None = None) -> lis
 
 def _sort_warning_groups(groups: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     severity_rank = {"high": 0, "medium": 1, "low": 2}
-    return sorted(groups, key=lambda row: (severity_rank.get(str(row["severity"]), 9), str(row["category"])))
+    return sorted(
+        groups, key=lambda row: (severity_rank.get(str(row["severity"]), 9), str(row["category"]))
+    )
 
 
 def merge_warning_groups(groups: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -690,7 +714,9 @@ def merge_warning_groups(groups: Iterable[dict[str, Any]]) -> list[dict[str, Any
     for group in groups:
         category = str(group.get("category") or "other")
         severity = str(group.get("severity") or "low")
-        row = merged.setdefault(category, {"category": category, "severity": severity, "count": 0, "examples": []})
+        row = merged.setdefault(
+            category, {"category": category, "severity": severity, "count": 0, "examples": []}
+        )
         if severity_rank.get(severity, 9) < severity_rank.get(str(row.get("severity")), 9):
             row["severity"] = severity
         row["count"] = int(row.get("count") or 0) + int(group.get("count") or 0)
@@ -734,14 +760,18 @@ def parse_drc_text(text: str, *, source: str | None = None) -> dict[str, Any]:
         by_severity[str(rule["severity"])] += int(rule["count"])
     return {
         "source": source,
-        "checks_found": checks_found if checks_found is not None else sum(int(rule["count"]) for rule in rules),
+        "checks_found": checks_found
+        if checks_found is not None
+        else sum(int(rule["count"]) for rule in rules),
         "by_severity": dict(sorted(by_severity.items())),
         "rules": rules,
     }
 
 
-def run_vivado_timing_summary(dcp: str | Path, *, max_paths: int = 10, timeout: int = 1800) -> dict[str, Any]:
-    tcl = r'''
+def run_vivado_timing_summary(
+    dcp: str | Path, *, max_paths: int = 10, timeout: int = 1800
+) -> dict[str, Any]:
+    tcl = r"""
 set dcp [lindex $argv 0]
 set max_paths [lindex $argv 1]
 open_checkpoint $dcp
@@ -750,7 +780,7 @@ puts "XDB_TEXT_BEGIN"
 puts $report
 puts "XDB_TEXT_END"
 exit 0
-'''
+"""
     result = _run_vivado_tcl(tcl, [str(dcp), str(max_paths)], timeout=timeout)
     text = _extract_text(result.stdout)
     return parse_timing_summary_text(text, source=str(dcp))
@@ -763,7 +793,7 @@ def run_vivado_timing_paths(
     delay_type: str = "max",
     timeout: int = 1800,
 ) -> dict[str, Any]:
-    tcl = r'''
+    tcl = r"""
 set dcp [lindex $argv 0]
 set max_paths [lindex $argv 1]
 set delay_type [lindex $argv 2]
@@ -773,7 +803,7 @@ puts "XDB_TEXT_BEGIN"
 puts $report
 puts "XDB_TEXT_END"
 exit 0
-'''
+"""
     result = _run_vivado_tcl(tcl, [str(dcp), str(max_paths), delay_type], timeout=timeout)
     text = _extract_text(result.stdout)
     paths = parse_timing_paths_text(text)
@@ -788,7 +818,7 @@ exit 0
 
 
 def run_vivado_clocks(dcp: str | Path, *, timeout: int = 1800) -> dict[str, Any]:
-    tcl = r'''
+    tcl = r"""
 proc je {s} {
   return [string map {\\ \\\\ \" \\\" \n \\n \r \\r \t \\t} $s]
 }
@@ -813,7 +843,7 @@ puts "XDB_JSON_BEGIN"
 puts $out
 puts "XDB_JSON_END"
 exit 0
-'''
+"""
     result = _run_vivado_tcl(tcl, [str(dcp)], timeout=timeout)
     data = _extract_json(result.stdout)
     for clock in data.get("clocks", []):
@@ -823,7 +853,7 @@ exit 0
 
 
 def run_vivado_drc(dcp: str | Path, *, timeout: int = 1800) -> dict[str, Any]:
-    tcl = r'''
+    tcl = r"""
 set dcp [lindex $argv 0]
 open_checkpoint $dcp
 set report [report_drc -return_string]
@@ -831,14 +861,14 @@ puts "XDB_TEXT_BEGIN"
 puts $report
 puts "XDB_TEXT_END"
 exit 0
-'''
+"""
     result = _run_vivado_tcl(tcl, [str(dcp)], timeout=timeout)
     text = _extract_text(result.stdout)
     return parse_drc_text(text, source=str(dcp))
 
 
 def run_vivado_net_query(dcp: str | Path, net: str, *, timeout: int = 1800) -> dict[str, Any]:
-    tcl = r'''
+    tcl = r"""
 proc je {s} {
   return [string map {\\ \\\\ \" \\\" \n \\n \r \\r \t \\t} $s]
 }
@@ -893,7 +923,7 @@ puts "XDB_JSON_BEGIN"
 puts $out
 puts "XDB_JSON_END"
 exit 0
-'''
+"""
     result = _run_vivado_tcl(tcl, [str(dcp), net], timeout=timeout)
     return cast(dict[str, Any], _extract_json(result.stdout))
 
@@ -905,7 +935,7 @@ def _extract_text(stdout: str) -> str:
     j = stdout.find(end)
     if i == -1 or j == -1 or j <= i:
         raise XdbError(f"could not find text markers in Vivado output\n{stdout}")
-    return stdout[i + len(start):j].strip()
+    return stdout[i + len(start) : j].strip()
 
 
 def timing_summary(
@@ -1020,7 +1050,9 @@ def timing_triage(
     hierarchy_depth: int = 4,
     timeout: int = 1800,
 ) -> dict[str, Any]:
-    summary_data = timing_summary(path, dcp=dcp, reports=reports, max_paths=max_paths, timeout=timeout)
+    summary_data = timing_summary(
+        path, dcp=dcp, reports=reports, max_paths=max_paths, timeout=timeout
+    )
     paths = list(summary_data.get("paths", []))
     if len(paths) < max_paths and dcp is not None:
         try:
@@ -1076,7 +1108,9 @@ def timing_triage(
 def _summarize_utilization(parsed: dict[str, Any] | None) -> dict[str, Any] | None:
     if parsed is None:
         return None
-    resources = cast(dict[str, Any], parsed.get("resources") if isinstance(parsed.get("resources"), dict) else {})
+    resources = cast(
+        dict[str, Any], parsed.get("resources") if isinstance(parsed.get("resources"), dict) else {}
+    )
     keys = ["clb_luts", "registers", "block_ram_tile", "uram", "dsp_slices"]
     return {
         "source": parsed.get("source"),
@@ -1105,8 +1139,12 @@ def compare_triage(
     old_name: str = "old",
     new_name: str = "new",
 ) -> dict[str, Any]:
-    old_summary = cast(dict[str, Any], old.get("summary") if isinstance(old.get("summary"), dict) else {})
-    new_summary = cast(dict[str, Any], new.get("summary") if isinstance(new.get("summary"), dict) else {})
+    old_summary = cast(
+        dict[str, Any], old.get("summary") if isinstance(old.get("summary"), dict) else {}
+    )
+    new_summary = cast(
+        dict[str, Any], new.get("summary") if isinstance(new.get("summary"), dict) else {}
+    )
     summary_delta: dict[str, Any] = {}
     for key in ["wns", "tns", "tns_failing_endpoints", "whs", "ths", "ths_failing_endpoints"]:
         old_value = _as_float(old_summary.get(key))
@@ -1144,7 +1182,12 @@ def compare_triage(
             "removed": sorted(old_warnings - new_warnings),
             "common": sorted(old_warnings & new_warnings),
         },
-        "drc": _compare_drc(cast(dict[str, Any] | None, old.get("drc")), cast(dict[str, Any] | None, new.get("drc")), old_name, new_name),
+        "drc": _compare_drc(
+            cast(dict[str, Any] | None, old.get("drc")),
+            cast(dict[str, Any] | None, new.get("drc")),
+            old_name,
+            new_name,
+        ),
     }
 
 
@@ -1158,14 +1201,23 @@ def _clock_pair_keys(pairs: list[Any]) -> set[str]:
 
 
 def _hierarchy_names(data: dict[str, Any]) -> set[str]:
-    hierarchy = cast(dict[str, Any], data.get("hierarchy") if isinstance(data.get("hierarchy"), dict) else {})
+    hierarchy = cast(
+        dict[str, Any], data.get("hierarchy") if isinstance(data.get("hierarchy"), dict) else {}
+    )
     rows = cast(list[Any], hierarchy.get("by_common_ancestor") or [])
     return {str(row.get("name")) for row in rows if isinstance(row, dict) and row.get("name")}
 
 
 def _warning_categories(data: dict[str, Any]) -> set[str]:
-    warnings = cast(list[Any], data.get("critical_warnings") if isinstance(data.get("critical_warnings"), list) else [])
-    return {str(row.get("category")) for row in warnings if isinstance(row, dict) and row.get("category")}
+    warnings = cast(
+        list[Any],
+        data.get("critical_warnings") if isinstance(data.get("critical_warnings"), list) else [],
+    )
+    return {
+        str(row.get("category"))
+        for row in warnings
+        if isinstance(row, dict) and row.get("category")
+    }
 
 
 def _compare_drc(
@@ -1210,11 +1262,17 @@ def _summary_line(summary: dict[str, Any]) -> list[str]:
 
 
 def format_timing_summary(data: dict[str, Any]) -> str:
-    summary = cast(dict[str, Any], data.get("summary") if isinstance(data.get("summary"), dict) else {})
-    metadata = cast(dict[str, Any], data.get("metadata") if isinstance(data.get("metadata"), dict) else {})
+    summary = cast(
+        dict[str, Any], data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    )
+    metadata = cast(
+        dict[str, Any], data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    )
     lines = ["Timing summary:"]
     if metadata.get("design") or metadata.get("device"):
-        lines.append(f"  design: {metadata.get('design', 'n/a')}  device: {metadata.get('device', 'n/a')}")
+        lines.append(
+            f"  design: {metadata.get('design', 'n/a')}  device: {metadata.get('device', 'n/a')}"
+        )
     for line in _summary_line(summary):
         lines.append(f"  {line}")
     if summary.get("timing_met") is not None:
@@ -1254,7 +1312,9 @@ def format_timing_paths(data: dict[str, Any]) -> str:
             f"{path.get('source', '?')} -> {path.get('destination', '?')}"
         )
         if path.get("path_group") or path.get("path_type"):
-            lines.append(f"     group: {path.get('path_group', 'n/a')}  type: {path.get('path_type', 'n/a')}")
+            lines.append(
+                f"     group: {path.get('path_group', 'n/a')}  type: {path.get('path_type', 'n/a')}"
+            )
     hierarchy = data.get("hierarchy") if isinstance(data.get("hierarchy"), dict) else {}
     buckets = hierarchy.get("by_common_ancestor") if isinstance(hierarchy, dict) else []
     if buckets:
@@ -1267,7 +1327,9 @@ def format_timing_paths(data: dict[str, Any]) -> str:
 
 
 def format_timing_clocks(data: dict[str, Any]) -> str:
-    clocks = [clock for clock in cast(list[Any], data.get("clocks") or []) if isinstance(clock, dict)]
+    clocks = [
+        clock for clock in cast(list[Any], data.get("clocks") or []) if isinstance(clock, dict)
+    ]
     lines = [f"Clocks ({len(clocks)}):"]
     for clock in clocks:
         period = _fmt_value(clock.get("period"), suffix=" ns")
@@ -1295,7 +1357,10 @@ def format_timing_drc(data: dict[str, Any]) -> str:
 
 
 def format_timing_net(data: dict[str, Any]) -> str:
-    lines = [f"Net query: {data.get('query', '?')}", f"  exists: {'yes' if data.get('exists') else 'no'}"]
+    lines = [
+        f"Net query: {data.get('query', '?')}",
+        f"  exists: {'yes' if data.get('exists') else 'no'}",
+    ]
     if data.get("exists"):
         lines.extend(
             [
@@ -1309,16 +1374,24 @@ def format_timing_net(data: dict[str, Any]) -> str:
         drivers = cast(list[Any], data.get("drivers") or [])
         if drivers:
             lines.append(f"  drivers: {', '.join(str(driver) for driver in drivers[:5])}")
-    warnings = [warning for warning in cast(list[Any], data.get("related_warnings") or []) if isinstance(warning, dict)]
+    warnings = [
+        warning
+        for warning in cast(list[Any], data.get("related_warnings") or [])
+        if isinstance(warning, dict)
+    ]
     if warnings:
         lines.append("  related warnings:")
         for warning in warnings:
-            lines.append(f"    {warning.get('severity', '?')}: {warning.get('category', '?')} ({warning.get('count', 0)})")
+            lines.append(
+                f"    {warning.get('severity', '?')}: {warning.get('category', '?')} ({warning.get('count', 0)})"
+            )
     return "\n".join(lines)
 
 
 def format_timing_triage(data: dict[str, Any]) -> str:
-    summary = cast(dict[str, Any], data.get("summary") if isinstance(data.get("summary"), dict) else {})
+    summary = cast(
+        dict[str, Any], data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    )
     lines = ["Timing triage:"]
     for line in _summary_line(summary):
         lines.append(f"  {line}")
@@ -1335,13 +1408,21 @@ def format_timing_triage(data: dict[str, Any]) -> str:
         lines.append("")
         lines.append("Failing paths by clock pair:")
         lines.extend(_format_clock_pair_rows(pairs[:10]))
-    warnings = [warning for warning in cast(list[Any], data.get("critical_warnings") or []) if isinstance(warning, dict)]
+    warnings = [
+        warning
+        for warning in cast(list[Any], data.get("critical_warnings") or [])
+        if isinstance(warning, dict)
+    ]
     if warnings:
         lines.append("")
         lines.append("Critical warnings:")
         for warning in warnings[:10]:
-            lines.append(f"  {warning.get('severity', '?')}: {warning.get('category', '?')} ({warning.get('count', 0)})")
-            examples = [e for e in cast(list[Any], warning.get("examples") or []) if isinstance(e, dict)]
+            lines.append(
+                f"  {warning.get('severity', '?')}: {warning.get('category', '?')} ({warning.get('count', 0)})"
+            )
+            examples = [
+                e for e in cast(list[Any], warning.get("examples") or []) if isinstance(e, dict)
+            ]
             if examples:
                 lines.append(f"    {examples[0].get('text', '')}")
     drc = data.get("drc") if isinstance(data.get("drc"), dict) else None
@@ -1366,7 +1447,10 @@ def format_timing_compare(data: dict[str, Any]) -> str:
         ("hierarchy_buckets", "Hierarchy buckets"),
         ("critical_warnings", "Critical warnings"),
     ]:
-        section = cast(dict[str, Any], data.get(section_name) if isinstance(data.get(section_name), dict) else {})
+        section = cast(
+            dict[str, Any],
+            data.get(section_name) if isinstance(data.get(section_name), dict) else {},
+        )
         added = cast(list[Any], section.get("added") or [])
         removed = cast(list[Any], section.get("removed") or [])
         if added or removed:

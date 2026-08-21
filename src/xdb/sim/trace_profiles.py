@@ -10,8 +10,10 @@ from xdb.errors import XdbError
 
 
 def find_trace_profile_file(profile_file: str | None = None) -> Path | None:
-    value = profile_file or os.environ.get("XDB_TRACE_PROFILE_FILE") or config_path_value(
-        "trace_profile_file"
+    value = (
+        profile_file
+        or os.environ.get("XDB_TRACE_PROFILE_FILE")
+        or config_path_value("trace_profile_file")
     )
     if not value:
         return None
@@ -41,7 +43,9 @@ def load_trace_profiles(profile_file: str | None = None) -> dict[str, Any]:
     normalized: dict[str, dict[str, Any]] = {}
     for name, profile in profiles.items():
         if not isinstance(name, str) or not name:
-            raise XdbError(f"invalid trace profile file: {path}: profile names must be non-empty strings")
+            raise XdbError(
+                f"invalid trace profile file: {path}: profile names must be non-empty strings"
+            )
         if not isinstance(profile, dict):
             raise XdbError(f"invalid trace profile {name!r}: profile value must be an object")
         normalized[name] = dict(cast(dict[str, Any], profile))
@@ -69,8 +73,5 @@ def list_trace_profiles(profile_file: str | None = None) -> dict[str, Any]:
     return {
         "source": loaded.get("source"),
         "count": len(profiles),
-        "profiles": [
-            {"name": name, "config": profiles[name]}
-            for name in sorted(profiles)
-        ],
+        "profiles": [{"name": name, "config": profiles[name]} for name in sorted(profiles)],
     }

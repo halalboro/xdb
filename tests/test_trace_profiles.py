@@ -40,14 +40,18 @@ class TraceProfileTests(unittest.TestCase):
                 json.dumps({"profiles": {"env-profile": {"transactions": True}}}),
                 encoding="utf-8",
             )
-            with patch.dict("os.environ", {"XDB_TRACE_PROFILE_FILE": str(profile_file)}, clear=False):
+            with patch.dict(
+                "os.environ", {"XDB_TRACE_PROFILE_FILE": str(profile_file)}, clear=False
+            ):
                 result = get_trace_profile("env-profile")
 
         self.assertTrue(result["config"]["transactions"])
         self.assertEqual(result["source"], str(profile_file))
 
     def test_profile_lookup_requires_explicit_file_or_environment(self) -> None:
-        with patch.dict("os.environ", {"XDB_TRACE_PROFILE_FILE": "", "XDB_CONFIG_FILE": ""}, clear=False):
+        with patch.dict(
+            "os.environ", {"XDB_TRACE_PROFILE_FILE": "", "XDB_CONFIG_FILE": ""}, clear=False
+        ):
             with self.assertRaises(XdbError):
                 get_trace_profile("missing")
 

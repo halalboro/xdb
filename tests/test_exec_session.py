@@ -77,14 +77,22 @@ class ExecSessionTests(unittest.TestCase):
             with (
                 patch(
                     "xdb.sim.client.require_live_meta",
-                    return_value={"anchor_dir": tmpdir, "runtime_root": "/runtime", "state": "ready"},
+                    return_value={
+                        "anchor_dir": tmpdir,
+                        "runtime_root": "/runtime",
+                        "state": "ready",
+                    },
                 ),
                 patch("xdb.sim.client.time.time", side_effect=[1.0, 2.5]),
                 patch("xdb.sim.client._now_iso", side_effect=["start", "finish"]),
             ):
                 result = exec_session(
                     None,
-                    [sys.executable, "-c", "import time; print('partial', flush=True); time.sleep(5)"],
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time; print('partial', flush=True); time.sleep(5)",
+                    ],
                     timeout_seconds=0.1,
                 )
 

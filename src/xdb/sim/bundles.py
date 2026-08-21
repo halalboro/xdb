@@ -21,7 +21,9 @@ def resolve_bundle_dir(session_name: str | None, out: str | None) -> Path:
         if path.is_absolute():
             return path.resolve()
         return (paths.xdb_root / "artifacts" / "bundles" / path).resolve()
-    return (paths.xdb_root / "artifacts" / "bundles" / f"{_now_label()}-{paths.session_name}").resolve()
+    return (
+        paths.xdb_root / "artifacts" / "bundles" / f"{_now_label()}-{paths.session_name}"
+    ).resolve()
 
 
 def _write_json(path: Path, data: Any) -> None:
@@ -43,11 +45,7 @@ def _copy_if_exists(src: Path, dst: Path) -> bool:
 
 
 def _relative_files(root: Path) -> list[str]:
-    return sorted(
-        str(path.relative_to(root))
-        for path in root.rglob("*")
-        if path.is_file()
-    )
+    return sorted(str(path.relative_to(root)) for path in root.rglob("*") if path.is_file())
 
 
 def create_sim_bundle(

@@ -35,15 +35,17 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.anchor_dir, "/tmp/xdb")
 
     def test_vivado_summarize_log_command_is_parseable(self) -> None:
-        args = build_parser().parse_args([
-            "vivado",
-            "summarize-log",
-            "vivado.log",
-            "--json",
-            "--max-items",
-            "3",
-            "--full",
-        ])
+        args = build_parser().parse_args(
+            [
+                "vivado",
+                "summarize-log",
+                "vivado.log",
+                "--json",
+                "--max-items",
+                "3",
+                "--full",
+            ]
+        )
 
         self.assertEqual(args.cmd, "vivado")
         self.assertEqual(args.vivado_cmd, "summarize-log")
@@ -53,16 +55,18 @@ class CliParserTests(unittest.TestCase):
         self.assertTrue(args.full)
 
     def test_vivado_ip_info_command_is_parseable(self) -> None:
-        args = build_parser().parse_args([
-            "vivado",
-            "ip-info",
-            "build-dir",
-            "--all",
-            "--param",
-            "GT*",
-            "--param",
-            "LINE_RATE",
-        ])
+        args = build_parser().parse_args(
+            [
+                "vivado",
+                "ip-info",
+                "build-dir",
+                "--all",
+                "--param",
+                "GT*",
+                "--param",
+                "LINE_RATE",
+            ]
+        )
 
         self.assertEqual(args.cmd, "vivado")
         self.assertEqual(args.vivado_cmd, "ip-info")
@@ -83,19 +87,21 @@ class CliParserTests(unittest.TestCase):
         self.assertNotIn("{utilization,util", reports_help)
 
     def test_reports_compare_command_is_parseable(self) -> None:
-        args = build_parser().parse_args([
-            "reports",
-            "compare",
-            "old-build",
-            "new-build-a",
-            "new-build-b",
-            "--report",
-            "shell",
-            "--new-name",
-            "a",
-            "--new-name",
-            "b",
-        ])
+        args = build_parser().parse_args(
+            [
+                "reports",
+                "compare",
+                "old-build",
+                "new-build-a",
+                "new-build-b",
+                "--report",
+                "shell",
+                "--new-name",
+                "a",
+                "--new-name",
+                "b",
+            ]
+        )
 
         self.assertEqual(args.cmd, "reports")
         self.assertEqual(args.reports_cmd, "compare")
@@ -105,22 +111,24 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.new_name, ["a", "b"])
 
     def test_reports_floorplan_command_is_parseable(self) -> None:
-        args = build_parser().parse_args([
-            "reports",
-            "floorplan",
-            "build-output",
-            "--dcp",
-            "checkpoints/shell_routed.dcp",
-            "--out",
-            "figure.svg",
-            "--hierarchy-depth",
-            "2",
-            "--max-groups",
-            "32",
-            "--no-pblocks",
-            "--force",
-            "--json",
-        ])
+        args = build_parser().parse_args(
+            [
+                "reports",
+                "floorplan",
+                "build-output",
+                "--dcp",
+                "checkpoints/shell_routed.dcp",
+                "--out",
+                "figure.svg",
+                "--hierarchy-depth",
+                "2",
+                "--max-groups",
+                "32",
+                "--no-pblocks",
+                "--force",
+                "--json",
+            ]
+        )
 
         self.assertEqual(args.cmd, "reports")
         self.assertEqual(args.reports_cmd, "floorplan")

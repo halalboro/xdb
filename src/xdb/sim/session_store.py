@@ -220,9 +220,7 @@ def resolve_simset_arg(simset: str | None) -> str:
 
 def resolve_mode_arg(mode: str | None) -> str:
     resolved = (
-        mode.strip()
-        if mode is not None and mode.strip() != ""
-        else _env_value("XDB_SIM_MODE")
+        mode.strip() if mode is not None and mode.strip() != "" else _env_value("XDB_SIM_MODE")
     )
     if not resolved:
         resolved = "behavioral"
@@ -331,7 +329,9 @@ def _load_runtime_meta(root: Path) -> dict[str, str]:
     if not isinstance(data, dict):
         raise XdbError(f"invalid packaged simulation runtime metadata: {meta_path}")
     required = ["work_dir", "compile_script", "elaborate_script", "simulate_script"]
-    missing = [key for key in required if not isinstance(data.get(key), str) or not str(data[key]).strip()]
+    missing = [
+        key for key in required if not isinstance(data.get(key), str) or not str(data[key]).strip()
+    ]
     if missing:
         raise XdbError(
             f"packaged simulation runtime metadata is missing required field(s) {missing}: {meta_path}"
@@ -414,23 +414,18 @@ def resolve_launch_spec(
     runtime_value = package_runtime or _env_value("XDB_SIM_PACKAGE_RUNTIME")
     if runtime_value is None:
         legacy_values = {
-            name: _env_value(name)
-            for name in ("XDB_SIM_PACKAGE_PROJECT", "XDB_SIM_PROJECT")
+            name: _env_value(name) for name in ("XDB_SIM_PACKAGE_PROJECT", "XDB_SIM_PROJECT")
         }
         if any(legacy_values.values()):
             raise XdbError(
                 "project-backed simulation launch is no longer supported; "
                 "export XDB_SIM_PACKAGE_RUNTIME instead"
             )
-        raise XdbError(
-            "missing packaged simulation runtime: set XDB_SIM_PACKAGE_RUNTIME"
-        )
+        raise XdbError("missing packaged simulation runtime: set XDB_SIM_PACKAGE_RUNTIME")
 
     workspace_value = workspace or _env_value("XDB_SIM_WORKSPACE")
     if workspace_value is None:
-        raise XdbError(
-            "XDB_SIM_PACKAGE_RUNTIME is set but XDB_SIM_WORKSPACE is missing"
-        )
+        raise XdbError("XDB_SIM_PACKAGE_RUNTIME is set but XDB_SIM_WORKSPACE is missing")
 
     source_root, workspace = _resolve_packaged_runtime_layout(runtime_value, workspace_value)
     needs_stage = not _runtime_stage_matches(workspace, source_root=source_root)

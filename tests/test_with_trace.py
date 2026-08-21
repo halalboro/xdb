@@ -93,7 +93,18 @@ class WithTraceTests(unittest.TestCase):
         ) as send_request:
             result = with_trace_session(
                 None,
-                ["xdb", "sim", "invoke", "local-transfer", "--src-addr", "0x1000", "--dst-addr", "0x2000", "--len", "4"],
+                [
+                    "xdb",
+                    "sim",
+                    "invoke",
+                    "local-transfer",
+                    "--src-addr",
+                    "0x1000",
+                    "--dst-addr",
+                    "0x2000",
+                    "--len",
+                    "4",
+                ],
                 ["10", "ns"],
                 step_tokens=["1", "ns"],
                 transactions=True,
@@ -125,9 +136,9 @@ class WithTraceTests(unittest.TestCase):
             (["xdb", "sim", "step", "25", "ns"], OP_STEP, {"time_tokens": ["25", "ns"]}),
             (["xdb", "sim", "step", "3"], OP_STEP, {"count": 3}),
             (
-                ["xdb", "sim", "until", "--step", "5", "ns", "{[get_value /done] eq \"1\"}"],
+                ["xdb", "sim", "until", "--step", "5", "ns", '{[get_value /done] eq "1"}'],
                 OP_UNTIL,
-                {"step_tokens": ["5", "ns"], "expr": "{[get_value /done] eq \"1\"}"},
+                {"step_tokens": ["5", "ns"], "expr": '{[get_value /done] eq "1"}'},
             ),
             (
                 ["xdb", "sim", "until-signal", "--step", "5", "ns", "/done", "1"],
@@ -137,7 +148,9 @@ class WithTraceTests(unittest.TestCase):
         ]
         for command, expected_op, expected_args in cases:
             with self.subTest(command=command):
-                with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
+                with patch(
+                    "xdb.sim.client._send_request", return_value={"ok": True}
+                ) as send_request:
                     with_trace_session(
                         None,
                         command,
@@ -179,7 +192,9 @@ class WithTraceTests(unittest.TestCase):
         self.assertNotIn("action_request", request["args"])
 
     def test_with_trace_exec_stream_uses_streaming_request(self) -> None:
-        with patch("xdb.sim.client._send_streaming_request", return_value={"ok": True}) as send_request:
+        with patch(
+            "xdb.sim.client._send_streaming_request", return_value={"ok": True}
+        ) as send_request:
             with_trace_session(
                 None,
                 ["--", "host-test"],
@@ -195,7 +210,9 @@ class WithTraceTests(unittest.TestCase):
         self.assertTrue(request["args"]["exec_stream_output"])
         self.assertEqual(request["args"]["exec_command"], ["host-test"])
 
-    def test_with_trace_exec_until_exit_sends_external_command_request_without_duration(self) -> None:
+    def test_with_trace_exec_until_exit_sends_external_command_request_without_duration(
+        self,
+    ) -> None:
         with patch("xdb.sim.client._send_request", return_value={"ok": True}) as send_request:
             with_trace_session(
                 None,
@@ -374,11 +391,15 @@ class WithTraceTests(unittest.TestCase):
 
     def test_with_trace_rejects_non_xdb_sim_commands(self) -> None:
         with self.assertRaises(XdbError):
-            with_trace_session(None, ["echo", "ok"], ["10", "ns"], step_tokens=["1", "ns"], transactions=True)
+            with_trace_session(
+                None, ["echo", "ok"], ["10", "ns"], step_tokens=["1", "ns"], transactions=True
+            )
 
     def test_with_trace_requires_a_trace_mode(self) -> None:
         with self.assertRaises(XdbError):
-            with_trace_session(None, ["xdb", "sim", "coyote-status"], ["10", "ns"], step_tokens=["1", "ns"])
+            with_trace_session(
+                None, ["xdb", "sim", "coyote-status"], ["10", "ns"], step_tokens=["1", "ns"]
+            )
 
 
 if __name__ == "__main__":

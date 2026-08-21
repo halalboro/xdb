@@ -182,7 +182,9 @@ def _send_streaming_request(session_name: str | None, request: SimRequest) -> di
                     frame = cast(dict[str, Any], json.loads(line))
                     frame_type = str(frame.get("type") or "")
                     if frame_type == "stream":
-                        _emit_stream_line(str(frame.get("stream") or "stdout"), str(frame.get("data") or ""))
+                        _emit_stream_line(
+                            str(frame.get("stream") or "stdout"), str(frame.get("data") or "")
+                        )
                         continue
                     if frame_type == "response":
                         response = cast(dict[str, Any], frame.get("response") or {})
@@ -251,7 +253,14 @@ def _spawn_daemon(
     ]
     if session_name:
         cmd.extend(["--session", session_name])
-    for name in ("package_runtime", "runtime_root", "work_dir", "compile_script", "elaborate_script", "simulate_script"):
+    for name in (
+        "package_runtime",
+        "runtime_root",
+        "work_dir",
+        "compile_script",
+        "elaborate_script",
+        "simulate_script",
+    ):
         value = launch_spec.get(name)
         if value:
             cmd.extend([f"--{name.replace('_', '-')}", str(value)])
@@ -278,9 +287,11 @@ def _wait_for_session(session_name: str | None, timeout: int) -> dict[str, Any]:
         meta = load_meta(paths)
         if meta and meta.get("state") == "error":
             raise XdbError(str(meta.get("last_error") or "simulation daemon failed to start"))
-        if meta and pid_is_alive(int(meta.get("pid", 0) or 0)) and Path(
-            str(meta.get("socket_path") or "")
-        ).exists():
+        if (
+            meta
+            and pid_is_alive(int(meta.get("pid", 0) or 0))
+            and Path(str(meta.get("socket_path") or "")).exists()
+        ):
             return _send_request(session_name, make_request(OP_STATUS))
         time.sleep(0.2)
     raise XdbError("timed out waiting for simulation daemon to start")
@@ -370,7 +381,11 @@ def launch_session(
     effective_top = resolve_top_arg(top, live_meta)
     launch_spec = resolve_launch_spec(stage=False, package_runtime=package_runtime)
 
-    if live_meta and Path(str(live_meta.get("socket_path", ""))).exists() and pid_is_alive(int(live_meta.get("pid", 0) or 0)):
+    if (
+        live_meta
+        and Path(str(live_meta.get("socket_path", ""))).exists()
+        and pid_is_alive(int(live_meta.get("pid", 0) or 0))
+    ):
         if replace:
             _close_live_session(session_name, live_meta)
         else:
@@ -379,7 +394,9 @@ def launch_session(
                     "the packaged simulation input changed and the writable workspace needs "
                     "to be refreshed; use --replace or close the current session first"
                 )
-            if config_matches(live_meta, launch_spec, effective_simset, effective_mode, effective_top):
+            if config_matches(
+                live_meta, launch_spec, effective_simset, effective_mode, effective_top
+            ):
                 status = _send_request(session_name, make_request(OP_STATUS))
                 status["reused"] = True
                 status.update(launch_spec_summary(launch_spec))
@@ -755,7 +772,9 @@ def add_breakpoint(
 ) -> dict[str, Any]:
     return _send_request(
         session_name,
-        make_request(OP_BREAKPOINT_ADD, condition=condition, poll_step_tokens=list(poll_step_tokens or [])),
+        make_request(
+            OP_BREAKPOINT_ADD, condition=condition, poll_step_tokens=list(poll_step_tokens or [])
+        ),
     )
 
 
@@ -766,7 +785,9 @@ def list_breakpoints(session_name: str | None) -> dict[str, Any]:
 def remove_breakpoint(session_name: str | None, breakpoint_id: int) -> dict[str, Any]:
     if breakpoint_id <= 0:
         raise XdbError("breakpoint id must be > 0")
-    return _send_request(session_name, make_request(OP_BREAKPOINT_REMOVE, breakpoint_id=breakpoint_id))
+    return _send_request(
+        session_name, make_request(OP_BREAKPOINT_REMOVE, breakpoint_id=breakpoint_id)
+    )
 
 
 def clear_breakpoints(session_name: str | None) -> dict[str, Any]:

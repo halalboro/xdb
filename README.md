@@ -32,6 +32,17 @@ cd /Users/taugoust/Research/fpgas/xdb
 python -m pip install -e .
 ```
 
+## Development
+
+Run the reproducible Treefmt wrapper through the flake:
+
+```bash
+nix fmt
+```
+
+It formats Python with `ruff-format` and Nix with `nixfmt-rfc-style`.
+The same formatting policy is included in `nix flake check`.
+
 ## Usage
 
 ```bash

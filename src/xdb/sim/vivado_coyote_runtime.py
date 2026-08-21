@@ -129,9 +129,7 @@ class VivadoCoyoteMixin:
             "value_hex": f"0x{value:x}",
         }
 
-    def coyote_csr_write(
-        self: _VivadoCoyoteHost, addr: int, value: int
-    ) -> dict[str, Any]:
+    def coyote_csr_write(self: _VivadoCoyoteHost, addr: int, value: int) -> dict[str, Any]:
         controller = self._require_coyote()
         controller.record_trace_event(
             "csr_write_request",
@@ -153,9 +151,7 @@ class VivadoCoyoteMixin:
             "written": True,
         }
 
-    def coyote_mem_map(
-        self: _VivadoCoyoteHost, space: str, addr: int, size: int
-    ) -> dict[str, Any]:
+    def coyote_mem_map(self: _VivadoCoyoteHost, space: str, addr: int, size: int) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")
         controller = self._require_coyote()
@@ -163,9 +159,7 @@ class VivadoCoyoteMixin:
         self._coyote_pump_step()
         return result
 
-    def coyote_mem_unmap(
-        self: _VivadoCoyoteHost, space: str, addr: int
-    ) -> dict[str, Any]:
+    def coyote_mem_unmap(self: _VivadoCoyoteHost, space: str, addr: int) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")
         controller = self._require_coyote()
@@ -435,11 +429,7 @@ class VivadoCoyoteMixin:
         run_result = self.run(duration_tokens)
         events = self.trace_events_get()["events"]
         if opcode_filter is not None:
-            events = [
-                event
-                for event in events
-                if str(event.get("opcode") or "") == opcode_filter
-            ]
+            events = [event for event in events if str(event.get("opcode") or "") == opcode_filter]
         return {
             "duration": " ".join(duration_tokens),
             "time_before": time_before,

@@ -90,7 +90,11 @@ def _category_for(code: str | None, message: str) -> str:
     lowered = message.lower()
     code_lower = (code or "").lower()
 
-    if "not found in path" in lowered or "command not found" in lowered or "no such file or directory" in lowered:
+    if (
+        "not found in path" in lowered
+        or "command not found" in lowered
+        or "no such file or directory" in lowered
+    ):
         return "missing_executable"
     if "application exception" in lowered:
         return "application_exception"
@@ -169,9 +173,7 @@ def summarize_vivado_log_text(text: str, *, source: str = "stdin") -> dict[str, 
     for index, line in enumerate(lines, start=1):
         summary_match = _SUMMARY_COUNTS_RE.search(line)
         if summary_match:
-            reported_counts = {
-                key: int(value) for key, value in summary_match.groupdict().items()
-            }
+            reported_counts = {key: int(value) for key, value in summary_match.groupdict().items()}
 
         diag_match = _DIAGNOSTIC_RE.match(line)
         if diag_match:
@@ -273,10 +275,16 @@ def summarize_vivado_log_text(text: str, *, source: str = "stdin") -> dict[str, 
         if score > 0:
             candidates.append(_Candidate(score=score, line=int(diag["line"]), item=diag))
     for failure in failures:
-        candidates.append(_Candidate(score=_score_failure(failure, line_count), line=int(failure["line"]), item=failure))
+        candidates.append(
+            _Candidate(
+                score=_score_failure(failure, line_count), line=int(failure["line"]), item=failure
+            )
+        )
 
     candidates.sort(key=lambda item: (-item.score, -item.line))
-    root_cause_candidates = [dict(candidate.item, score=candidate.score) for candidate in candidates]
+    root_cause_candidates = [
+        dict(candidate.item, score=candidate.score) for candidate in candidates
+    ]
 
     failed = bool(severity_counts.get("error") or severity_counts.get("fatal") or failures)
     if not looks_like_vivado_log:
@@ -444,7 +452,9 @@ def format_vivado_log_summary(
             f"{reported.get('infos', 0)} info(s)"
         )
 
-    candidates = [item for item in list(summary.get("root_cause_candidates") or []) if isinstance(item, dict)]
+    candidates = [
+        item for item in list(summary.get("root_cause_candidates") or []) if isinstance(item, dict)
+    ]
     lines.append("root-cause candidates:")
     if candidates:
         shown_candidates = candidates if max_items is None else candidates[:max_items]
@@ -458,7 +468,9 @@ def format_vivado_log_summary(
     categories = summary.get("categories")
     if isinstance(categories, dict) and categories:
         lines.append("categories:")
-        for category, count in sorted(categories.items(), key=lambda item: (-int(item[1]), item[0])):
+        for category, count in sorted(
+            categories.items(), key=lambda item: (-int(item[1]), item[0])
+        ):
             lines.append(f"  {category}: {count}")
 
     critical = [

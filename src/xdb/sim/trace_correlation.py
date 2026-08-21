@@ -72,14 +72,10 @@ def correlate_trace(
     if window_tokens:
         window_text, window_seconds = parse_duration_tokens(window_tokens)
     tx_events = [
-        dict(item)
-        for item in list(transactions.get("events") or [])
-        if isinstance(item, dict)
+        dict(item) for item in list(transactions.get("events") or []) if isinstance(item, dict)
     ]
     axis_records = [
-        dict(item)
-        for item in list(axis.get("records") or [])
-        if isinstance(item, dict)
+        dict(item) for item in list(axis.get("records") or []) if isinstance(item, dict)
     ]
     timeline: list[dict[str, Any]] = []
     for index, event in enumerate(tx_events):
@@ -139,7 +135,9 @@ def correlate_trace(
                 delta_sim_seconds = axis_sim_time - tx_sim_time
                 if window_seconds is not None and abs(delta_sim_seconds) > window_seconds:
                     continue
-            candidates.append((axis_index, axis_record, axis_wallclock, axis_sim_time, delta_sim_seconds))
+            candidates.append(
+                (axis_index, axis_record, axis_wallclock, axis_sim_time, delta_sim_seconds)
+            )
         if not candidates:
             skipped_by_window += 1
             continue

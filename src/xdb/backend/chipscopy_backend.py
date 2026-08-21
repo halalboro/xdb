@@ -44,9 +44,7 @@ class ChipScoPyBackend:
             }
             if part_hint:
                 ph = part_hint.lower()
-                out["targets"] = [
-                    t for t in out["targets"] if ph in str(t.get("part", "")).lower()
-                ]
+                out["targets"] = [t for t in out["targets"] if ph in str(t.get("part", "")).lower()]
             return cast(TargetsResult, out)
         finally:
             self._delete_session(session)
@@ -211,7 +209,9 @@ class ChipScoPyBackend:
 
     @staticmethod
     def _get_versal_devices(session):
-        devices = [d for d in session.devices if str(getattr(d, "family_name", "")).lower() == "versal"]
+        devices = [
+            d for d in session.devices if str(getattr(d, "family_name", "")).lower() == "versal"
+        ]
         return devices
 
     def _select_device(self, session, part_hint: str):

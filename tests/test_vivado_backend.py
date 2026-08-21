@@ -66,7 +66,7 @@ class VivadoBackendTests(unittest.TestCase):
             captured["tcl"] = tcl
             return vivado.VivadoResult(
                 stdout=(
-                    'XDB_JSON_BEGIN\n'
+                    "XDB_JSON_BEGIN\n"
                     '{"target":"t","part":"p","ilas":[{"name":"ila0","probes":[{"name":"const_probe","width":null}]}]}'
                     "\nXDB_JSON_END\n"
                 ),
@@ -79,7 +79,7 @@ class VivadoBackendTests(unittest.TestCase):
         self.assertIsNone(result["ilas"][0]["probes"][0]["width"])
         tcl = str(captured["tcl"])
         self.assertIn("list_property $p", tcl)
-        self.assertIn("set w \"null\"", tcl)
+        self.assertIn('set w "null"', tcl)
         self.assertIn("set w [get_property PORT_WIDTH $p]", tcl)
 
     def test_capture_passes_ltx_and_sets_probes_before_refresh(self) -> None:
@@ -91,7 +91,7 @@ class VivadoBackendTests(unittest.TestCase):
             captured["timeout"] = timeout
             return vivado.VivadoResult(
                 stdout=(
-                    'XDB_JSON_BEGIN\n'
+                    "XDB_JSON_BEGIN\n"
                     '{"ok":true,"target":"t","part":"p","ila":"ila0","csv":"out.csv","samples":1024}'
                     "\nXDB_JSON_END\n"
                 ),

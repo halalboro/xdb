@@ -153,10 +153,13 @@ class WithTraceRunner:
             current_trace_time = after
             axis_sampler.sample(after)
 
-        with self.driver.coyote_trace_context(
-            lambda: {"time": current_trace_time, "time_source": "last_sample"},
-            enabled=transactions,
-        ), self.driver.sim_advance_hook(handle_sim_advance):
+        with (
+            self.driver.coyote_trace_context(
+                lambda: {"time": current_trace_time, "time_source": "last_sample"},
+                enabled=transactions,
+            ),
+            self.driver.sim_advance_hook(handle_sim_advance),
+        ):
             if exec_command:
                 action_result = self._with_trace_exec_action(
                     exec_command,
@@ -181,7 +184,9 @@ class WithTraceRunner:
                     kind="observation",
                 )
             iterations = int(observation_result.get("sample_iterations") or 0)
-            time_after = str(observation_result.get("time_after") or self.driver.time().get("time") or "")
+            time_after = str(
+                observation_result.get("time_after") or self.driver.time().get("time") or ""
+            )
 
         result: dict[str, Any] = {
             "action": {
@@ -408,9 +413,13 @@ class WithTraceRunner:
         iterations = 0
         while not self._eval_tcl_condition(expr):
             if max_iterations is not None and iterations >= max_iterations:
-                raise XdbError(f"condition not met before reaching max iterations ({max_iterations})")
+                raise XdbError(
+                    f"condition not met before reaching max iterations ({max_iterations})"
+                )
             if deadline is not None and time.monotonic() >= deadline:
-                raise XdbError(f"timed out after {timeout_seconds} second(s) while waiting for condition")
+                raise XdbError(
+                    f"timed out after {timeout_seconds} second(s) while waiting for condition"
+                )
             before = str(self.driver.time().get("time") or "")
             self.driver.run(step_tokens)
             iterations += 1
@@ -457,14 +466,18 @@ class WithTraceRunner:
                     f"signal did not reach expected value before reaching max iterations ({max_iterations})"
                 )
             if deadline is not None and time.monotonic() >= deadline:
-                raise XdbError(f"timed out after {timeout_seconds} second(s) while waiting for signal")
+                raise XdbError(
+                    f"timed out after {timeout_seconds} second(s) while waiting for signal"
+                )
             before = str(self.driver.time().get("time") or "")
             self.driver.run(step_tokens)
             iterations += 1
             after = str(self.driver.time().get("time") or "")
             value = str(self.driver.get_signal(signal_name).get("value") or "")
             if after == before and value != expected_value:
-                raise XdbError("signal did not reach expected value and simulation did not advance while waiting")
+                raise XdbError(
+                    "signal did not reach expected value and simulation did not advance while waiting"
+                )
         time_after = str(self.driver.time().get("time") or "")
         return {
             "signal": signal_name,

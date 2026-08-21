@@ -194,9 +194,7 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
             )
         except subprocess.CalledProcessError as e:
             raise XdbError(
-                self._format_exit_diagnostics(
-                    f"runtime preparation script failed: {script_path}"
-                )
+                self._format_exit_diagnostics(f"runtime preparation script failed: {script_path}")
             ) from e
 
     def _prepare_runtime_bundle(self) -> None:
@@ -285,9 +283,7 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
             os.write(self._pty_master_fd, payload.encode())
         except BrokenPipeError as e:
             raise XdbError(
-                self._format_exit_diagnostics(
-                    "vivado simulation process terminated unexpectedly"
-                )
+                self._format_exit_diagnostics("vivado simulation process terminated unexpectedly")
             ) from e
 
     def request(self, body_tcl: str, timeout: int = 120) -> dict[str, Any]:
@@ -297,14 +293,14 @@ class VivadoSimDriver(VivadoQueryMixin, VivadoDebugMixin, VivadoCoyoteMixin):
             raise XdbError("vivado simulation process is not running")
 
         request_id = uuid.uuid4().hex
-        script = f'''
+        script = f"""
 set __xdb_request_id {_tcl_string(request_id)}
 if {{[catch {{
 {body_tcl}
 }} __xdb_err __xdb_opts]}} {{
   xdb_reply_error $__xdb_request_id $__xdb_err
 }}
-'''
+"""
         self._send_raw(script)
         return self._await_response(request_id, timeout=timeout)
 
@@ -348,7 +344,9 @@ if {{[catch {{
     def launch(self, timeout: int = 300, top: str | None = None) -> dict[str, Any]:
         effective_top = self.top if top is None else top
         if top is not None and top != self.top:
-            raise XdbError("changing top module is not supported for runtime-backed simulation sessions")
+            raise XdbError(
+                "changing top module is not supported for runtime-backed simulation sessions"
+            )
         time_info = self.time()
         return {
             "project": self.project,
@@ -400,7 +398,9 @@ if {{[catch {{
         timeout_seconds: float | None = None,
         max_iterations: int | None = None,
     ) -> dict[str, Any]:
-        request_timeout = 86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
+        request_timeout = (
+            86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
+        )
         return self.request(
             build_proc_request(
                 "xdb_api_wait_until",
@@ -421,7 +421,9 @@ if {{[catch {{
         timeout_seconds: float | None = None,
         max_iterations: int | None = None,
     ) -> dict[str, Any]:
-        request_timeout = 86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
+        request_timeout = (
+            86400 if timeout_seconds is None else max(86400, int(timeout_seconds) + 60)
+        )
         return self.request(
             build_proc_request(
                 "xdb_api_wait_until_signal",
@@ -485,11 +487,11 @@ if {{[catch {{
             if self.proc is not None and self._vcd_state is not None:
                 try:
                     self.request(
-                        r'''
+                        r"""
 catch {close_vcd}
 set __xdb_time [current_time]
 xdb_reply_ok_fields $__xdb_request_id "\"time\":[xdb_json_string $__xdb_time],\"active\":false"
-'''
+"""
                     )
                 except XdbError:
                     pass

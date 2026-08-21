@@ -67,11 +67,11 @@ class InstrumentsResult(TypedDict):
 class DebugBackend(Protocol):
     name: str
 
-    def list_targets(self, part_hint: str | None, timeout: int = 120) -> TargetsResult:
-        ...
+    def list_targets(self, part_hint: str | None, timeout: int = 120) -> TargetsResult: ...
 
-    def program(self, bit: str, ltx: str | None, part_hint: str, timeout: int = 300) -> ProgramResult:
-        ...
+    def program(
+        self, bit: str, ltx: str | None, part_hint: str, timeout: int = 300
+    ) -> ProgramResult: ...
 
     def list_ilas(
         self,
@@ -79,8 +79,7 @@ class DebugBackend(Protocol):
         timeout: int = 180,
         *,
         ltx: str | None = None,
-    ) -> ListIlasResult:
-        ...
+    ) -> ListIlasResult: ...
 
     def capture(
         self,
@@ -91,11 +90,8 @@ class DebugBackend(Protocol):
         timeout: int = 120,
         *,
         ltx: str | None = None,
-    ) -> CaptureResult:
-        ...
+    ) -> CaptureResult: ...
 
-    def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult:
-        ...
+    def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult: ...
 
-    def capabilities(self) -> set[Capability]:
-        ...
+    def capabilities(self) -> set[Capability]: ...

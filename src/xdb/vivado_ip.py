@@ -181,13 +181,20 @@ def _parse_xml_xci(path: Path, text: str) -> dict[str, Any]:
     except ET.ParseError as e:
         raise XdbError(f"invalid XML XCI: {path}") from e
 
-    parameters: dict[str, dict[str, dict[str, Any]]] = {"component": {}, "model": {}, "project": {}, "runtime": {}}
+    parameters: dict[str, dict[str, dict[str, Any]]] = {
+        "component": {},
+        "model": {},
+        "project": {},
+        "runtime": {},
+    }
     ports: list[dict[str, Any]] = []
 
     for element in root.iter():
         local = _strip_ns(element.tag)
         if local == "configurableElementValue":
-            ref = element.attrib.get("referenceId") or element.attrib.get("{http://www.spiritconsortium.org/XMLSchema/SPIRIT/1685-2009}referenceId")
+            ref = element.attrib.get("referenceId") or element.attrib.get(
+                "{http://www.spiritconsortium.org/XMLSchema/SPIRIT/1685-2009}referenceId"
+            )
             if not ref:
                 continue
             name = ref.rsplit(".", 1)[-1]

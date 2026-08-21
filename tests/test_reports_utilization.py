@@ -72,7 +72,10 @@ class UtilizationReportTests(unittest.TestCase):
             report = self._write_report(Path(tmp))
             parsed = parse_utilization_report(report)
 
-        self.assertEqual(parsed["tool_version"], "Vivado v.2025.1 (lin64) Build 6140274 Wed May 21 22:58:25 MDT 2025")
+        self.assertEqual(
+            parsed["tool_version"],
+            "Vivado v.2025.1 (lin64) Build 6140274 Wed May 21 22:58:25 MDT 2025",
+        )
         self.assertEqual(parsed["design"], "cyt_top")
         self.assertEqual(parsed["device"], "xcv80-lsva4737-2MHP-e-S")
         self.assertEqual(parsed["design_state"], "Physopt postRoute")
@@ -132,7 +135,9 @@ class UtilizationReportTests(unittest.TestCase):
             a = root / "a"
             b = root / "b"
             parsed_a = parse_utilization_report(self._write_report(a))
-            parsed_b = parse_utilization_report(self._write_report(b, REPORT_TEXT.replace("116420", "120000", 1)))
+            parsed_b = parse_utilization_report(
+                self._write_report(b, REPORT_TEXT.replace("116420", "120000", 1))
+            )
             text = format_utilization_comparison([parsed_a, parsed_b], names=["d3", "d7"])
 
         self.assertIn("d3", text)
@@ -144,8 +149,12 @@ class UtilizationReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             old = parse_utilization_report(self._write_report(root / "d13"))
-            new = parse_utilization_report(self._write_report(root / "d17", REPORT_TEXT.replace("116420", "232840", 1)))
-            data = utilization_compare_data(old, new, old_name="d13", new_name="d17", resources=["clb_luts"])
+            new = parse_utilization_report(
+                self._write_report(root / "d17", REPORT_TEXT.replace("116420", "232840", 1))
+            )
+            data = utilization_compare_data(
+                old, new, old_name="d13", new_name="d17", resources=["clb_luts"]
+            )
             text = format_utilization_delta_comparison(data)
 
         self.assertIn("baseline: d13", text)
@@ -158,11 +167,16 @@ class UtilizationReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             old = parse_utilization_report(self._write_report(root / "d13"))
-            new = parse_utilization_report(self._write_report(root / "d17", REPORT_TEXT.replace("116420", "232840", 1)))
+            new = parse_utilization_report(
+                self._write_report(root / "d17", REPORT_TEXT.replace("116420", "232840", 1))
+            )
             data = utilization_compare_data(old, new, resources=["clb_luts"])
             text = format_utilization_delta_csv(data)
 
-        self.assertEqual(text.splitlines()[0], "resource,old_used,new_used,delta_used,delta_used_percent,old_util_percent,new_util_percent,delta_util_percent_points")
+        self.assertEqual(
+            text.splitlines()[0],
+            "resource,old_used,new_used,delta_used,delta_used_percent,old_util_percent,new_util_percent,delta_util_percent_points",
+        )
         self.assertIn("clb_luts,116420,232840,116420,100.0,4.52,4.52,0.0", text)
 
     def test_csv_output_has_expected_columns(self) -> None:
@@ -182,7 +196,9 @@ class UtilizationReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             report = self._write_report(Path(tmp))
             stdout = io.StringIO()
-            with patch.object(sys, "argv", ["xdb", "reports", "utilization", "--json", str(report)]):
+            with patch.object(
+                sys, "argv", ["xdb", "reports", "utilization", "--json", str(report)]
+            ):
                 with patch("sys.stdout", stdout):
                     main()
             result = json.loads(stdout.getvalue())
@@ -198,7 +214,17 @@ class UtilizationReportTests(unittest.TestCase):
             with patch.object(
                 sys,
                 "argv",
-                ["xdb", "reports", "compare", "--old-name", "d13", "--new-name", "d17", str(old), str(new)],
+                [
+                    "xdb",
+                    "reports",
+                    "compare",
+                    "--old-name",
+                    "d13",
+                    "--new-name",
+                    "d17",
+                    str(old),
+                    str(new),
+                ],
             ):
                 with patch("sys.stdout", stdout):
                     main()

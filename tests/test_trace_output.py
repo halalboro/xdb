@@ -28,7 +28,9 @@ class TraceOutputTests(unittest.TestCase):
             "action": {"op": "invoke", "result": {"ok": True}},
             "transactions": {"events": [{"type": "invoke", "opcode": "local-transfer"}]},
             "axis": {"records": [{"interface": "/axis", "time": "1 ns", "handshake": True}]},
-            "correlation": {"timeline": [{"kind": "transaction", "label": "invoke:local-transfer"}]},
+            "correlation": {
+                "timeline": [{"kind": "transaction", "label": "invoke:local-transfer"}]
+            },
         }
 
         lines = [json.loads(line) for line in _format_with_trace_ndjson(result).splitlines()]
@@ -79,7 +81,12 @@ class TraceOutputTests(unittest.TestCase):
                 "session_id": "unit-123",
                 "anchor_dir": "/repo",
                 "checks": [
-                    {"name": "daemon_responsive", "ok": False, "severity": "error", "detail": "timeout"},
+                    {
+                        "name": "daemon_responsive",
+                        "ok": False,
+                        "severity": "error",
+                        "detail": "timeout",
+                    },
                     {"name": "vivado_log_exists", "ok": False, "severity": "warning"},
                 ],
                 "suggestions": ["run: xdb sim close --force"],
@@ -138,8 +145,18 @@ class TraceOutputTests(unittest.TestCase):
             },
             {
                 "records": [
-                    {"interface": "/axis", "beat_index": 0, "time": "1 ns", "wallclock_seconds": 1.1},
-                    {"interface": "/axis", "beat_index": 1, "time": "30 ns", "wallclock_seconds": 2.1},
+                    {
+                        "interface": "/axis",
+                        "beat_index": 0,
+                        "time": "1 ns",
+                        "wallclock_seconds": 1.1,
+                    },
+                    {
+                        "interface": "/axis",
+                        "beat_index": 1,
+                        "time": "30 ns",
+                        "wallclock_seconds": 2.1,
+                    },
                 ]
             },
             correlate_by="opcode",

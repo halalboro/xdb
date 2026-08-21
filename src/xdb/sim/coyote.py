@@ -232,9 +232,7 @@ class CoyoteSimController:
 
     def reset_host_memory(self) -> dict[str, object]:
         unmapped_segments = self._describe_segments()
-        payload = b"".join(
-            self._encode_user_unmap(base) for base in sorted(self._segments)
-        )
+        payload = b"".join(self._encode_user_unmap(base) for base in sorted(self._segments))
         self._segments.clear()
         self._host_write_count = 0
         self._host_read_count = 0
@@ -369,8 +367,12 @@ class CoyoteSimController:
         return b"".join(
             [
                 self._encode_mem_write(src_addr, self._read_host_bytes(src_addr, src_len)),
-                self._encode_invoke(OPCODE_NAME_TO_ID["local-read"], src_stream, src_dest, src_addr, src_len, last),
-                self._encode_invoke(OPCODE_NAME_TO_ID["local-write"], dst_stream, dst_dest, dst_addr, dst_len, last),
+                self._encode_invoke(
+                    OPCODE_NAME_TO_ID["local-read"], src_stream, src_dest, src_addr, src_len, last
+                ),
+                self._encode_invoke(
+                    OPCODE_NAME_TO_ID["local-write"], dst_stream, dst_dest, dst_addr, dst_len, last
+                ),
             ]
         )
 
@@ -425,9 +427,7 @@ class CoyoteSimController:
             end = base + len(data)
             if base <= addr and addr + size <= end:
                 return base, data, addr - base
-        raise XdbError(
-            f"host memory range is not mapped: addr={_hex(addr)} size={size}"
-        )
+        raise XdbError(f"host memory range is not mapped: addr={_hex(addr)} size={size}")
 
     def _read_host_bytes(self, addr: int, size: int) -> bytes:
         _base, segment, offset = self._find_segment(addr, size)
@@ -608,9 +608,7 @@ def ensure_supported_local_opcode(name: str) -> int:
     if opcode is None:
         raise XdbError(f"unsupported Coyote opcode: {name}")
     if name not in _LOCAL_PROTOCOL_OPCODES:
-        raise XdbError(
-            f"opcode {name!r} is not supported by the current Coyote simulation target"
-        )
+        raise XdbError(f"opcode {name!r} is not supported by the current Coyote simulation target")
     return opcode
 
 

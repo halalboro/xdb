@@ -173,12 +173,12 @@ def _extract_json(stdout: str) -> dict[str, Any]:
     j = stdout.find(end)
     if i == -1 or j == -1 or j <= i:
         raise VivadoError(f"could not find JSON markers in Vivado output\n{stdout}")
-    payload = stdout[i + len(start):j].strip()
+    payload = stdout[i + len(start) : j].strip()
     return json.loads(payload)
 
 
 def list_targets(part_hint: str | None, timeout: int = 120) -> TargetsResult:
-    tcl = r'''
+    tcl = r"""
 open_hw_manager
 connect_hw_server
 set targets [get_hw_targets *]
@@ -202,7 +202,7 @@ puts "XDB_JSON_BEGIN"
 puts $out
 puts "XDB_JSON_END"
 exit 0
-'''
+"""
     res = _run_vivado_tcl(tcl, [], timeout=timeout)
     data = _extract_json(res.stdout)
     if part_hint:
@@ -214,7 +214,7 @@ exit 0
 
 
 def program(bit: str, ltx: str | None, part_hint: str, timeout: int = 300) -> ProgramResult:
-    tcl = r'''
+    tcl = r"""
 set part_hint [lindex $argv 0]
 set bit [lindex $argv 1]
 set ltx [lindex $argv 2]
@@ -248,13 +248,13 @@ puts "XDB_JSON_BEGIN"
 puts "{\"ok\":true,\"target\":\"$chosen\",\"part\":\"[get_property PART $dev]\"}"
 puts "XDB_JSON_END"
 exit 0
-'''
+"""
     res = _run_vivado_tcl(tcl, [part_hint, bit, ltx or ""], timeout=timeout)
     return cast(ProgramResult, _extract_json(res.stdout))
 
 
 def list_ilas(part_hint: str, timeout: int = 180, *, ltx: str | None = None) -> ListIlasResult:
-    tcl = r'''
+    tcl = r"""
 set part_hint [lindex $argv 0]
 set ltx [lindex $argv 1]
 open_hw_manager
@@ -307,7 +307,7 @@ puts "XDB_JSON_BEGIN"
 puts $out
 puts "XDB_JSON_END"
 exit 0
-'''
+"""
     res = _run_vivado_tcl(tcl, [part_hint, ltx or ""], timeout=timeout)
     return cast(ListIlasResult, _extract_json(res.stdout))
 
@@ -321,7 +321,7 @@ def capture(
     *,
     ltx: str | None = None,
 ) -> CaptureResult:
-    tcl = r'''
+    tcl = r"""
 set part_hint [lindex $argv 0]
 set ila_name [lindex $argv 1]
 set csv_path [lindex $argv 2]
@@ -363,7 +363,7 @@ puts "XDB_JSON_BEGIN"
 puts $out
 puts "XDB_JSON_END"
 exit 0
-'''
+"""
     res = _run_vivado_tcl(
         tcl,
         [part_hint, ila_name, csv_path, str(samples), ltx or ""],

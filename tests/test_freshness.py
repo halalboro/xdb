@@ -11,7 +11,13 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb.sim.client import provenance_session, restage_session
-from xdb.sim.session_store import cleanup_stale_session, load_meta, resolve_launch_spec, session_paths, write_meta
+from xdb.sim.session_store import (
+    cleanup_stale_session,
+    load_meta,
+    resolve_launch_spec,
+    session_paths,
+    write_meta,
+)
 
 
 class FreshnessControlTests(unittest.TestCase):
@@ -20,7 +26,9 @@ class FreshnessControlTests(unittest.TestCase):
         package.mkdir()
         (package / "compile.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         (package / "elaborate.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-        (package / "simulate.sh").write_text("#!/usr/bin/env bash\nxsim work.tb_top\n", encoding="utf-8")
+        (package / "simulate.sh").write_text(
+            "#!/usr/bin/env bash\nxsim work.tb_top\n", encoding="utf-8"
+        )
         (package / "payload.txt").write_text("hello\n", encoding="utf-8")
         (package / "xdb-runtime.json").write_text(
             json.dumps(
@@ -218,7 +226,11 @@ class FreshnessControlTests(unittest.TestCase):
             old_cwd = Path.cwd()
             try:
                 os.chdir(repo)
-                with patch.dict(os.environ, {"XDB_ROOT": str(tmp_path / "xdb-root"), "XDB_CACHE_ROOT": str(cache)}, clear=False):
+                with patch.dict(
+                    os.environ,
+                    {"XDB_ROOT": str(tmp_path / "xdb-root"), "XDB_CACHE_ROOT": str(cache)},
+                    clear=False,
+                ):
                     paths = session_paths(None)
                     paths.session_dir.mkdir(parents=True)
                     paths.meta_path.write_text("", encoding="utf-8")

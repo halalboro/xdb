@@ -487,9 +487,7 @@ def inspect_floorplan_checkpoint(
             ) from error
     design = parse_floorplan_records(text, checkpoint)
     if not design.occupancy or design.stats.get("placed_cells", 0) <= 0:
-        raise XdbError(
-            f"checkpoint contains no placed primitives; use a routed DCP: {checkpoint}"
-        )
+        raise XdbError(f"checkpoint contains no placed primitives; use a routed DCP: {checkpoint}")
     if design.stats["routing_errors"]:
         raise XdbError(
             f"checkpoint contains {design.stats['routing_errors']} routing errors; "

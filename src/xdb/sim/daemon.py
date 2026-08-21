@@ -84,7 +84,6 @@ def _arg_optional_float(args: dict[str, Any], name: str) -> float | None:
     return None if value is None else float(value)
 
 
-
 class SimDaemon:
     def __init__(
         self,
@@ -343,7 +342,9 @@ class SimDaemon:
                 raise XdbError("missing top module")
             result = self.driver.set_top(top)
             self.top = top
-            self.meta = write_meta(self.paths, {**self.meta, "top": self.driver.top, "state": "ready"})
+            self.meta = write_meta(
+                self.paths, {**self.meta, "top": self.driver.top, "state": "ready"}
+            )
             return result
         if op == OP_WAVE_ADD:
             pattern = str(args.get("pattern") or "")

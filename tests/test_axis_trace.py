@@ -15,8 +15,7 @@ class AxisTraceTests(unittest.TestCase):
     def test_axis_trace_decodes_handshakes_and_bytes(self) -> None:
         interface = "/tb_top/dut/axis_host_recv[0]"
         signal_paths = {
-            name: f"{interface}/{name}"
-            for name in ("tvalid", "tready", "tdata", "tkeep", "tlast")
+            name: f"{interface}/{name}" for name in ("tvalid", "tready", "tdata", "tkeep", "tlast")
         }
         samples = [
             {
@@ -120,8 +119,7 @@ class AxisTraceTests(unittest.TestCase):
     def test_axis_trace_decodes_prefixed_logic_literals_through_shared_sampler(self) -> None:
         interface = "/tb_top/dut/axis_prefixed"
         signal_paths = {
-            name: f"{interface}/{name}"
-            for name in ("tvalid", "tready", "tdata", "tkeep", "tlast")
+            name: f"{interface}/{name}" for name in ("tvalid", "tready", "tdata", "tkeep", "tlast")
         }
 
         def fake_get_objects(session_name: str | None, scope: str) -> dict:

@@ -14,7 +14,9 @@ from xdb.sim.protocol import OP_BREAKPOINT_ADD, OP_BREAKPOINT_LIST, OP_BREAKPOIN
 
 class BreakpointClientTests(unittest.TestCase):
     def test_add_breakpoint_sends_poll_step_tokens(self) -> None:
-        with patch("xdb.sim.client._send_request", return_value={"breakpoint_id": 1}) as send_request:
+        with patch(
+            "xdb.sim.client._send_request", return_value={"breakpoint_id": 1}
+        ) as send_request:
             add_breakpoint("unit", "{[get_value /done] eq 1}", poll_step_tokens=["1", "ns"])
 
         request = send_request.call_args.args[1]

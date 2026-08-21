@@ -235,12 +235,8 @@ class FloorplanReportTests(unittest.TestCase):
             "META\tdevice\txcv80-test",
             "META\ttool_version\t2025.1",
         ]
-        records.extend(
-            f"SITE\tSLICE_X0Y{index}\tSLICEL\t0\t{index}" for index in range(site_count)
-        )
-        records.extend(
-            f"OCC\tSLICE_X0Y{index}\ttop\t1" for index in range(site_count)
-        )
+        records.extend(f"SITE\tSLICE_X0Y{index}\tSLICEL\t0\t{index}" for index in range(site_count))
+        records.extend(f"OCC\tSLICE_X0Y{index}\ttop\t1" for index in range(site_count))
         records.extend(
             [
                 f"STAT\tprimitive_cells\t{site_count}",

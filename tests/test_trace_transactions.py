@@ -50,12 +50,15 @@ class TransactionTraceTests(unittest.TestCase):
         controller._handle_host_write(0x1000, bytes.fromhex("01020304"))
 
         events = controller.get_trace_events()
-        self.assertEqual([event["type"] for event in events], [
-            "mem_map",
-            "mem_write",
-            "host_read",
-            "host_write",
-        ])
+        self.assertEqual(
+            [event["type"] for event in events],
+            [
+                "mem_map",
+                "mem_write",
+                "host_read",
+                "host_write",
+            ],
+        )
         self.assertEqual(events[0]["addr_hex"], "0x1000")
         self.assertEqual(events[1]["data_hex"], "deadbeef")
         self.assertEqual(events[2]["size"], 4)

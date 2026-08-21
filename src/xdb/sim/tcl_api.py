@@ -10,7 +10,6 @@ class TclRaw:
         self.code = code
 
 
-
 def _tcl_arg(value: Any) -> str:
     if isinstance(value, TclRaw):
         return value.code
@@ -23,7 +22,6 @@ def _tcl_arg(value: Any) -> str:
     if isinstance(value, (int, float)):
         return str(value)
     return _tcl_string(str(value))
-
 
 
 def build_proc_request(proc_name: str, *args: Any) -> str:

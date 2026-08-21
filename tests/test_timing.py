@@ -111,7 +111,10 @@ class TimingTests(unittest.TestCase):
         self.assertFalse(parsed["summary"]["timing_met"])
         self.assertEqual(parsed["clocks"][0]["name"], "clkout1_primitive")
         self.assertEqual(parsed["failing_clock_pairs"][0]["from_clock"], "clkout1_primitive_1")
-        self.assertEqual(parsed["paths"][0]["source"], "inst_shell/inst_dynamic/inst_user_wrapper_0/helios_core/foo_reg/C")
+        self.assertEqual(
+            parsed["paths"][0]["source"],
+            "inst_shell/inst_dynamic/inst_user_wrapper_0/helios_core/foo_reg/C",
+        )
 
     def test_parse_paths_and_group_by_hierarchy_and_clock_pair(self) -> None:
         paths = parse_timing_paths_text(TIMING_SUMMARY)
@@ -119,7 +122,9 @@ class TimingTests(unittest.TestCase):
         clock_pairs = group_clock_pairs(paths)
 
         self.assertEqual(grouped["failing_path_count"], 1)
-        self.assertEqual(grouped["by_common_ancestor"][0]["name"], "inst_shell/inst_dynamic/inst_user_wrapper_0")
+        self.assertEqual(
+            grouped["by_common_ancestor"][0]["name"], "inst_shell/inst_dynamic/inst_user_wrapper_0"
+        )
         self.assertEqual(grouped["by_bucket"][0]["name"], "user")
         self.assertEqual(clock_pairs[0]["from_clock"], "clkout1_primitive_1")
         self.assertEqual(clock_pairs[0]["count"], 1)

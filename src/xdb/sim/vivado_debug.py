@@ -21,7 +21,9 @@ class _VivadoDebugHost(Protocol):
 class VivadoDebugMixin:
     def set_top(self: _VivadoDebugHost, top: str, timeout: int = 300) -> dict[str, Any]:
         if top != self.top:
-            raise XdbError("changing top module is not supported for runtime-backed simulation sessions")
+            raise XdbError(
+                "changing top module is not supported for runtime-backed simulation sessions"
+            )
         data = self.launch(timeout=timeout, top=top)
         data["relaunched"] = False
         return data
@@ -29,7 +31,9 @@ class VivadoDebugMixin:
     def add_wave(self: _VivadoDebugHost, pattern: str) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_add_wave", pattern))
 
-    def vcd_start(self: _VivadoDebugHost, file_path: str, scope: str | None = None) -> dict[str, Any]:
+    def vcd_start(
+        self: _VivadoDebugHost, file_path: str, scope: str | None = None
+    ) -> dict[str, Any]:
         if self._vcd_state is not None:
             raise XdbError(
                 f"a VCD dump is already active: {self._vcd_state.get('file', '<unknown>')}"
@@ -91,7 +95,9 @@ class VivadoDebugMixin:
     def expect_signal(
         self: _VivadoDebugHost, signal: str, value: str, *, within_tokens: list[str]
     ) -> dict[str, Any]:
-        return self.request(build_proc_request("xdb_api_expect_signal", signal, value, within_tokens))
+        return self.request(
+            build_proc_request("xdb_api_expect_signal", signal, value, within_tokens)
+        )
 
     def expect_change(
         self: _VivadoDebugHost, signal: str, *, within_tokens: list[str]
@@ -108,7 +114,9 @@ class VivadoDebugMixin:
         condition: str,
         poll_step_tokens: list[str] | None = None,
     ) -> dict[str, Any]:
-        return self.request(build_proc_request("xdb_api_breakpoint_add", condition, poll_step_tokens or []))
+        return self.request(
+            build_proc_request("xdb_api_breakpoint_add", condition, poll_step_tokens or [])
+        )
 
     def list_breakpoints(self: _VivadoDebugHost) -> dict[str, Any]:
         return self.request(build_proc_request("xdb_api_breakpoint_list"))

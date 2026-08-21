@@ -4,6 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
@@ -26,8 +30,10 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       flake-utils,
+      treefmt-nix,
       pyproject-nix,
       uv2nix,
       pyproject-build-systems,
@@ -103,6 +109,14 @@
         );
         pythonSetEditable = pythonSet.overrideScope editableOverlay;
         virtualenv = pythonSetEditable.mkVirtualEnv "xdb-dev-env" workspace.deps.all;
+        treefmtEval = treefmt-nix.lib.evalModule pkgs {
+          projectRootFile = "flake.nix";
+          programs.nixfmt = {
+            enable = true;
+            package = pkgs.nixfmt-rfc-style;
+          };
+          programs.ruff-format.enable = true;
+        };
 
         mkCheck =
           name: command: nativeBuildInputs:
@@ -168,17 +182,16 @@
         };
 
         checks = {
+          formatting = treefmtEval.config.build.check self;
           ruff = mkCheck "ruff" "${pkgs.ruff}/bin/ruff check ." [ pkgs.ruff ];
           pyright = mkCheck "pyright" "${pkgs.pyright}/bin/pyright" [ pkgs.pyright ];
-          tests = mkCheck
-            "tests"
-            "${virtualenv}/bin/python -m unittest discover -s tests"
-            [ virtualenv ];
+          tests = mkCheck "tests" "${virtualenv}/bin/python -m unittest discover -s tests" [ virtualenv ];
         };
 
         devShells.default = pkgs.mkShell {
           packages = [
             virtualenv
+            treefmtEval.config.build.wrapper
             pkgs.uv
             pkgs.ruff
             pkgs.pyright
@@ -193,6 +206,8 @@
             export REPO_ROOT=$(git rev-parse --show-toplevel)
           '';
         };
+
+        formatter = treefmtEval.config.build.wrapper;
       }
     );
 }

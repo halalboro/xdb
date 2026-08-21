@@ -81,9 +81,15 @@ class BundleTests(unittest.TestCase):
                 self.assertTrue((bundle_dir / "provenance.json").is_file())
                 self.assertTrue((bundle_dir / "metadata.json").is_file())
                 self.assertTrue((bundle_dir / "trace.json").is_file())
-                self.assertEqual((bundle_dir / "logs" / "daemon.log").read_text(encoding="utf-8"), "daemon log\n")
-                self.assertEqual((bundle_dir / "logs" / "vivado.log").read_text(encoding="utf-8"), "vivado log\n")
-                self.assertEqual((bundle_dir / "host" / "stdout.txt").read_text(encoding="utf-8"), "host out\n")
+                self.assertEqual(
+                    (bundle_dir / "logs" / "daemon.log").read_text(encoding="utf-8"), "daemon log\n"
+                )
+                self.assertEqual(
+                    (bundle_dir / "logs" / "vivado.log").read_text(encoding="utf-8"), "vivado log\n"
+                )
+                self.assertEqual(
+                    (bundle_dir / "host" / "stdout.txt").read_text(encoding="utf-8"), "host out\n"
+                )
                 manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
                 self.assertTrue(manifest["contains_trace"])
                 self.assertIn("trace.json", manifest["files"])
