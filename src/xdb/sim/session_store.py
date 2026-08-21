@@ -427,12 +427,12 @@ def resolve_launch_spec(
     if workspace_value is None:
         raise XdbError("XDB_SIM_PACKAGE_RUNTIME is set but XDB_SIM_WORKSPACE is missing")
 
-    source_root, workspace = _resolve_packaged_runtime_layout(runtime_value, workspace_value)
-    needs_stage = not _runtime_stage_matches(workspace, source_root=source_root)
+    source_root, workspace_path = _resolve_packaged_runtime_layout(runtime_value, workspace_value)
+    needs_stage = not _runtime_stage_matches(workspace_path, source_root=source_root)
     did_stage = False
-    runtime_root = workspace
+    runtime_root = workspace_path
     if stage:
-        did_stage = _stage_runtime_tree(source_root, workspace)
+        did_stage = _stage_runtime_tree(source_root, workspace_path)
     elif needs_stage:
         runtime_root = source_root
 
@@ -447,7 +447,7 @@ def resolve_launch_spec(
         "launch_kind": "runtime",
         "package_runtime": str(source_root),
         "runtime_root": str(runtime_root),
-        "workspace": str(workspace),
+        "workspace": str(workspace_path),
         "project": str(runtime_meta.get("project", "")),
         "work_dir": str(work_dir),
         "compile_script": str(compile_script),

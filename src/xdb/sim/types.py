@@ -22,6 +22,7 @@ class SessionMeta(TypedDict, total=False):
     top: str
     package_runtime: str
     runtime_root: str
+    workspace: str
     work_dir: str
     compile_script: str
     elaborate_script: str
