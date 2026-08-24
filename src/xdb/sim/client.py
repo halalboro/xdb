@@ -36,6 +36,8 @@ from xdb.sim.protocol import (
     OP_COYOTE_STATUS,
     OP_CSR_READ,
     OP_CSR_WRITE,
+    OP_SERVICE_CSR_READ,
+    OP_SERVICE_CSR_WRITE,
     OP_DESCRIBE,
     OP_EXPECT_CHANGE,
     OP_EXPECT_CONDITION,
@@ -866,6 +868,33 @@ def coyote_csr_write_session(
     value: int,
 ) -> dict[str, Any]:
     return _send_request(session_name, make_request(OP_CSR_WRITE, addr=addr, value=value))
+
+
+def coyote_service_csr_read_session(
+    session_name: str | None,
+    addr: int,
+    *,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(
+            OP_SERVICE_CSR_READ,
+            addr=addr,
+            timeout_seconds=timeout_seconds,
+        ),
+    )
+
+
+def coyote_service_csr_write_session(
+    session_name: str | None,
+    addr: int,
+    value: int,
+) -> dict[str, Any]:
+    return _send_request(
+        session_name,
+        make_request(OP_SERVICE_CSR_WRITE, addr=addr, value=value),
+    )
 
 
 def coyote_mem_map_session(

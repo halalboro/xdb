@@ -151,6 +151,51 @@ class VivadoCoyoteMixin:
             "written": True,
         }
 
+    def coyote_service_csr_read(
+        self: _VivadoCoyoteHost, addr: int, *, timeout_seconds: float | None = None
+    ) -> dict[str, Any]:
+        controller = self._require_coyote()
+        controller.record_trace_event("service_csr_read_request", addr=addr, addr_hex=f"0x{addr:x}")
+        controller.write_input(
+            controller.encode_service_csr_read(addr),
+            pump=self._coyote_pump_step,
+        )
+        value = self._coyote_wait_for_item(
+            controller.get_service_csr_result_nowait,
+            timeout_seconds=timeout_seconds,
+            description=f"resident-service CSR read response at 0x{addr:x}",
+        )
+        return {
+            "space": "resident-service",
+            "addr": addr,
+            "addr_hex": f"0x{addr:x}",
+            "value": value,
+            "value_hex": f"0x{value:x}",
+        }
+
+    def coyote_service_csr_write(self: _VivadoCoyoteHost, addr: int, value: int) -> dict[str, Any]:
+        controller = self._require_coyote()
+        controller.record_trace_event(
+            "service_csr_write_request",
+            addr=addr,
+            addr_hex=f"0x{addr:x}",
+            value=value,
+            value_hex=f"0x{value:x}",
+        )
+        controller.write_input(
+            controller.encode_service_csr_write(addr, value),
+            pump=self._coyote_pump_step,
+        )
+        self._coyote_pump_step()
+        return {
+            "space": "resident-service",
+            "addr": addr,
+            "addr_hex": f"0x{addr:x}",
+            "value": value,
+            "value_hex": f"0x{value:x}",
+            "written": True,
+        }
+
     def coyote_mem_map(self: _VivadoCoyoteHost, space: str, addr: int, size: int) -> dict[str, Any]:
         if space != "host":
             raise XdbError("only host memory is currently supported")

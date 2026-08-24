@@ -64,6 +64,30 @@ class TransactionTraceTests(unittest.TestCase):
         self.assertEqual(events[2]["size"], 4)
         self.assertEqual(events[3]["data_hex"], "01020304")
 
+    def test_resident_service_csr_runtime_access_uses_separate_protocol(self) -> None:
+        controller = CoyoteSimController("/tmp/xdb-coyote-trace-test")
+        host = _FakeTraceHost(controller)
+
+        def respond_to_read(payload: bytes, *, pump: object) -> None:
+            self.assertEqual(payload[0], 13)
+            self.assertIsNotNone(pump)
+            controller._service_csr_results.put(0x51534832)
+
+        controller.write_input = Mock(side_effect=respond_to_read)
+        read = host.coyote_service_csr_read(0x0, timeout_seconds=1.0)
+
+        self.assertEqual(read["space"], "resident-service")
+        self.assertEqual(read["value"], 0x51534832)
+        self.assertEqual(read["addr_hex"], "0x0")
+        self.assertEqual(controller.get_trace_events()[0]["type"], "service_csr_read_request")
+
+        controller.write_input = Mock()
+        write = host.coyote_service_csr_write(0x100, 0x1234)
+
+        self.assertTrue(write["written"])
+        self.assertEqual(write["space"], "resident-service")
+        self.assertEqual(controller.write_input.call_args.args[0][0], 12)
+
     def test_trace_transactions_returns_window_and_opcode_filter(self) -> None:
         controller = CoyoteSimController("/tmp/xdb-coyote-trace-test")
         host = _FakeTraceHost(controller)

@@ -29,6 +29,8 @@ OP_FORCE = "force"
 OP_RELEASE = "release"
 OP_CSR_READ = "csr_read"
 OP_CSR_WRITE = "csr_write"
+OP_SERVICE_CSR_READ = "service_csr_read"
+OP_SERVICE_CSR_WRITE = "service_csr_write"
 OP_MEM_MAP = "mem_map"
 OP_MEM_UNMAP = "mem_unmap"
 OP_MEM_LIST = "mem_list"
@@ -84,6 +86,8 @@ ALL_OPERATIONS = {
     OP_RELEASE,
     OP_CSR_READ,
     OP_CSR_WRITE,
+    OP_SERVICE_CSR_READ,
+    OP_SERVICE_CSR_WRITE,
     OP_MEM_MAP,
     OP_MEM_UNMAP,
     OP_MEM_LIST,

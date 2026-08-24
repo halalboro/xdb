@@ -1006,6 +1006,24 @@ Examples:
     s_sim_csr_write.add_argument("addr")
     s_sim_csr_write.add_argument("value")
 
+    s_sim_service_csr = sim_sub.add_parser(
+        "service-csr", help="resident dynamic-service CSR access"
+    )
+    _add_debug_flag(s_sim_service_csr)
+    sim_service_csr_sub = s_sim_service_csr.add_subparsers(
+        dest="sim_service_csr_cmd", required=True
+    )
+    s_sim_service_csr_read = sim_service_csr_sub.add_parser("read")
+    _add_debug_flag(s_sim_service_csr_read)
+    add_sim_session_arg(s_sim_service_csr_read)
+    s_sim_service_csr_read.add_argument("addr")
+    s_sim_service_csr_read.add_argument("--timeout", type=float, default=None)
+    s_sim_service_csr_write = sim_service_csr_sub.add_parser("write")
+    _add_debug_flag(s_sim_service_csr_write)
+    add_sim_session_arg(s_sim_service_csr_write)
+    s_sim_service_csr_write.add_argument("addr")
+    s_sim_service_csr_write.add_argument("value")
+
     s_sim_mem = sim_sub.add_parser("mem", help="Coyote host memory access")
     _add_debug_flag(s_sim_mem)
     sim_mem_sub = s_sim_mem.add_subparsers(dest="sim_mem_cmd", required=True)

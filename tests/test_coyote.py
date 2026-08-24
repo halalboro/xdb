@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from xdb.errors import XdbError
 from xdb.sim.coyote import CoyoteSimController
 
 
@@ -45,6 +46,40 @@ class CoyoteSimControllerTests(unittest.TestCase):
         self.assertEqual(status["host_read_count"], 1)
         self.assertEqual(status["pending_irqs"], 1)
         self.assertEqual(status["last_protocol_error"], "boom")
+
+    def test_resident_service_csr_protocol_is_separate_and_byte_exact(self) -> None:
+        controller = CoyoteSimController("/tmp/xdb-coyote-test")
+
+        self.assertEqual(
+            controller.encode_service_csr_write(0x138, 0xFEDCBA9876543210),
+            bytes.fromhex("0c38010000000000001032547698badcfe"),
+        )
+        self.assertEqual(
+            controller.encode_service_csr_read(0x138),
+            bytes.fromhex("0d3801000000000000000000000000000000"),
+        )
+        self.assertNotEqual(
+            controller.encode_service_csr_read(0x138),
+            controller.encode_csr_read(0x138),
+        )
+
+        buffer = bytearray(bytes.fromhex("051032547698badcfe"))
+        controller._parse_output_buffer(buffer)
+
+        self.assertEqual(controller.get_service_csr_result_nowait(), 0xFEDCBA9876543210)
+        self.assertIsNone(controller.get_csr_result_nowait())
+        self.assertEqual(buffer, bytearray())
+
+    def test_resident_service_csr_rejects_invalid_addresses_and_values(self) -> None:
+        controller = CoyoteSimController("/tmp/xdb-coyote-test")
+
+        for addr in (-8, 1, 0x1000):
+            with self.subTest(addr=addr), self.assertRaises(XdbError):
+                controller.encode_service_csr_read(addr)
+        with self.assertRaises(XdbError):
+            controller.encode_service_csr_write(0, -1)
+        with self.assertRaises(XdbError):
+            controller.encode_service_csr_write(0, 1 << 64)
 
     def test_reset_host_memory_unmaps_all_segments_and_clears_accounting(self) -> None:
         controller = CoyoteSimController("/tmp/xdb-coyote-test")

@@ -12,6 +12,8 @@ from xdb.sim.protocol import (
     OP_COYOTE_STATUS,
     OP_CSR_READ,
     OP_CSR_WRITE,
+    OP_SERVICE_CSR_READ,
+    OP_SERVICE_CSR_WRITE,
     OP_INVOKE,
     OP_IRQ_WAIT,
     OP_MEM_LIST,
@@ -221,6 +223,34 @@ def parse_with_trace_command(command: list[str]) -> SimRequest:
             ns = parser.parse_args(rest)
             return make_request(OP_CSR_WRITE, addr=int(ns.addr, 0), value=int(ns.value, 0))
         raise XdbError(f"unsupported xdb sim csr subcommand for with-trace: {csr_sub}")
+    if subcommand == "service-csr":
+        if not rest:
+            raise XdbError("missing xdb sim service-csr subcommand")
+        service_csr_sub = rest[0]
+        parser = _with_trace_parser()
+        if service_csr_sub == "read":
+            parser.add_argument("read")
+            parser.add_argument("addr")
+            parser.add_argument("--timeout", type=float, default=None)
+            ns = parser.parse_args(rest)
+            return make_request(
+                OP_SERVICE_CSR_READ,
+                addr=int(ns.addr, 0),
+                timeout_seconds=ns.timeout,
+            )
+        if service_csr_sub == "write":
+            parser.add_argument("write")
+            parser.add_argument("addr")
+            parser.add_argument("value")
+            ns = parser.parse_args(rest)
+            return make_request(
+                OP_SERVICE_CSR_WRITE,
+                addr=int(ns.addr, 0),
+                value=int(ns.value, 0),
+            )
+        raise XdbError(
+            f"unsupported xdb sim service-csr subcommand for with-trace: {service_csr_sub}"
+        )
     if subcommand == "mem":
         if not rest:
             raise XdbError("missing xdb sim mem subcommand")

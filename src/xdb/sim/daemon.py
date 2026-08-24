@@ -23,6 +23,8 @@ from xdb.sim.protocol import (
     OP_COYOTE_STATUS,
     OP_CSR_READ,
     OP_CSR_WRITE,
+    OP_SERVICE_CSR_READ,
+    OP_SERVICE_CSR_WRITE,
     OP_DESCRIBE,
     OP_EXPECT_CHANGE,
     OP_EXPECT_CONDITION,
@@ -475,6 +477,16 @@ class SimDaemon:
             )
         if op == OP_CSR_WRITE:
             return self.driver.coyote_csr_write(
+                _arg_int(args, "addr"),
+                _arg_int(args, "value"),
+            )
+        if op == OP_SERVICE_CSR_READ:
+            return self.driver.coyote_service_csr_read(
+                _arg_int(args, "addr"),
+                timeout_seconds=_arg_optional_float(args, "timeout_seconds"),
+            )
+        if op == OP_SERVICE_CSR_WRITE:
+            return self.driver.coyote_service_csr_write(
                 _arg_int(args, "addr"),
                 _arg_int(args, "value"),
             )

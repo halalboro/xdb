@@ -23,12 +23,15 @@ _INPUT_SLEEP = 5
 _INPUT_CHECK_COMPLETED = 6
 _INPUT_CLEAR_COMPLETED = 7
 _INPUT_USER_UNMAP = 8
+_INPUT_SERVICE_SET_CSR = 12
+_INPUT_SERVICE_GET_CSR = 13
 
 _OUTPUT_GET_CSR = 0
 _OUTPUT_HOST_WRITE = 1
 _OUTPUT_IRQ = 2
 _OUTPUT_CHECK_COMPLETED = 3
 _OUTPUT_HOST_READ = 4
+_OUTPUT_SERVICE_GET_CSR = 5
 
 STREAM_NAME_TO_ID = {
     "card": 0,
@@ -88,6 +91,7 @@ class CoyoteSimController:
         self._write_lock = threading.Lock()
         self._segments: dict[int, bytearray] = {}
         self._csr_results: queue.Queue[int] = queue.Queue()
+        self._service_csr_results: queue.Queue[int] = queue.Queue()
         self._completed_results: queue.Queue[int] = queue.Queue()
         self._irq_events: queue.Queue[dict[str, int]] = queue.Queue()
         self._host_write_count = 0
@@ -142,8 +146,10 @@ class CoyoteSimController:
             "output_path": str(self.output_path),
             **self.host_memory_status(),
             "supported_opcodes": sorted(_LOCAL_PROTOCOL_OPCODES),
+            "supported_csr_spaces": ["application", "resident-service"],
             "notes": [
-                "current xdb Coyote support is limited to the local host-memory protocol",
+                "resident-service CSR access requires a controlled external-service simulation runtime",
+                "current xdb Coyote data movement is limited to the local host-memory protocol",
                 "remote RDMA and TCP simulation commands are not supported by the underlying Coyote simulation target",
             ],
         }
@@ -333,6 +339,15 @@ class CoyoteSimController:
     def encode_csr_read(self, addr: int) -> bytes:
         return self._encode_get_csr(addr)
 
+    def encode_service_csr_write(self, addr: int, value: int) -> bytes:
+        _validate_service_csr_address(addr)
+        _validate_u64(value, "resident-service CSR value")
+        return self._encode_service_set_csr(addr, value)
+
+    def encode_service_csr_read(self, addr: int) -> bytes:
+        _validate_service_csr_address(addr)
+        return self._encode_service_get_csr(addr)
+
     def encode_check_completed(self, opcode: int) -> bytes:
         return self._encode_check_completed(opcode)
 
@@ -381,6 +396,9 @@ class CoyoteSimController:
 
     def get_csr_result_nowait(self) -> int | None:
         return _queue_get_nowait(self._csr_results)
+
+    def get_service_csr_result_nowait(self) -> int | None:
+        return _queue_get_nowait(self._service_csr_results)
 
     def get_completed_result_nowait(self) -> int | None:
         return _queue_get_nowait(self._completed_results)
@@ -466,6 +484,17 @@ class CoyoteSimController:
                 del buffer[:8]
                 self._csr_results.put(value)
                 self.record_trace_event("csr_read_result", value=value, value_hex=_hex(value))
+                continue
+            if opcode == _OUTPUT_SERVICE_GET_CSR:
+                if len(buffer) < 1 + 8:
+                    return
+                del buffer[0]
+                value = struct.unpack_from("<Q", buffer, 0)[0]
+                del buffer[:8]
+                self._service_csr_results.put(value)
+                self.record_trace_event(
+                    "service_csr_read_result", value=value, value_hex=_hex(value)
+                )
                 continue
             if opcode == _OUTPUT_HOST_WRITE:
                 if len(buffer) < 1 + 16:
@@ -564,6 +593,14 @@ class CoyoteSimController:
         return bytes([_INPUT_GET_CSR]) + struct.pack("<QQB", addr, 0, 0)
 
     @staticmethod
+    def _encode_service_set_csr(addr: int, value: int) -> bytes:
+        return bytes([_INPUT_SERVICE_SET_CSR]) + struct.pack("<QQ", addr, value)
+
+    @staticmethod
+    def _encode_service_get_csr(addr: int) -> bytes:
+        return bytes([_INPUT_SERVICE_GET_CSR]) + struct.pack("<QQB", addr, 0, 0)
+
+    @staticmethod
     def _encode_user_map(vaddr: int, size: int) -> bytes:
         return bytes([_INPUT_USER_MAP]) + struct.pack("<QQ", vaddr, size)
 
@@ -628,6 +665,18 @@ def _queue_get_nowait(q: queue.Queue):
 
 def _hex(value: int) -> str:
     return f"0x{value:x}"
+
+
+def _validate_u64(value: int, description: str) -> None:
+    if value < 0 or value >= 1 << 64:
+        raise XdbError(f"{description} must fit in an unsigned 64-bit value")
+
+
+def _validate_service_csr_address(addr: int) -> None:
+    if addr < 0 or addr >= 0x1000:
+        raise XdbError("resident-service CSR address must be within 0x000..0xfff")
+    if addr % 8 != 0:
+        raise XdbError("resident-service CSR address must be 8-byte aligned")
 
 
 def _require_positive_size(size: int) -> None:

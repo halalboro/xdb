@@ -150,6 +150,8 @@ xdb sim with-trace --transactions --axis /tb_top/dut/axis_in --exec-until-exit -
 xdb sim coyote-status
 xdb sim csr write 0x0 0x1234
 xdb sim csr read 0x0
+xdb sim service-csr write 0x100 0x1234
+xdb sim service-csr read 0x100 --timeout 5
 xdb sim mem write host 0x1000 --hex deadbeef
 xdb sim mem list
 xdb sim mem read host 0x1000 4
@@ -451,9 +453,15 @@ already a report file, omit `--report`.
   `--clean-env` control the wrapped host command. Use `--stream` with `--exec`
   to mirror host stdout/stderr live to the client on stderr while preserving the
   final trace JSON on stdout.
-- Current Coyote support is intentionally limited to the local host-memory
-  protocol implemented by the upstream Coyote simulation target. Remote RDMA and
-  TCP commands are not supported yet.
-- CSR addresses are byte addresses in the simulation protocol.
+- Current Coyote data-movement support is intentionally limited to the local
+  host-memory protocol implemented by the upstream Coyote simulation target.
+  Remote RDMA and TCP commands are not supported yet.
+- `xdb sim csr` addresses the vFPGA/application AXI-Lite interface.
+  `xdb sim service-csr` separately addresses the registered resident dynamic
+  service and requires a Coyote runtime with controlled external-service
+  simulation support. The two spaces never alias.
+- CSR addresses are byte addresses in the simulation protocol. Resident-service
+  addresses are relative to its rebased `0x000`–`0xfff` page, must be 8-byte
+  aligned, and must not include the production host BAR offset `0x1000`.
 - `xdb sim mem write host ...` accepts `--hex`, `--text`, or `--file`.
 - Output is intentionally minimal and script-friendly.

@@ -175,6 +175,19 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(doctor.hls_cmd, "doctor")
         self.assertEqual(bundle.max_bytes, 4096)
 
+    def test_resident_service_csr_commands_are_parseable(self) -> None:
+        read = build_parser().parse_args(
+            ["sim", "service-csr", "read", "0x138", "--timeout", "2.5"]
+        )
+        write = build_parser().parse_args(["sim", "service-csr", "write", "0x100", "0x1234"])
+
+        self.assertEqual(read.sim_cmd, "service-csr")
+        self.assertEqual(read.sim_service_csr_cmd, "read")
+        self.assertEqual(read.addr, "0x138")
+        self.assertEqual(read.timeout, 2.5)
+        self.assertEqual(write.sim_service_csr_cmd, "write")
+        self.assertEqual(write.value, "0x1234")
+
     def test_reports_utilization_help_documents_report_aliases(self) -> None:
         parser = build_parser()
         reports_parser = parser._subparsers._group_actions[0].choices["reports"]  # noqa: SLF001

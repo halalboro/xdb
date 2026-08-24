@@ -42,6 +42,8 @@ from xdb.sim.client import (
     coyote_completed_session,
     coyote_csr_read_session,
     coyote_csr_write_session,
+    coyote_service_csr_read_session,
+    coyote_service_csr_write_session,
     coyote_invoke_session,
     coyote_irq_wait_session,
     coyote_mem_list_session,
@@ -1012,6 +1014,22 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         args.session,
                         _parse_int(args.addr, what="CSR address"),
                         _parse_int(args.value, what="CSR value"),
+                    )
+                )
+            elif args.sim_cmd == "service-csr" and args.sim_service_csr_cmd == "read":
+                _print(
+                    coyote_service_csr_read_session(
+                        args.session,
+                        _parse_int(args.addr, what="resident-service CSR address"),
+                        timeout_seconds=_validate_positive_timeout_seconds(args.timeout),
+                    )
+                )
+            elif args.sim_cmd == "service-csr" and args.sim_service_csr_cmd == "write":
+                _print(
+                    coyote_service_csr_write_session(
+                        args.session,
+                        _parse_int(args.addr, what="resident-service CSR address"),
+                        _parse_int(args.value, what="resident-service CSR value"),
                     )
                 )
             elif args.sim_cmd == "mem" and args.sim_mem_cmd == "map":

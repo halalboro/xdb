@@ -17,6 +17,8 @@ from xdb.sim.sim_time import parse_sim_time
 from xdb.sim.protocol import (
     OP_INVOKE,
     OP_MEM_WRITE,
+    OP_SERVICE_CSR_READ,
+    OP_SERVICE_CSR_WRITE,
     OP_RUN,
     OP_STEP,
     OP_UNTIL,
@@ -25,6 +27,7 @@ from xdb.sim.protocol import (
     make_request,
 )
 from xdb.sim.with_trace import WithTraceRunner
+from xdb.sim.with_trace_client import parse_with_trace_command
 
 
 class _FakeWithTraceDriver:
@@ -79,6 +82,18 @@ class _FakeWithTraceDriver:
 
 
 class WithTraceTests(unittest.TestCase):
+    def test_resident_service_csr_commands_can_be_wrapped(self) -> None:
+        read = parse_with_trace_command(
+            ["xdb", "sim", "service-csr", "read", "0x138", "--timeout", "2"]
+        )
+        write = parse_with_trace_command(["xdb", "sim", "service-csr", "write", "0x100", "0x1234"])
+
+        self.assertEqual(read["op"], OP_SERVICE_CSR_READ)
+        self.assertEqual(read["args"]["addr"], 0x138)
+        self.assertEqual(read["args"]["timeout_seconds"], 2.0)
+        self.assertEqual(write["op"], OP_SERVICE_CSR_WRITE)
+        self.assertEqual(write["args"]["value"], 0x1234)
+
     def test_with_trace_condition_eval_uses_shared_tcl_helper(self) -> None:
         driver = _FakeWithTraceDriver()
         runner = WithTraceRunner(driver, lambda _op, _args: {})
