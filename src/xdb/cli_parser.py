@@ -110,56 +110,62 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--ila", required=True)
         sp.add_argument("--timeout", type=int, default=120)
 
+    def add_capture_profile_args(sp: argparse.ArgumentParser) -> None:
+        sp.add_argument("--profile", default=None, help="JSON/TOML capture profile document")
+        sp.add_argument("--profile-name", default=None, help="named profile within the document")
+
     s_ila_arm = ila_sub.add_parser("arm", help="arm an ILA without waiting")
     add_ila_target_args(s_ila_arm)
-    s_ila_arm.add_argument("--samples", type=int, default=2048, help="samples per window")
-    s_ila_arm.add_argument("--windows", type=int, default=1)
+    add_capture_profile_args(s_ila_arm)
+    s_ila_arm.add_argument("--samples", type=int, default=None, help="samples per window")
+    s_ila_arm.add_argument("--windows", type=int, default=None)
     s_ila_arm.add_argument("--trigger-position", type=int, default=None)
     s_ila_arm.add_argument(
         "--trigger",
         action="append",
         nargs=3,
-        default=[],
+        default=None,
         metavar=("PROBE", "OPERATOR", "VALUE"),
     )
     s_ila_arm.add_argument(
-        "--trigger-condition", choices=["and", "or", "nand", "nor"], default="and"
+        "--trigger-condition", choices=["and", "or", "nand", "nor"], default=None
     )
     s_ila_arm.add_argument(
         "--capture-value",
         action="append",
         nargs=3,
-        default=[],
+        default=None,
         metavar=("PROBE", "OPERATOR", "VALUE"),
         help="capture qualifier comparison",
     )
     s_ila_arm.add_argument(
-        "--capture-condition", choices=["and", "or", "nand", "nor"], default="and"
+        "--capture-condition", choices=["and", "or", "nand", "nor"], default=None
     )
     s_ila_arm.add_argument("--tsm", default=None, help="ChipScoPy trigger state-machine file")
     s_ila_arm.add_argument(
         "--trig-in",
         choices=["disabled", "trig_in_only", "trigger_or_trig_in"],
-        default="disabled",
+        default=None,
     )
     s_ila_arm.add_argument(
         "--trig-out",
         choices=["disabled", "trigger_only", "trig_in_only", "trigger_or_trig_in"],
-        default="disabled",
+        default=None,
     )
 
     s_ila_with_capture = ila_sub.add_parser(
         "with-capture", help="capture an ILA around a bounded host command"
     )
     add_ila_target_args(s_ila_with_capture)
-    s_ila_with_capture.add_argument("--samples", type=int, default=2048)
-    s_ila_with_capture.add_argument("--windows", type=int, default=1)
+    add_capture_profile_args(s_ila_with_capture)
+    s_ila_with_capture.add_argument("--samples", type=int, default=None)
+    s_ila_with_capture.add_argument("--windows", type=int, default=None)
     s_ila_with_capture.add_argument("--trigger-position", type=int, default=None)
     s_ila_with_capture.add_argument(
-        "--trigger", action="append", nargs=3, default=[], metavar=("PROBE", "OPERATOR", "VALUE")
+        "--trigger", action="append", nargs=3, default=None, metavar=("PROBE", "OPERATOR", "VALUE")
     )
     s_ila_with_capture.add_argument("--out", required=True)
-    s_ila_with_capture.add_argument("--format", choices=["csv", "vcd", "citf"], default="csv")
+    s_ila_with_capture.add_argument("--format", choices=["csv", "vcd", "citf"], default=None)
     s_ila_with_capture.add_argument("--host-timeout", type=float, default=60.0)
     s_ila_with_capture.add_argument("--cwd", default=None)
     s_ila_with_capture.add_argument("--env", action="append", default=[])
@@ -184,11 +190,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     s_group_arm = ila_sub.add_parser("group-arm", help="arm multiple ILAs")
     add_ila_group_target_args(s_group_arm)
-    s_group_arm.add_argument("--samples", type=int, default=2048)
-    s_group_arm.add_argument("--windows", type=int, default=1)
+    add_capture_profile_args(s_group_arm)
+    s_group_arm.add_argument("--samples", type=int, default=None)
+    s_group_arm.add_argument("--windows", type=int, default=None)
     s_group_arm.add_argument("--trigger-position", type=int, default=None)
     s_group_arm.add_argument(
-        "--trigger", action="append", nargs=3, default=[], metavar=("PROBE", "OPERATOR", "VALUE")
+        "--trigger", action="append", nargs=3, default=None, metavar=("PROBE", "OPERATOR", "VALUE")
     )
     s_group_arm.add_argument(
         "--source-ila", default=None, help="ILA that drives TRIG-OUT; other members use TRIG-IN"

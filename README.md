@@ -114,6 +114,19 @@ xdb ila arm \
   --capture-condition and \
   --trig-out trigger_only
 
+# Reuse a checked-in generic JSON/TOML capture profile; explicit CLI values override it.
+xdb ila arm --ila hw_ila_1 --profile ./capture-profiles.toml --profile-name smoke
+
+# capture-profiles.toml:
+# schema = "xdb.ila-capture-profiles/v1"
+# [profiles.smoke]
+# samples = 1024
+# windows = 2
+# [[profiles.smoke.triggers]]
+# probe = "valid"
+# operator = "=="
+# value = 1
+
 # Arm, run a bounded host workload, wait, and upload in one operation.
 xdb ila with-capture --ila hw_ila_1 --out ./workload.vcd --format vcd \
   --samples 1024 --trigger valid '==' 1 --host-timeout 30 --exec -- ./workload
@@ -332,6 +345,7 @@ already a report file, omit `--report`.
 - `xdb ilas` and `xdb capture` apply the selected LTX before discovering debug cores.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - `xdb ila arm`, `status`, `wait`, and `upload` expose a decoupled ChipScoPy capture lifecycle. Without `XDB_HW_SESSION`, each finite command reconnects and rediscovers the selected ILA while capture state remains in the core. `xdb hw-session launch` creates an optional local daemon that owns and reuses one ChipScoPy session across commands selected through `XDB_HW_SESSION`; `status` and `close` make its lifetime explicit. The blocking `xdb capture` convenience command remains available.
+- Named `xdb.ila-capture-profiles/v1` JSON or TOML documents provide reusable capture defaults for samples/windows, trigger positions and comparisons, capture qualifiers, trigger I/O, TSM paths, source ILA, and export format. Profiles are explicit inputs, unknown fields fail closed, relative TSM paths resolve beside the profile, and command-line values override profile defaults. XDB does not discover project profiles automatically.
 - `xdb ila with-capture --exec -- <command>` performs arm → bounded host execution → wait → upload in order. Host stdout/stderr are retained beside the waveform with hashes and exit/timeout evidence; an unexpected exit is reported only after capture evidence is emitted.
 - `xdb hw-bundle create` exports supported waveform, multi-ILA, and host-command-capture manifests plus every referenced regular artifact into a size-bounded portable directory. The bundle manifest uses relative artifact paths, hashes every copy, optionally records persistent-session context, rejects symlinks, and refuses non-empty destinations.
 - `xdb instruments inventory` reports stable machine-readable ILA static information, capture depth, ports, probe metadata, match-unit properties, supported operations, and VIO port/probe directions and widths before a capture is configured.

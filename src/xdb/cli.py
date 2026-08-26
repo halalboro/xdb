@@ -256,6 +256,32 @@ def _parse_vio_values(values: list[str]) -> dict[str, int]:
     return parsed
 
 
+def _resolve_probe_triggers(value: object) -> list[ProbeTrigger]:
+    if value is None:
+        return []
+    if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+        result: list[ProbeTrigger] = []
+        for item in value:
+            assert isinstance(item, dict)
+            try:
+                operator = str(item["operator"])
+                if operator not in {"==", "!=", ">", "<", ">=", "<=", "||"}:
+                    raise XdbError(f"unsupported trigger operator {operator}")
+                result.append(
+                    {
+                        "probe": str(item["probe"]),
+                        "operator": operator,
+                        "value": item["value"],
+                    }
+                )
+            except KeyError as error:
+                raise XdbError("profile trigger requires probe, operator, and value") from error
+        return result
+    if isinstance(value, list) and all(isinstance(item, list) for item in value):
+        return _parse_probe_triggers(value)
+    raise XdbError("trigger comparisons must be a list")
+
+
 def _parse_probe_triggers(values: list[list[str]]) -> list[ProbeTrigger]:
     operators = {"==", "!=", ">", "<", ">=", "<=", "||"}
     triggers: list[ProbeTrigger] = []
@@ -1389,13 +1415,25 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 target_hint=part_hint,
             )
             ltx = _resolve_optional_ltx(args.ltx)
+            profile: dict[str, object] = {}
+            if getattr(args, "profile", None) is not None:
+                from xdb.capture_profiles import load_capture_profile
+
+                if getattr(args, "profile_name", None) is None:
+                    raise XdbError("--profile requires --profile-name")
+                profile = load_capture_profile(args.profile, args.profile_name)
+            elif getattr(args, "profile_name", None) is not None:
+                raise XdbError("--profile-name requires --profile")
             if args.ila_cmd == "with-capture":
+                from xdb.capture_profiles import profile_value
                 from xdb.hardware_workflow import capture_around_command
 
-                samples = _validate_samples(args.samples)
-                windows = _validate_windows(args.windows)
-                trigger_position = _validate_trigger_position(args.trigger_position, samples)
-                triggers = _parse_probe_triggers(args.trigger)
+                samples = _validate_samples(int(profile_value(args, profile, "samples", 2048)))
+                windows = _validate_windows(int(profile_value(args, profile, "windows", 1)))
+                trigger_position = _validate_trigger_position(
+                    profile_value(args, profile, "trigger_position"), samples
+                )
+                triggers = _resolve_probe_triggers(profile_value(args, profile, "triggers", []))
                 if windows != 1:
                     _require_capability(
                         backend,
@@ -1422,7 +1460,11 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     triggers=triggers,
                     ltx=ltx,
                     capture_timeout=args.timeout,
-                    export_format=args.format.upper(),
+                    export_format=str(
+                        args.format
+                        if args.format is not None
+                        else profile.get("export_format", "csv")
+                    ).upper(),
                     host_timeout=args.host_timeout,
                     host_cwd=args.cwd,
                     host_env=args.env,
@@ -1440,11 +1482,16 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     operation="ila group-arm",
                     target_hint=part_hint,
                 )
-                samples = _validate_samples(args.samples)
-                windows = _validate_windows(args.windows)
-                trigger_position = _validate_trigger_position(args.trigger_position, samples)
-                triggers = _parse_probe_triggers(args.trigger)
-                if args.source_ila is not None and not triggers:
+                from xdb.capture_profiles import profile_value
+
+                samples = _validate_samples(int(profile_value(args, profile, "samples", 2048)))
+                windows = _validate_windows(int(profile_value(args, profile, "windows", 1)))
+                trigger_position = _validate_trigger_position(
+                    profile_value(args, profile, "trigger_position"), samples
+                )
+                triggers = _resolve_probe_triggers(profile_value(args, profile, "triggers", []))
+                source_ila = profile_value(args, profile, "source_ila", None)
+                if source_ila is not None and not triggers:
                     raise XdbError("--source-ila requires at least one --trigger")
                 result = backend.arm_ila_group(
                     part_hint,
@@ -1455,7 +1502,7 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     windows=windows,
                     trigger_position=trigger_position,
                     triggers=triggers,
-                    source_ila=args.source_ila,
+                    source_ila=source_ila,
                 )
             elif args.ila_cmd == "group-status":
                 _require_capability(
@@ -1491,21 +1538,31 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     export_format=args.format.upper(),
                 )
             elif args.ila_cmd == "arm":
-                samples = _validate_samples(args.samples)
-                windows = _validate_windows(args.windows)
-                trigger_position = _validate_trigger_position(args.trigger_position, samples)
-                triggers = _parse_probe_triggers(args.trigger)
-                capture_values = _parse_probe_triggers(args.capture_value)
-                tsm_path = _resolve_tsm(args.tsm)
+                from xdb.capture_profiles import profile_value
+
+                samples = _validate_samples(int(profile_value(args, profile, "samples", 2048)))
+                windows = _validate_windows(int(profile_value(args, profile, "windows", 1)))
+                trigger_position = _validate_trigger_position(
+                    profile_value(args, profile, "trigger_position"), samples
+                )
+                triggers = _resolve_probe_triggers(profile_value(args, profile, "triggers", []))
+                capture_values = _resolve_probe_triggers(
+                    profile_value(args, profile, "capture_values", [])
+                )
+                tsm_path = _resolve_tsm(profile_value(args, profile, "tsm_path", None))
+                trigger_condition = str(profile_value(args, profile, "trigger_condition", "and"))
+                capture_condition = str(profile_value(args, profile, "capture_condition", "and"))
+                trig_in = str(profile_value(args, profile, "trig_in", "disabled"))
+                trig_out = str(profile_value(args, profile, "trig_out", "disabled"))
                 if tsm_path and triggers:
                     raise XdbError("--tsm and --trigger are mutually exclusive")
                 advanced_requested = bool(
                     tsm_path
                     or capture_values
-                    or args.trigger_condition != "and"
-                    or args.capture_condition != "and"
-                    or args.trig_in != "disabled"
-                    or args.trig_out != "disabled"
+                    or trigger_condition != "and"
+                    or capture_condition != "and"
+                    or trig_in != "disabled"
+                    or trig_out != "disabled"
                 )
                 advanced_trigger: IlaTriggerConfig | None = None
                 if advanced_requested:
@@ -1516,11 +1573,11 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                         target_hint=part_hint,
                     )
                     advanced_trigger = {
-                        "trigger_condition": args.trigger_condition,
-                        "capture_condition": args.capture_condition,
+                        "trigger_condition": trigger_condition,
+                        "capture_condition": capture_condition,
                         "capture_values": capture_values,
-                        "trig_in": args.trig_in,
-                        "trig_out": args.trig_out,
+                        "trig_in": trig_in,
+                        "trig_out": trig_out,
                     }
                     if tsm_path is not None:
                         advanced_trigger["tsm_path"] = tsm_path

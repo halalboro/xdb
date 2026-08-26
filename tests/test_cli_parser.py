@@ -257,6 +257,26 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(upload.output, "capture.csv")
         self.assertEqual(upload.format, "csv")
 
+    def test_capture_profile_options_are_parseable(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "ila",
+                "arm",
+                "--ila",
+                "ila0",
+                "--profile",
+                "profiles.toml",
+                "--profile-name",
+                "smoke",
+                "--samples",
+                "512",
+            ]
+        )
+        self.assertEqual(args.profile, "profiles.toml")
+        self.assertEqual(args.profile_name, "smoke")
+        self.assertEqual(args.samples, 512)
+        self.assertIsNone(args.windows)
+
     def test_host_command_capture_is_parseable(self) -> None:
         args = build_parser().parse_args(
             [
