@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 from dataclasses import fields, is_dataclass
 from enum import Enum
 import os
@@ -271,10 +272,17 @@ class ChipScoPyBackend:
         self,
         part_hint: str,
         ila_name: str,
-        csv_path: str,
+        output_path: str,
         timeout: int = 120,
         *,
         ltx: str | None = None,
+        export_format: str = "CSV",
+        probe_names: list[str] | None = None,
+        start_window: int = 0,
+        window_count: int | None = None,
+        start_sample: int = 0,
+        sample_count: int | None = None,
+        include_gap: bool = False,
     ) -> CaptureResult:
         del timeout
         session = self._create_session(require_cs=True)
@@ -282,21 +290,71 @@ class ChipScoPyBackend:
             dev, ila = self._select_ila(session, part_hint, ila_name, ltx)
             if not ila.upload() or ila.waveform is None:
                 raise XdbError("ILA has no completed waveform to upload")
-            out_path = str(Path(csv_path))
-            ila.waveform.export_waveform("CSV", out_path)
+            out_path = str(Path(output_path).resolve())
+            normalized_format = export_format.upper()
+            if normalized_format not in {"CSV", "VCD", "CITF"}:
+                raise XdbError(f"unsupported waveform export format: {export_format}")
+            if normalized_format == "CITF" and (
+                probe_names
+                or start_window != 0
+                or window_count is not None
+                or start_sample != 0
+                or sample_count is not None
+                or include_gap
+            ):
+                raise XdbError("CITF export requires the complete unfiltered waveform")
+            ila.waveform.export_waveform(
+                normalized_format,
+                out_path,
+                probe_names=probe_names,
+                start_window_idx=start_window,
+                window_count=window_count,
+                start_sample_idx=start_sample,
+                sample_count=sample_count,
+                include_gap=include_gap,
+            )
             window_size = int(getattr(ila.waveform, "window_size", 0))
-            window_count = int(ila.waveform.get_window_count())
+            captured_windows = int(ila.waveform.get_window_count())
             trigger_positions = list(getattr(ila.waveform, "trigger_position", []))
             trigger_position = int(trigger_positions[0]) if trigger_positions else 0
-            return self._capture_result(
+            result = self._capture_result(
                 dev,
                 ila_name,
                 out_path,
                 window_size,
-                window_count,
+                captured_windows,
                 trigger_position,
                 [],
+                export_format=normalized_format,
             )
+            manifest_path = out_path + ".json"
+            output_sha256 = self._sha256_file(out_path)
+            Path(manifest_path).write_text(
+                json.dumps(
+                    {
+                        "schema": "xdb.ila-waveform/v1",
+                        "output": out_path,
+                        "output_sha256": output_sha256,
+                        "export_format": normalized_format,
+                        "selection": {
+                            "probe_names": probe_names,
+                            "start_window": start_window,
+                            "window_count": window_count,
+                            "start_sample": start_sample,
+                            "sample_count": sample_count,
+                            "include_gap": include_gap,
+                        },
+                        "capture": result,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result["manifest"] = manifest_path
+            result["output_sha256"] = output_sha256
+            return result
         finally:
             self._delete_session(session)
 
@@ -463,20 +521,23 @@ class ChipScoPyBackend:
         self,
         dev,
         ila_name: str,
-        csv_path: str,
+        output_path: str,
         samples: int,
         windows: int,
         trigger_position: int,
         triggers: list[ProbeTrigger],
+        *,
+        export_format: str = "CSV",
     ) -> CaptureResult:
         target = self._target_name(dev)
         part = str(getattr(dev, "part_name", ""))
-        return {
+        result: CaptureResult = {
             "ok": True,
             "target": target,
             "part": part,
             "ila": ila_name,
-            "csv": csv_path,
+            "output": output_path,
+            "export_format": export_format,
             "samples": samples,
             "windows": windows,
             "total_samples": samples * windows,
@@ -486,6 +547,9 @@ class ChipScoPyBackend:
                 require_cs=True, selected_target=target, selected_part=part
             ),
         }
+        if export_format == "CSV":
+            result["csv"] = output_path
+        return result
 
     @classmethod
     def _status_dict(cls, value) -> dict[str, object]:

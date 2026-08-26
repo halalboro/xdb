@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -62,13 +63,17 @@ class FakeWaveform:
     window_size = 256
     trigger_position = [32, 32]
 
+    def __init__(self) -> None:
+        self.last_export: tuple[str, str, dict[str, object]] | None = None
+
     def get_window_count(self) -> int:
         return len(self.trigger_position)
 
-    def export_waveform(self, output_format: str, path: str) -> None:
-        if output_format != "CSV":
+    def export_waveform(self, output_format: str, path: str, **kwargs: object) -> None:
+        self.last_export = (output_format, path, kwargs)
+        if output_format not in {"CSV", "VCD", "CITF"}:
             raise AssertionError(output_format)
-        Path(path).write_text("sample,probe\n0,1\n", encoding="utf-8")
+        Path(path).write_text(f"{output_format} waveform\n", encoding="utf-8")
 
 
 class FakeIla:
@@ -330,6 +335,36 @@ class ChipScoPyBackendTests(unittest.TestCase):
         self.assertEqual(uploaded["trigger_position"], 32)
         self.assertEqual(len(self.created), 4)
         self.assertEqual(self.deleted, [self.session] * 4)
+
+    def test_waveform_upload_exports_selected_windows_and_writes_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / "capture.vcd"
+            with patch.dict(os.environ, {}, clear=True):
+                result = ChipScoPyBackend().upload_ila(
+                    "xcv80",
+                    "ila0",
+                    str(output),
+                    export_format="VCD",
+                    probe_names=["state"],
+                    start_window=1,
+                    window_count=1,
+                    start_sample=4,
+                    sample_count=16,
+                    include_gap=True,
+                )
+            manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+
+        waveform = next(iter(self.device.ila_cores)).waveform
+        assert waveform is not None and waveform.last_export is not None
+        self.assertEqual(waveform.last_export[0], "VCD")
+        self.assertEqual(waveform.last_export[2]["probe_names"], ["state"])
+        self.assertEqual(waveform.last_export[2]["start_window_idx"], 1)
+        self.assertEqual(waveform.last_export[2]["sample_count"], 16)
+        self.assertEqual(result["export_format"], "VCD")
+        self.assertNotIn("csv", result)
+        self.assertEqual(manifest["schema"], "xdb.ila-waveform/v1")
+        self.assertEqual(manifest["output_sha256"], result["output_sha256"])
+        self.assertEqual(manifest["selection"]["include_gap"], True)
 
     def test_capture_exports_csv_and_closes_session(self) -> None:
         with tempfile.TemporaryDirectory() as td:

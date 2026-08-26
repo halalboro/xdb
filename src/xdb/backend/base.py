@@ -108,12 +108,19 @@ class IlaTriggerCompileResult(ProvenanceResult):
     messages: str
 
 
-class CaptureResult(ProvenanceResult):
+class CaptureExportResult(TypedDict, total=False):
+    csv: str
+    output: str
+    export_format: str
+    manifest: str
+    output_sha256: str
+
+
+class CaptureResult(ProvenanceResult, CaptureExportResult):
     ok: bool
     target: str
     part: str
     ila: str
-    csv: str
     samples: int
     windows: int
     total_samples: int
@@ -196,10 +203,17 @@ class DebugBackend(Protocol):
         self,
         part_hint: str,
         ila_name: str,
-        csv_path: str,
+        output_path: str,
         timeout: int = 120,
         *,
         ltx: str | None = None,
+        export_format: str = "CSV",
+        probe_names: list[str] | None = None,
+        start_window: int = 0,
+        window_count: int | None = None,
+        start_sample: int = 0,
+        sample_count: int | None = None,
+        include_gap: bool = False,
     ) -> CaptureResult: ...
 
     def capture(

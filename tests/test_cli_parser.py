@@ -188,6 +188,12 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(write.sim_service_csr_cmd, "write")
         self.assertEqual(write.value, "0x1234")
 
+    def test_waveform_compare_command_is_parseable(self) -> None:
+        args = build_parser().parse_args(["waveform", "compare", "before.json", "after.json"])
+        self.assertEqual(args.waveform_cmd, "compare")
+        self.assertEqual(args.baseline, "before.json")
+        self.assertEqual(args.new, "after.json")
+
     def test_hardware_session_commands_are_parseable(self) -> None:
         launch = build_parser().parse_args(["hw-session", "launch", "--name", "v80"])
         status = build_parser().parse_args(["hw-session", "status", "--name", "v80"])
@@ -210,7 +216,8 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(arm.windows, 2)
         self.assertEqual(status.ila_cmd, "status")
         self.assertEqual(wait.timeout, 9)
-        self.assertEqual(upload.csv, "capture.csv")
+        self.assertEqual(upload.output, "capture.csv")
+        self.assertEqual(upload.format, "csv")
 
     def test_advanced_trigger_options_are_parseable(self) -> None:
         arm = build_parser().parse_args(

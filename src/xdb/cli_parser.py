@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         "vivado",
         "instruments",
         "hw-session",
+        "waveform",
         "hls",
         "sim",
     ]
@@ -157,7 +158,14 @@ def build_parser() -> argparse.ArgumentParser:
     add_ila_target_args(s_ila_wait)
     s_ila_upload = ila_sub.add_parser("upload", help="upload a completed waveform")
     add_ila_target_args(s_ila_upload)
-    s_ila_upload.add_argument("--csv", required=True)
+    s_ila_upload.add_argument("--out", "--csv", dest="output", required=True)
+    s_ila_upload.add_argument("--format", choices=["csv", "vcd", "citf"], default="csv")
+    s_ila_upload.add_argument("--probe", action="append", default=None)
+    s_ila_upload.add_argument("--start-window", type=int, default=0)
+    s_ila_upload.add_argument("--window-count", type=int, default=None)
+    s_ila_upload.add_argument("--start-sample", type=int, default=0)
+    s_ila_upload.add_argument("--sample-count", type=int, default=None)
+    s_ila_upload.add_argument("--include-gap", action="store_true")
 
     s_hw_session = sub.add_parser("hw-session", help="manage a persistent hardware session")
     _add_debug_flag(s_hw_session)
@@ -168,6 +176,14 @@ def build_parser() -> argparse.ArgumentParser:
         command_parser.add_argument("--name", default="default")
         if command == "close":
             command_parser.add_argument("--force", action="store_true")
+
+    s_waveform = sub.add_parser("waveform", help="inspect exported ILA waveform manifests")
+    _add_debug_flag(s_waveform)
+    waveform_sub = s_waveform.add_subparsers(dest="waveform_cmd", required=True)
+    s_waveform_compare = waveform_sub.add_parser("compare")
+    _add_debug_flag(s_waveform_compare)
+    s_waveform_compare.add_argument("baseline")
+    s_waveform_compare.add_argument("new")
 
     def add_reports_utilization_args(sp: argparse.ArgumentParser) -> None:
         _add_debug_flag(sp)

@@ -7,6 +7,7 @@ import os
 import signal
 import sys
 import traceback
+from pathlib import Path
 from xdb.cli_output import (
     _emit_json,
     _emit_text,
@@ -197,6 +198,39 @@ def _parse_trigger_value(value: str) -> str | int:
     if unsigned == "0" or (unsigned.isdigit() and not unsigned.startswith("0")):
         return int(value, 10)
     return value
+
+
+def _load_waveform_manifest(path: str) -> dict[str, object]:
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise XdbError(f"invalid waveform manifest: {path}") from error
+    if not isinstance(value, dict) or value.get("schema") != "xdb.ila-waveform/v1":
+        raise XdbError(f"unsupported waveform manifest: {path}")
+    output = value.get("output")
+    expected_hash = value.get("output_sha256")
+    if not isinstance(output, str) or not isinstance(expected_hash, str):
+        raise XdbError(f"waveform manifest lacks output identity: {path}")
+    if not os.path.isfile(output) or _sha256_file(output) != expected_hash:
+        raise XdbError(f"waveform output is missing or modified: {output}")
+    return value
+
+
+def _compare_waveform_manifests(baseline: str, new: str) -> dict[str, object]:
+    old = _load_waveform_manifest(baseline)
+    current = _load_waveform_manifest(new)
+    keys = ("export_format", "selection")
+    metadata_changes = {
+        key: {"baseline": old.get(key), "new": current.get(key)}
+        for key in keys
+        if old.get(key) != current.get(key)
+    }
+    return {
+        "baseline": baseline,
+        "new": new,
+        "identical_waveform": old["output_sha256"] == current["output_sha256"],
+        "metadata_changes": metadata_changes,
+    }
 
 
 def _resolve_tsm(path: str | None) -> str | None:
@@ -1210,6 +1244,13 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
             _run_vivado(args)
             return
 
+        if args.cmd == "waveform":
+            if args.waveform_cmd == "compare":
+                _print(_compare_waveform_manifests(args.baseline, args.new))
+            else:
+                p.error(f"unknown waveform command: {args.waveform_cmd}")
+            return
+
         if args.cmd == "hw-session":
             from xdb.hw_session import (
                 close_hardware_session,
@@ -1373,7 +1414,18 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 result = backend.wait_ila(part_hint, args.ila, timeout=args.timeout, ltx=ltx)
             elif args.ila_cmd == "upload":
                 result = backend.upload_ila(
-                    part_hint, args.ila, args.csv, timeout=args.timeout, ltx=ltx
+                    part_hint,
+                    args.ila,
+                    args.output,
+                    timeout=args.timeout,
+                    ltx=ltx,
+                    export_format=args.format.upper(),
+                    probe_names=args.probe,
+                    start_window=args.start_window,
+                    window_count=args.window_count,
+                    start_sample=args.start_sample,
+                    sample_count=args.sample_count,
+                    include_gap=args.include_gap,
                 )
             else:
                 p.error(f"unknown ila command: {args.ila_cmd}")

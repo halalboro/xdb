@@ -111,12 +111,20 @@ class VivadoBackend:
         self,
         part_hint: str,
         ila_name: str,
-        csv_path: str,
+        output_path: str,
         timeout: int = 120,
         *,
         ltx: str | None = None,
+        export_format: str = "CSV",
+        probe_names: list[str] | None = None,
+        start_window: int = 0,
+        window_count: int | None = None,
+        start_sample: int = 0,
+        sample_count: int | None = None,
+        include_gap: bool = False,
     ) -> CaptureResult:
-        del part_hint, ila_name, csv_path, timeout, ltx
+        del part_hint, ila_name, output_path, timeout, ltx, export_format, probe_names
+        del start_window, window_count, start_sample, sample_count, include_gap
         raise XdbError("decoupled ILA lifecycle is not supported by the Vivado backend")
 
     def capture(
