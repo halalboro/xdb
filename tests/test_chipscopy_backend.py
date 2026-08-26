@@ -375,6 +375,16 @@ class ChipScoPyBackendTests(unittest.TestCase):
         self.assertEqual(len(manifest["members"]), 2)
         self.assertTrue(outputs_exist)
 
+    def test_core_inventory_reports_ila_depth_probes_and_vio_directions(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            inventory = ChipScoPyBackend().core_inventory("xcv80")
+
+        self.assertEqual(inventory["ilas"][0]["static_info"]["data_depth"], 4096)
+        self.assertEqual(inventory["ilas"][0]["probes"][0]["name"], "probe0")
+        self.assertIn("ila.advanced_trigger", inventory["ilas"][0]["capabilities"])
+        self.assertEqual(inventory["vios"][0]["probes"][1]["direction"], "out")
+        self.assertEqual(inventory["provenance"]["selected_part"], self.device.part_name)
+
     def test_vio_list_read_and_confirmed_backend_write(self) -> None:
         backend = ChipScoPyBackend()
         with patch.dict(os.environ, {}, clear=True):

@@ -1623,15 +1623,31 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     triggers=triggers,
                 )
             )
-        elif args.cmd == "instruments" and args.instruments_cmd == "list":
+        elif args.cmd == "instruments":
             part_hint = _require_part_hint(args.part_hint)
-            _require_capability(
-                backend,
-                Capability.INSTRUMENTS_LIST,
-                operation="instruments list",
-                target_hint=part_hint,
-            )
-            _print(backend.list_instruments(part_hint, timeout=args.timeout))
+            if args.instruments_cmd == "list":
+                _require_capability(
+                    backend,
+                    Capability.INSTRUMENTS_LIST,
+                    operation="instruments list",
+                    target_hint=part_hint,
+                )
+                result = backend.list_instruments(part_hint, timeout=args.timeout)
+            elif args.instruments_cmd == "inventory":
+                _require_capability(
+                    backend,
+                    Capability.CORE_INVENTORY,
+                    operation="instruments inventory",
+                    target_hint=part_hint,
+                )
+                result = backend.core_inventory(
+                    part_hint,
+                    timeout=args.timeout,
+                    ltx=_resolve_optional_ltx(args.ltx),
+                )
+            else:
+                p.error(f"unknown instruments command: {args.instruments_cmd}")
+            _print(result)
         else:
             p.error(f"unknown command: {args.cmd}")
     except XdbError as e:

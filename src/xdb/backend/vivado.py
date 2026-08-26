@@ -207,6 +207,12 @@ class VivadoBackend:
         )
         return cast(CaptureResult, result)
 
+    def core_inventory(
+        self, part_hint: str, timeout: int = 180, *, ltx: str | None = None
+    ) -> dict[str, object]:
+        del part_hint, timeout, ltx
+        raise XdbError("detailed core inventory is not supported by the Vivado backend")
+
     def list_vios(
         self, part_hint: str, timeout: int = 180, *, ltx: str | None = None
     ) -> dict[str, object]:

@@ -34,6 +34,7 @@ _ALLOWED_METHODS = {
     "ila_group_status",
     "wait_ila_group",
     "upload_ila_group",
+    "core_inventory",
 }
 
 

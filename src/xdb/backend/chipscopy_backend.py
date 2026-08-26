@@ -47,6 +47,7 @@ class ChipScoPyBackend:
             Capability.VIO_LIST,
             Capability.VIO_READ,
             Capability.VIO_WRITE,
+            Capability.CORE_INVENTORY,
             Capability.INSTRUMENTS_LIST,
         }
 
@@ -169,6 +170,57 @@ class ChipScoPyBackend:
                 "provenance": ilas.get("provenance", self._provenance(require_cs=True)),
             },
         )
+
+    def core_inventory(
+        self,
+        part_hint: str,
+        timeout: int = 180,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev = self._select_device(session, part_hint)
+            self._discover_cores(dev, ltx)
+            ilas = []
+            for ila in dev.ila_cores:
+                ilas.append(
+                    {
+                        "name": ila.name,
+                        "static_info": self._normalize_value(getattr(ila, "static_info", None)),
+                        "ports": [
+                            self._normalize_value(port) for port in getattr(ila, "ports", [])
+                        ],
+                        "probes": [
+                            self._normalize_value(probe)
+                            for probe in getattr(ila, "probes", {}).values()
+                        ],
+                        "capabilities": [
+                            Capability.ILA_CONTROL.value,
+                            Capability.ILA_BASIC_TRIGGER.value,
+                            Capability.ILA_ADVANCED_TRIGGER.value,
+                            Capability.ILA_MULTI_WINDOW_CAPTURE.value,
+                        ],
+                    }
+                )
+            vios = []
+            for vio in dev.vio_cores:
+                if hasattr(vio, "to_dict"):
+                    details = self._normalize_value(vio.to_dict())
+                else:
+                    details = {
+                        "name": vio.name,
+                        "probes": [
+                            self._normalize_value(probe) for probe in getattr(vio, "probes", [])
+                        ],
+                        "input_ports": {},
+                        "output_ports": {},
+                    }
+                vios.append(details)
+            return self._core_result(dev, {"ilas": ilas, "vios": vios})
+        finally:
+            self._delete_session(session)
 
     def list_vios(
         self,

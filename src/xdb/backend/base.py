@@ -18,6 +18,7 @@ class Capability(str, Enum):
     VIO_LIST = "vio.list"
     VIO_READ = "vio.read"
     VIO_WRITE = "vio.write"
+    CORE_INVENTORY = "core.inventory"
     INSTRUMENTS_LIST = "instruments.list"
 
 
@@ -299,6 +300,10 @@ class DebugBackend(Protocol):
         timeout: int = 120,
         *,
         ltx: str | None = None,
+    ) -> dict[str, object]: ...
+
+    def core_inventory(
+        self, part_hint: str, timeout: int = 180, *, ltx: str | None = None
     ) -> dict[str, object]: ...
 
     def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult: ...

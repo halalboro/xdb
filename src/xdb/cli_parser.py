@@ -563,6 +563,13 @@ Examples:
         "--part-hint", "--fpga-part-hint", dest="part_hint", default=None
     )
     s_instruments_list.add_argument("--timeout", type=int, default=180)
+    s_instruments_inventory = instruments_sub.add_parser("inventory")
+    _add_debug_flag(s_instruments_inventory)
+    s_instruments_inventory.add_argument(
+        "--part-hint", "--fpga-part-hint", dest="part_hint", default=None
+    )
+    s_instruments_inventory.add_argument("--ltx", default=None)
+    s_instruments_inventory.add_argument("--timeout", type=int, default=180)
 
     hls_epilog = """\
 Run finite, packaged Vitis HLS C simulations in a writable staged workspace.

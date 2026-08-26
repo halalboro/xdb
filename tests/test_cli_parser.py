@@ -188,6 +188,14 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(write.sim_service_csr_cmd, "write")
         self.assertEqual(write.value, "0x1234")
 
+    def test_detailed_instrument_inventory_is_parseable(self) -> None:
+        args = build_parser().parse_args(
+            ["instruments", "inventory", "--part-hint", "xcv80", "--ltx", "debug.ltx"]
+        )
+        self.assertEqual(args.instruments_cmd, "inventory")
+        self.assertEqual(args.part_hint, "xcv80")
+        self.assertEqual(args.ltx, "debug.ltx")
+
     def test_vio_commands_are_parseable(self) -> None:
         listed = build_parser().parse_args(["vio", "list"])
         read = build_parser().parse_args(["vio", "read", "--vio", "vio0", "--probe", "status"])
