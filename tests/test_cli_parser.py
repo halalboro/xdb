@@ -230,6 +230,42 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(upload.output, "capture.csv")
         self.assertEqual(upload.format, "csv")
 
+    def test_multi_ila_commands_are_parseable(self) -> None:
+        arm = build_parser().parse_args(
+            [
+                "ila",
+                "group-arm",
+                "--ila",
+                "ila0",
+                "--ila",
+                "ila1",
+                "--source-ila",
+                "ila0",
+                "--trigger",
+                "state",
+                "==",
+                "3",
+            ]
+        )
+        upload = build_parser().parse_args(
+            [
+                "ila",
+                "group-upload",
+                "--ila",
+                "ila0",
+                "--ila",
+                "ila1",
+                "--out-dir",
+                "captures",
+                "--format",
+                "vcd",
+            ]
+        )
+        self.assertEqual(arm.ila, ["ila0", "ila1"])
+        self.assertEqual(arm.source_ila, "ila0")
+        self.assertEqual(upload.out_dir, "captures")
+        self.assertEqual(upload.format, "vcd")
+
     def test_advanced_trigger_options_are_parseable(self) -> None:
         arm = build_parser().parse_args(
             [

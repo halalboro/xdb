@@ -30,6 +30,10 @@ _ALLOWED_METHODS = {
     "list_vios",
     "read_vio",
     "write_vio",
+    "arm_ila_group",
+    "ila_group_status",
+    "wait_ila_group",
+    "upload_ila_group",
 }
 
 

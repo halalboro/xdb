@@ -1369,7 +1369,64 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 target_hint=part_hint,
             )
             ltx = _resolve_optional_ltx(args.ltx)
-            if args.ila_cmd == "arm":
+            if args.ila_cmd == "group-arm":
+                _require_capability(
+                    backend,
+                    Capability.ILA_MULTI_CORE,
+                    operation="ila group-arm",
+                    target_hint=part_hint,
+                )
+                samples = _validate_samples(args.samples)
+                windows = _validate_windows(args.windows)
+                trigger_position = _validate_trigger_position(args.trigger_position, samples)
+                triggers = _parse_probe_triggers(args.trigger)
+                if args.source_ila is not None and not triggers:
+                    raise XdbError("--source-ila requires at least one --trigger")
+                result = backend.arm_ila_group(
+                    part_hint,
+                    args.ila,
+                    samples,
+                    timeout=args.timeout,
+                    ltx=ltx,
+                    windows=windows,
+                    trigger_position=trigger_position,
+                    triggers=triggers,
+                    source_ila=args.source_ila,
+                )
+            elif args.ila_cmd == "group-status":
+                _require_capability(
+                    backend,
+                    Capability.ILA_MULTI_CORE,
+                    operation="ila group-status",
+                    target_hint=part_hint,
+                )
+                result = backend.ila_group_status(
+                    part_hint, args.ila, timeout=args.timeout, ltx=ltx
+                )
+            elif args.ila_cmd == "group-wait":
+                _require_capability(
+                    backend,
+                    Capability.ILA_MULTI_CORE,
+                    operation="ila group-wait",
+                    target_hint=part_hint,
+                )
+                result = backend.wait_ila_group(part_hint, args.ila, timeout=args.timeout, ltx=ltx)
+            elif args.ila_cmd == "group-upload":
+                _require_capability(
+                    backend,
+                    Capability.ILA_MULTI_CORE,
+                    operation="ila group-upload",
+                    target_hint=part_hint,
+                )
+                result = backend.upload_ila_group(
+                    part_hint,
+                    args.ila,
+                    args.out_dir,
+                    timeout=args.timeout,
+                    ltx=ltx,
+                    export_format=args.format.upper(),
+                )
+            elif args.ila_cmd == "arm":
                 samples = _validate_samples(args.samples)
                 windows = _validate_windows(args.windows)
                 trigger_position = _validate_trigger_position(args.trigger_position, samples)

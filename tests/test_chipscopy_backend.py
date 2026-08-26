@@ -335,6 +335,46 @@ class ChipScoPyBackendTests(unittest.TestCase):
         self.assertEqual(result["provenance"]["cs_server_url"], "TCP:rose:3042")
         self.assertEqual(self.deleted, [self.session])
 
+    def test_multi_ila_group_arms_followers_first_and_exports_manifest(self) -> None:
+        follower = FakeIla("ila1")
+        self.device.ila_cores._ilas.append(follower)
+        backend = ChipScoPyBackend()
+        with tempfile.TemporaryDirectory() as td:
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch.object(
+                    ChipScoPyBackend,
+                    "_chipscopy_trigger_enums",
+                    return_value=FAKE_TRIGGER_ENUMS,
+                ),
+            ):
+                armed = backend.arm_ila_group(
+                    "xcv80",
+                    ["ila0", "ila1"],
+                    256,
+                    triggers=[{"probe": "state", "operator": "==", "value": 3}],
+                    source_ila="ila0",
+                )
+                statuses = backend.ila_group_status("xcv80", ["ila0", "ila1"])
+                waited = backend.wait_ila_group("xcv80", ["ila0", "ila1"])
+                uploaded = backend.upload_ila_group(
+                    "xcv80", ["ila0", "ila1"], td, export_format="VCD"
+                )
+            manifest = json.loads(Path(uploaded["manifest"]).read_text(encoding="utf-8"))
+            outputs_exist = all(Path(member["output"]).is_file() for member in manifest["members"])
+
+        source = self.device.ila_cores.get(name="ila0")
+        self.assertEqual(armed["arm_order"], ["ila1", "ila0"])
+        self.assertEqual(follower.trigger_values, {})
+        self.assertEqual(source.trigger_values["state"], ["==", 3])
+        self.assertEqual(follower.basic_trigger_args["trig_in"], FakeTrigInMode.TRIG_IN_ONLY)
+        self.assertEqual(source.basic_trigger_args["trig_out"], FakeTrigOutMode.TRIGGER_ONLY)
+        self.assertEqual(len(statuses["members"]), 2)
+        self.assertTrue(waited["members"][0]["status"]["is_full"])
+        self.assertEqual(manifest["schema"], "xdb.ila-group/v1")
+        self.assertEqual(len(manifest["members"]), 2)
+        self.assertTrue(outputs_exist)
+
     def test_vio_list_read_and_confirmed_backend_write(self) -> None:
         backend = ChipScoPyBackend()
         with patch.dict(os.environ, {}, clear=True):

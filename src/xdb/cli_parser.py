@@ -153,6 +153,33 @@ def build_parser() -> argparse.ArgumentParser:
     add_ila_target_args(s_ila_compile)
     s_ila_compile.add_argument("--tsm", required=True)
 
+    def add_ila_group_target_args(sp: argparse.ArgumentParser) -> None:
+        _add_debug_flag(sp)
+        sp.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
+        sp.add_argument("--ltx", default=None)
+        sp.add_argument("--ila", action="append", required=True)
+        sp.add_argument("--timeout", type=int, default=120)
+
+    s_group_arm = ila_sub.add_parser("group-arm", help="arm multiple ILAs")
+    add_ila_group_target_args(s_group_arm)
+    s_group_arm.add_argument("--samples", type=int, default=2048)
+    s_group_arm.add_argument("--windows", type=int, default=1)
+    s_group_arm.add_argument("--trigger-position", type=int, default=None)
+    s_group_arm.add_argument(
+        "--trigger", action="append", nargs=3, default=[], metavar=("PROBE", "OPERATOR", "VALUE")
+    )
+    s_group_arm.add_argument(
+        "--source-ila", default=None, help="ILA that drives TRIG-OUT; other members use TRIG-IN"
+    )
+    s_group_status = ila_sub.add_parser("group-status", help="read multiple ILA statuses")
+    add_ila_group_target_args(s_group_status)
+    s_group_wait = ila_sub.add_parser("group-wait", help="wait for multiple ILAs")
+    add_ila_group_target_args(s_group_wait)
+    s_group_upload = ila_sub.add_parser("group-upload", help="upload correlated ILA waveforms")
+    add_ila_group_target_args(s_group_upload)
+    s_group_upload.add_argument("--out-dir", required=True)
+    s_group_upload.add_argument("--format", choices=["csv", "vcd", "citf"], default="csv")
+
     s_ila_status = ila_sub.add_parser("status", help="read capture status")
     add_ila_target_args(s_ila_status)
     s_ila_wait = ila_sub.add_parser("wait", help="wait for capture completion")

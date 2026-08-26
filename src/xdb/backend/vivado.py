@@ -127,6 +127,58 @@ class VivadoBackend:
         del start_window, window_count, start_sample, sample_count, include_gap
         raise XdbError("decoupled ILA lifecycle is not supported by the Vivado backend")
 
+    def arm_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        samples: int,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        windows: int = 1,
+        trigger_position: int | None = None,
+        triggers: list[ProbeTrigger] | None = None,
+        source_ila: str | None = None,
+    ) -> dict[str, object]:
+        del part_hint, ila_names, samples, timeout, ltx, windows, trigger_position, triggers
+        del source_ila
+        raise XdbError("multi-ILA coordination is not supported by the Vivado backend")
+
+    def ila_group_status(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del part_hint, ila_names, timeout, ltx
+        raise XdbError("multi-ILA coordination is not supported by the Vivado backend")
+
+    def wait_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del part_hint, ila_names, timeout, ltx
+        raise XdbError("multi-ILA coordination is not supported by the Vivado backend")
+
+    def upload_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        output_dir: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        export_format: str = "CSV",
+    ) -> dict[str, object]:
+        del part_hint, ila_names, output_dir, timeout, ltx, export_format
+        raise XdbError("multi-ILA coordination is not supported by the Vivado backend")
+
     def capture(
         self,
         part_hint: str,

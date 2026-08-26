@@ -14,6 +14,7 @@ class Capability(str, Enum):
     ILA_ADVANCED_TRIGGER = "ila.advanced_trigger"
     ILA_CAPTURE_POSITION = "ila.capture_position"
     ILA_MULTI_WINDOW_CAPTURE = "ila.multi_window_capture"
+    ILA_MULTI_CORE = "ila.multi_core"
     VIO_LIST = "vio.list"
     VIO_READ = "vio.read"
     VIO_WRITE = "vio.write"
@@ -218,6 +219,49 @@ class DebugBackend(Protocol):
         sample_count: int | None = None,
         include_gap: bool = False,
     ) -> CaptureResult: ...
+
+    def arm_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        samples: int,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        windows: int = 1,
+        trigger_position: int | None = None,
+        triggers: list[ProbeTrigger] | None = None,
+        source_ila: str | None = None,
+    ) -> dict[str, object]: ...
+
+    def ila_group_status(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]: ...
+
+    def wait_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]: ...
+
+    def upload_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        output_dir: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        export_format: str = "CSV",
+    ) -> dict[str, object]: ...
 
     def capture(
         self,

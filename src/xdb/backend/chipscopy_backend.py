@@ -43,6 +43,7 @@ class ChipScoPyBackend:
             Capability.ILA_ADVANCED_TRIGGER,
             Capability.ILA_CAPTURE_POSITION,
             Capability.ILA_MULTI_WINDOW_CAPTURE,
+            Capability.ILA_MULTI_CORE,
             Capability.VIO_LIST,
             Capability.VIO_READ,
             Capability.VIO_WRITE,
@@ -426,6 +427,156 @@ class ChipScoPyBackend:
         finally:
             self._delete_session(session)
 
+    def arm_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        samples: int,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        windows: int = 1,
+        trigger_position: int | None = None,
+        triggers: list[ProbeTrigger] | None = None,
+        source_ila: str | None = None,
+    ) -> dict[str, object]:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev, selected = self._select_ilas(session, part_hint, ila_names, ltx)
+            if source_ila is not None and source_ila not in selected:
+                raise XdbError(f"source ILA is not in the group: {source_ila}")
+            if source_ila is not None and not triggers:
+                raise XdbError("a source ILA requires at least one basic probe trigger")
+            arm_order = [name for name in ila_names if name != source_ila]
+            if source_ila is not None:
+                arm_order.append(source_ila)
+            members = []
+            for name in arm_order:
+                advanced: IlaTriggerConfig | None = None
+                if source_ila is not None:
+                    advanced = (
+                        {"trig_out": "trigger_only"}
+                        if name == source_ila
+                        else {"trig_in": "trig_in_only"}
+                    )
+                position, normalized_triggers = self._arm_capture(
+                    selected[name],
+                    samples,
+                    windows,
+                    trigger_position,
+                    triggers if source_ila is None or name == source_ila else None,
+                    advanced,
+                )
+                selected[name].refresh_status()
+                members.append(
+                    {
+                        "ila": name,
+                        "status": self._status_dict(selected[name].status),
+                        "trigger_position": position,
+                        "triggers": normalized_triggers,
+                    }
+                )
+            return self._group_result(
+                dev,
+                {
+                    "members": members,
+                    "arm_order": arm_order,
+                    "source_ila": source_ila,
+                    "samples": samples,
+                    "windows": windows,
+                },
+            )
+        finally:
+            self._delete_session(session)
+
+    def ila_group_status(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev, selected = self._select_ilas(session, part_hint, ila_names, ltx)
+            members = []
+            for name in ila_names:
+                selected[name].refresh_status()
+                members.append({"ila": name, "status": self._status_dict(selected[name].status)})
+            return self._group_result(dev, {"members": members})
+        finally:
+            self._delete_session(session)
+
+    def wait_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        session = self._create_session(require_cs=True)
+        try:
+            dev, selected = self._select_ilas(session, part_hint, ila_names, ltx)
+            members = []
+            for name in ila_names:
+                status = selected[name].wait_till_done(max_wait_minutes=max(timeout, 1) / 60.0)
+                members.append({"ila": name, "status": self._status_dict(status)})
+            return self._group_result(dev, {"members": members})
+        finally:
+            self._delete_session(session)
+
+    def upload_ila_group(
+        self,
+        part_hint: str,
+        ila_names: list[str],
+        output_dir: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        export_format: str = "CSV",
+    ) -> dict[str, object]:
+        del timeout
+        normalized_format = export_format.upper()
+        if normalized_format not in {"CSV", "VCD", "CITF"}:
+            raise XdbError(f"unsupported waveform export format: {export_format}")
+        root = Path(output_dir).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        session = self._create_session(require_cs=True)
+        try:
+            dev, selected = self._select_ilas(session, part_hint, ila_names, ltx)
+            members = []
+            extension = normalized_format.lower()
+            for index, name in enumerate(ila_names):
+                ila = selected[name]
+                if not ila.upload() or ila.waveform is None:
+                    raise XdbError(f"ILA has no completed waveform to upload: {name}")
+                output = root / f"{index:02d}-{self._safe_filename(name)}.{extension}"
+                ila.waveform.export_waveform(normalized_format, str(output))
+                members.append(
+                    {
+                        "ila": name,
+                        "output": str(output),
+                        "output_sha256": self._sha256_file(str(output)),
+                        "export_format": normalized_format,
+                        "window_size": int(getattr(ila.waveform, "window_size", 0)),
+                        "window_count": int(ila.waveform.get_window_count()),
+                        "trigger_positions": list(getattr(ila.waveform, "trigger_position", [])),
+                    }
+                )
+            result = self._group_result(dev, {"members": members})
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            result["manifest"] = str(manifest_path)
+            return result
+        finally:
+            self._delete_session(session)
+
     def capture(
         self,
         part_hint: str,
@@ -477,6 +628,19 @@ class ChipScoPyBackend:
             raise XdbError(f"ILA not found: {ila_name}")
         return dev, ila
 
+    def _select_ilas(self, session, part_hint: str, ila_names: list[str], ltx: str | None):
+        if len(ila_names) < 2 or len(set(ila_names)) != len(ila_names):
+            raise XdbError("an ILA group requires at least two unique names")
+        dev = self._select_device(session, part_hint)
+        self._discover_cores(dev, ltx)
+        selected = {}
+        for name in ila_names:
+            ila = dev.ila_cores.get(name=name)
+            if not ila:
+                raise XdbError(f"ILA not found: {name}")
+            selected[name] = ila
+        return dev, selected
+
     def _select_vio(self, session, part_hint: str, vio_name: str, ltx: str | None):
         dev = self._select_device(session, part_hint)
         self._discover_cores(dev, ltx)
@@ -496,6 +660,17 @@ class ChipScoPyBackend:
                 require_cs=True, selected_target=target, selected_part=part
             ),
         }
+
+    def _group_result(self, dev, payload: dict[str, object]) -> dict[str, object]:
+        return {
+            "schema": "xdb.ila-group/v1",
+            **self._core_result(dev, payload),
+        }
+
+    @staticmethod
+    def _safe_filename(value: str) -> str:
+        safe = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in value)
+        return safe.strip("-._") or "ila"
 
     def _arm_capture(
         self,
