@@ -188,6 +188,14 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(write.sim_service_csr_cmd, "write")
         self.assertEqual(write.value, "0x1234")
 
+    def test_hardware_session_commands_are_parseable(self) -> None:
+        launch = build_parser().parse_args(["hw-session", "launch", "--name", "v80"])
+        status = build_parser().parse_args(["hw-session", "status", "--name", "v80"])
+        close = build_parser().parse_args(["hw-session", "close", "--name", "v80", "--force"])
+        self.assertEqual(launch.hw_session_cmd, "launch")
+        self.assertEqual(status.hw_session_cmd, "status")
+        self.assertTrue(close.force)
+
     def test_decoupled_ila_lifecycle_commands_are_parseable(self) -> None:
         arm = build_parser().parse_args(
             ["ila", "arm", "--ila", "ila0", "--samples", "256", "--windows", "2"]

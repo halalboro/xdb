@@ -28,6 +28,9 @@ from xdb.backend.base import (
 class ChipScoPyBackend:
     name = "chipscopy"
 
+    def __init__(self, persistent_session=None) -> None:
+        self._persistent_session = persistent_session
+
     def capabilities(self) -> set[Capability]:
         return {
             Capability.TARGETS,
@@ -515,6 +518,8 @@ class ChipScoPyBackend:
         return str(value)
 
     def _create_session(self, require_cs: bool):
+        if self._persistent_session is not None:
+            return self._persistent_session
         chipscopy = self._chipscopy_imports()
         provenance = self._provenance(require_cs=require_cs)
         if require_cs:
@@ -545,12 +550,24 @@ class ChipScoPyBackend:
             out["selected_part"] = selected_part
         return out
 
-    @staticmethod
-    def _delete_session(session) -> None:
+    def _delete_session(self, session) -> None:
+        if self._persistent_session is session:
+            return
         try:
             chipscopy = importlib.import_module("chipscopy")
             delete_session = getattr(chipscopy, "delete_session")
             delete_session(session)
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        if self._persistent_session is None:
+            return
+        session = self._persistent_session
+        self._persistent_session = None
+        try:
+            chipscopy = importlib.import_module("chipscopy")
+            getattr(chipscopy, "delete_session")(session)
         except Exception:
             pass
 

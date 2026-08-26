@@ -217,6 +217,18 @@ class ChipScoPyBackendTests(unittest.TestCase):
         self.module_patch.start()
         self.addCleanup(self.module_patch.stop)
 
+    def test_persistent_backend_reuses_session_until_explicit_close(self) -> None:
+        backend = ChipScoPyBackend(persistent_session=self.session)
+        with patch.dict(os.environ, {}, clear=True):
+            first = backend.list_targets("xcv80")
+            second = backend.list_targets("xcv80")
+            backend.close()
+
+        self.assertEqual(len(first["targets"]), 1)
+        self.assertEqual(len(second["targets"]), 1)
+        self.assertEqual(self.created, [])
+        self.assertEqual(self.deleted, [self.session])
+
     def test_targets_records_server_backend_and_closes_session(self) -> None:
         with patch.dict(
             os.environ,

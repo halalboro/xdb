@@ -1210,6 +1210,23 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
             _run_vivado(args)
             return
 
+        if args.cmd == "hw-session":
+            from xdb.hw_session import (
+                close_hardware_session,
+                hardware_session_status,
+                launch_hardware_session,
+            )
+
+            if args.hw_session_cmd == "launch":
+                _print(launch_hardware_session(args.name))
+            elif args.hw_session_cmd == "status":
+                _print(hardware_session_status(args.name))
+            elif args.hw_session_cmd == "close":
+                _print(close_hardware_session(args.name, force=args.force))
+            else:
+                p.error(f"unknown hw-session command: {args.hw_session_cmd}")
+            return
+
         backend = select_backend()
         if args.cmd == "targets":
             _require_capability(

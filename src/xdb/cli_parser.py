@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
         "timing",
         "vivado",
         "instruments",
+        "hw-session",
         "hls",
         "sim",
     ]
@@ -157,6 +158,16 @@ def build_parser() -> argparse.ArgumentParser:
     s_ila_upload = ila_sub.add_parser("upload", help="upload a completed waveform")
     add_ila_target_args(s_ila_upload)
     s_ila_upload.add_argument("--csv", required=True)
+
+    s_hw_session = sub.add_parser("hw-session", help="manage a persistent hardware session")
+    _add_debug_flag(s_hw_session)
+    hw_session_sub = s_hw_session.add_subparsers(dest="hw_session_cmd", required=True)
+    for command in ("launch", "status", "close"):
+        command_parser = hw_session_sub.add_parser(command)
+        _add_debug_flag(command_parser)
+        command_parser.add_argument("--name", default="default")
+        if command == "close":
+            command_parser.add_argument("--force", action="store_true")
 
     def add_reports_utilization_args(sp: argparse.ArgumentParser) -> None:
         _add_debug_flag(sp)

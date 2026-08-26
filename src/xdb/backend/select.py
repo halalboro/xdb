@@ -10,6 +10,12 @@ from xdb.backend.vivado import VivadoBackend
 
 def select_backend(name: str | None = None) -> DebugBackend:
     backend_name = (name or os.environ.get("XDB_BACKEND") or "auto").strip().lower()
+    if backend_name in {"auto", "chipscopy"}:
+        from xdb.hw_session import persistent_backend_from_env
+
+        persistent = persistent_backend_from_env()
+        if persistent is not None:
+            return persistent
 
     if backend_name == "vivado":
         return VivadoBackend()
