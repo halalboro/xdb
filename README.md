@@ -72,7 +72,13 @@ xdb capture \
   --csv ./ila.csv \
   --samples 2048
 
-# ChipScoPy: four 256-sample windows, triggering 32 samples into each window
+# ChipScoPy: decouple arm, status/wait, and waveform upload
+xdb ila arm --ila hw_ila_1 --samples 256 --windows 4 --trigger-position 32
+xdb ila status --ila hw_ila_1
+xdb ila wait --ila hw_ila_1 --timeout 120
+xdb ila upload --ila hw_ila_1 --csv ./ila.csv
+
+# ChipScoPy: the same setup as one blocking capture
 xdb capture \
   --ila hw_ila_1 \
   --csv ./ila.csv \
@@ -285,7 +291,8 @@ already a report file, omit `--report`.
 - The ChipScoPy backend reads `HW_SERVER_URL` and `CS_SERVER_URL`, selects Versal devices by part, and uses `FPGA_JTAG_TARGET` to disambiguate. A part matching multiple devices without an explicit target is rejected rather than selecting the first device.
 - `xdb ilas` and `xdb capture` apply the selected LTX before discovering debug cores.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
-- Captures are blocking with a wall-clock timeout. ChipScoPy supports bounded multi-window capture, an explicit per-window trigger position, and repeated basic probe comparisons combined with AND. Supported comparison operators are `==`, `!=`, `>`, `<`, `>=`, `<=`, and `||`; decimal values are passed as integers while hexadecimal and bit-pattern values are preserved as strings. Backends advertise these capabilities, and XDB rejects unsupported Vivado-backend options before connecting to hardware.
+- `xdb ila arm`, `status`, `wait`, and `upload` expose a decoupled ChipScoPy capture lifecycle. Each finite command currently reconnects and rediscovers the selected ILA; hardware capture state remains in the core between commands. The blocking `xdb capture` convenience command remains available.
+- Captures use a wall-clock timeout. ChipScoPy supports bounded multi-window capture, an explicit per-window trigger position, and repeated basic probe comparisons combined with AND. Supported comparison operators are `==`, `!=`, `>`, `<`, `>=`, `<=`, and `||`; decimal values are passed as integers while hexadecimal and bit-pattern values are preserved as strings. Backends advertise these capabilities, and XDB rejects unsupported Vivado-backend options before connecting to hardware.
 - `xdb sim` currently supports the packaged runtime-backed flow, not the direct
   project-backed `.xpr` flow.
 - Direct project launch via `xdb sim launch --project ...` is not supported yet.

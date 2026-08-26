@@ -15,6 +15,48 @@ from xdb.cli import main
 
 
 class HardwareCliTests(unittest.TestCase):
+    def test_ila_arm_uses_decoupled_backend_lifecycle(self) -> None:
+        backend = MagicMock()
+        backend.name = "chipscopy"
+        backend.capabilities.return_value = {
+            Capability.ILA_CONTROL,
+            Capability.ILA_MULTI_WINDOW_CAPTURE,
+        }
+        backend.arm_ila.return_value = {"ila": "ila0", "status": {"is_armed": True}}
+        with (
+            patch("xdb.cli.select_backend", return_value=backend),
+            patch("xdb.cli._print"),
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "xdb",
+                    "ila",
+                    "arm",
+                    "--part-hint",
+                    "xcv80",
+                    "--ila",
+                    "ila0",
+                    "--samples",
+                    "256",
+                    "--windows",
+                    "2",
+                ],
+            ),
+        ):
+            main()
+        backend.arm_ila.assert_called_once_with(
+            "xcv80",
+            "ila0",
+            256,
+            timeout=120,
+            ltx=None,
+            windows=2,
+            trigger_position=None,
+            triggers=[],
+        )
+
     def test_capture_forwards_generic_chipscopy_trigger_options(self) -> None:
         backend = MagicMock()
         backend.name = "chipscopy"

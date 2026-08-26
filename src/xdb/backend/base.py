@@ -8,6 +8,7 @@ class Capability(str, Enum):
     TARGETS = "targets"
     PROGRAM = "program"
     ILA_LIST = "ila.list"
+    ILA_CONTROL = "ila.control"
     ILA_BASIC_CAPTURE = "ila.basic_capture"
     ILA_BASIC_TRIGGER = "ila.basic_trigger"
     ILA_CAPTURE_POSITION = "ila.capture_position"
@@ -74,6 +75,20 @@ class ProbeTrigger(TypedDict):
     value: str | int
 
 
+class IlaStatusResult(ProvenanceResult):
+    target: str
+    part: str
+    ila: str
+    status: dict[str, object]
+
+
+class IlaArmResult(IlaStatusResult):
+    samples: int
+    windows: int
+    trigger_position: int
+    triggers: list[ProbeTrigger]
+
+
 class CaptureResult(ProvenanceResult):
     ok: bool
     target: str
@@ -115,6 +130,47 @@ class DebugBackend(Protocol):
         *,
         ltx: str | None = None,
     ) -> ListIlasResult: ...
+
+    def arm_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        samples: int,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        windows: int = 1,
+        trigger_position: int | None = None,
+        triggers: list[ProbeTrigger] | None = None,
+    ) -> IlaArmResult: ...
+
+    def ila_status(
+        self,
+        part_hint: str,
+        ila_name: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaStatusResult: ...
+
+    def wait_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaStatusResult: ...
+
+    def upload_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        csv_path: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> CaptureResult: ...
 
     def capture(
         self,

@@ -188,6 +188,22 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(write.sim_service_csr_cmd, "write")
         self.assertEqual(write.value, "0x1234")
 
+    def test_decoupled_ila_lifecycle_commands_are_parseable(self) -> None:
+        arm = build_parser().parse_args(
+            ["ila", "arm", "--ila", "ila0", "--samples", "256", "--windows", "2"]
+        )
+        status = build_parser().parse_args(["ila", "status", "--ila", "ila0"])
+        wait = build_parser().parse_args(["ila", "wait", "--ila", "ila0", "--timeout", "9"])
+        upload = build_parser().parse_args(
+            ["ila", "upload", "--ila", "ila0", "--csv", "capture.csv"]
+        )
+
+        self.assertEqual(arm.ila_cmd, "arm")
+        self.assertEqual(arm.windows, 2)
+        self.assertEqual(status.ila_cmd, "status")
+        self.assertEqual(wait.timeout, 9)
+        self.assertEqual(upload.csv, "capture.csv")
+
     def test_chipscopy_capture_options_are_parseable(self) -> None:
         args = build_parser().parse_args(
             [

@@ -22,6 +22,12 @@ class FakeProbe:
 
 
 class FakeWaveform:
+    window_size = 256
+    trigger_position = [32, 32]
+
+    def get_window_count(self) -> int:
+        return len(self.trigger_position)
+
     def export_waveform(self, output_format: str, path: str) -> None:
         if output_format != "CSV":
             raise AssertionError(output_format)
@@ -38,21 +44,53 @@ class FakeIla:
         self.basic_trigger_args: dict[str, int] | None = None
         self.trigger_values: dict[str, list[str | int]] = {}
         self.wait_minutes: float | None = None
+        self.status = types.SimpleNamespace(
+            capture_state="idle",
+            is_armed=False,
+            is_full=False,
+            samples_captured=0,
+            windows_captured=0,
+        )
 
     def reset_probes(self) -> None:
         pass
 
     def run_trigger_immediately(self, **kwargs: int) -> None:
         self.trigger_args = kwargs
+        self.status = types.SimpleNamespace(
+            capture_state="pre_trigger",
+            is_armed=True,
+            is_full=False,
+            samples_captured=0,
+            windows_captured=0,
+        )
 
     def set_probe_trigger_value(self, probe: str, values: list[str | int]) -> None:
         self.trigger_values[probe] = values
 
     def run_basic_trigger(self, **kwargs: int) -> None:
         self.basic_trigger_args = kwargs
+        self.status = types.SimpleNamespace(
+            capture_state="pre_trigger",
+            is_armed=True,
+            is_full=False,
+            samples_captured=0,
+            windows_captured=0,
+        )
 
-    def wait_till_done(self, *, max_wait_minutes: float) -> None:
+    def refresh_status(self) -> None:
+        pass
+
+    def wait_till_done(self, *, max_wait_minutes: float):
         self.wait_minutes = max_wait_minutes
+        self.status = types.SimpleNamespace(
+            capture_state="idle",
+            is_armed=False,
+            is_full=True,
+            samples_captured=256,
+            windows_captured=2,
+        )
+        return self.status
 
     def upload(self) -> bool:
         return True
@@ -203,6 +241,28 @@ class ChipScoPyBackendTests(unittest.TestCase):
         )
         self.assertEqual(result["provenance"]["cs_server_url"], "TCP:rose:3042")
         self.assertEqual(self.deleted, [self.session])
+
+    def test_decoupled_ila_lifecycle_arms_checks_waits_and_uploads(self) -> None:
+        backend = ChipScoPyBackend()
+        with tempfile.TemporaryDirectory() as td:
+            csv = Path(td) / "uploaded.csv"
+            with patch.dict(os.environ, {}, clear=True):
+                armed = backend.arm_ila("xcv80", "ila0", 256, windows=2, trigger_position=32)
+                status = backend.ila_status("xcv80", "ila0")
+                waited = backend.wait_ila("xcv80", "ila0", timeout=60)
+                uploaded = backend.upload_ila("xcv80", "ila0", str(csv))
+            self.assertTrue(csv.is_file())
+
+        self.assertTrue(armed["status"]["is_armed"])
+        self.assertEqual(armed["windows"], 2)
+        self.assertTrue(status["status"]["is_armed"])
+        self.assertTrue(waited["status"]["is_full"])
+        self.assertEqual(uploaded["samples"], 256)
+        self.assertEqual(uploaded["windows"], 2)
+        self.assertEqual(uploaded["total_samples"], 512)
+        self.assertEqual(uploaded["trigger_position"], 32)
+        self.assertEqual(len(self.created), 4)
+        self.assertEqual(self.deleted, [self.session] * 4)
 
     def test_capture_exports_csv_and_closes_session(self) -> None:
         with tempfile.TemporaryDirectory() as td:

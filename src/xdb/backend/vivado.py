@@ -14,6 +14,8 @@ from xdb.errors import XdbError
 from xdb.backend.base import (
     Capability,
     CaptureResult,
+    IlaArmResult,
+    IlaStatusResult,
     InstrumentsResult,
     ListIlasResult,
     ProbeTrigger,
@@ -51,6 +53,55 @@ class VivadoBackend:
         ltx: str | None = None,
     ) -> ListIlasResult:
         return list_ilas(part_hint, timeout=timeout, ltx=ltx)
+
+    def arm_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        samples: int,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        windows: int = 1,
+        trigger_position: int | None = None,
+        triggers: list[ProbeTrigger] | None = None,
+    ) -> IlaArmResult:
+        del part_hint, ila_name, samples, timeout, ltx, windows, trigger_position, triggers
+        raise XdbError("decoupled ILA lifecycle is not supported by the Vivado backend")
+
+    def ila_status(
+        self,
+        part_hint: str,
+        ila_name: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaStatusResult:
+        del part_hint, ila_name, timeout, ltx
+        raise XdbError("decoupled ILA lifecycle is not supported by the Vivado backend")
+
+    def wait_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaStatusResult:
+        del part_hint, ila_name, timeout, ltx
+        raise XdbError("decoupled ILA lifecycle is not supported by the Vivado backend")
+
+    def upload_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        csv_path: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> CaptureResult:
+        del part_hint, ila_name, csv_path, timeout, ltx
+        raise XdbError("decoupled ILA lifecycle is not supported by the Vivado backend")
 
     def capture(
         self,

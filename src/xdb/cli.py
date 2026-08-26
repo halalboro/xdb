@@ -1248,6 +1248,62 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     ltx=_resolve_optional_ltx(args.ltx),
                 )
             )
+        elif args.cmd == "ila":
+            part_hint = _require_part_hint(args.part_hint)
+            _require_capability(
+                backend,
+                Capability.ILA_CONTROL,
+                operation=f"ila {args.ila_cmd}",
+                target_hint=part_hint,
+            )
+            ltx = _resolve_optional_ltx(args.ltx)
+            if args.ila_cmd == "arm":
+                samples = _validate_samples(args.samples)
+                windows = _validate_windows(args.windows)
+                trigger_position = _validate_trigger_position(args.trigger_position, samples)
+                triggers = _parse_probe_triggers(args.trigger)
+                if windows != 1:
+                    _require_capability(
+                        backend,
+                        Capability.ILA_MULTI_WINDOW_CAPTURE,
+                        operation="ila arm --windows",
+                        target_hint=part_hint,
+                    )
+                if trigger_position is not None:
+                    _require_capability(
+                        backend,
+                        Capability.ILA_CAPTURE_POSITION,
+                        operation="ila arm --trigger-position",
+                        target_hint=part_hint,
+                    )
+                if triggers:
+                    _require_capability(
+                        backend,
+                        Capability.ILA_BASIC_TRIGGER,
+                        operation="ila arm --trigger",
+                        target_hint=part_hint,
+                    )
+                result = backend.arm_ila(
+                    part_hint,
+                    args.ila,
+                    samples,
+                    timeout=args.timeout,
+                    ltx=ltx,
+                    windows=windows,
+                    trigger_position=trigger_position,
+                    triggers=triggers,
+                )
+            elif args.ila_cmd == "status":
+                result = backend.ila_status(part_hint, args.ila, timeout=args.timeout, ltx=ltx)
+            elif args.ila_cmd == "wait":
+                result = backend.wait_ila(part_hint, args.ila, timeout=args.timeout, ltx=ltx)
+            elif args.ila_cmd == "upload":
+                result = backend.upload_ila(
+                    part_hint, args.ila, args.csv, timeout=args.timeout, ltx=ltx
+                )
+            else:
+                p.error(f"unknown ila command: {args.ila_cmd}")
+            _print(result)
         elif args.cmd == "capture":
             part_hint = _require_part_hint(args.part_hint)
             _require_capability(

@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
         "targets",
         "program",
         "ilas",
+        "ila",
         "capture",
         "reports",
         "util",
@@ -91,6 +92,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="basic probe comparison; repeat to combine comparisons with AND",
     )
     s_capture.add_argument("--timeout", type=int, default=120)
+
+    s_ila = sub.add_parser("ila", help="control a ChipScoPy ILA capture lifecycle")
+    _add_debug_flag(s_ila)
+    ila_sub = s_ila.add_subparsers(dest="ila_cmd", required=True)
+
+    def add_ila_target_args(sp: argparse.ArgumentParser) -> None:
+        _add_debug_flag(sp)
+        sp.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
+        sp.add_argument("--ltx", default=None)
+        sp.add_argument("--fdev-name", default=os.environ.get("FDEV_NAME"))
+        sp.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
+        sp.add_argument("--ila", required=True)
+        sp.add_argument("--timeout", type=int, default=120)
+
+    s_ila_arm = ila_sub.add_parser("arm", help="arm an ILA without waiting")
+    add_ila_target_args(s_ila_arm)
+    s_ila_arm.add_argument("--samples", type=int, default=2048, help="samples per window")
+    s_ila_arm.add_argument("--windows", type=int, default=1)
+    s_ila_arm.add_argument("--trigger-position", type=int, default=None)
+    s_ila_arm.add_argument(
+        "--trigger",
+        action="append",
+        nargs=3,
+        default=[],
+        metavar=("PROBE", "OPERATOR", "VALUE"),
+    )
+
+    s_ila_status = ila_sub.add_parser("status", help="read capture status")
+    add_ila_target_args(s_ila_status)
+    s_ila_wait = ila_sub.add_parser("wait", help="wait for capture completion")
+    add_ila_target_args(s_ila_wait)
+    s_ila_upload = ila_sub.add_parser("upload", help="upload a completed waveform")
+    add_ila_target_args(s_ila_upload)
+    s_ila_upload.add_argument("--csv", required=True)
 
     def add_reports_utilization_args(sp: argparse.ArgumentParser) -> None:
         _add_debug_flag(sp)

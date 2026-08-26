@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+from dataclasses import fields, is_dataclass
+from enum import Enum
 import os
 from pathlib import Path
 from typing import Any, cast
@@ -11,6 +13,8 @@ from xdb.backend.base import (
     Capability,
     CaptureResult,
     DebugProvenance,
+    IlaArmResult,
+    IlaStatusResult,
     InstrumentsResult,
     ListIlasResult,
     ProbeTrigger,
@@ -27,6 +31,7 @@ class ChipScoPyBackend:
             Capability.TARGETS,
             Capability.PROGRAM,
             Capability.ILA_LIST,
+            Capability.ILA_CONTROL,
             Capability.ILA_BASIC_CAPTURE,
             Capability.ILA_BASIC_TRIGGER,
             Capability.ILA_CAPTURE_POSITION,
@@ -153,6 +158,110 @@ class ChipScoPyBackend:
             },
         )
 
+    def arm_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        samples: int,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+        windows: int = 1,
+        trigger_position: int | None = None,
+        triggers: list[ProbeTrigger] | None = None,
+    ) -> IlaArmResult:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev, ila = self._select_ila(session, part_hint, ila_name, ltx)
+            effective_position, normalized_triggers = self._arm_capture(
+                ila, samples, windows, trigger_position, triggers
+            )
+            ila.refresh_status()
+            target = self._target_name(dev)
+            part = str(getattr(dev, "part_name", ""))
+            return {
+                "target": target,
+                "part": part,
+                "ila": ila_name,
+                "status": self._status_dict(ila.status),
+                "samples": samples,
+                "windows": windows,
+                "trigger_position": effective_position,
+                "triggers": normalized_triggers,
+                "provenance": self._provenance(
+                    require_cs=True, selected_target=target, selected_part=part
+                ),
+            }
+        finally:
+            self._delete_session(session)
+
+    def ila_status(
+        self,
+        part_hint: str,
+        ila_name: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaStatusResult:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev, ila = self._select_ila(session, part_hint, ila_name, ltx)
+            ila.refresh_status()
+            return self._ila_status_result(dev, ila, ila_name)
+        finally:
+            self._delete_session(session)
+
+    def wait_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaStatusResult:
+        session = self._create_session(require_cs=True)
+        try:
+            dev, ila = self._select_ila(session, part_hint, ila_name, ltx)
+            status = ila.wait_till_done(max_wait_minutes=max(timeout, 1) / 60.0)
+            return self._ila_status_result(dev, ila, ila_name, status=status)
+        finally:
+            self._delete_session(session)
+
+    def upload_ila(
+        self,
+        part_hint: str,
+        ila_name: str,
+        csv_path: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> CaptureResult:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev, ila = self._select_ila(session, part_hint, ila_name, ltx)
+            if not ila.upload() or ila.waveform is None:
+                raise XdbError("ILA has no completed waveform to upload")
+            out_path = str(Path(csv_path))
+            ila.waveform.export_waveform("CSV", out_path)
+            window_size = int(getattr(ila.waveform, "window_size", 0))
+            window_count = int(ila.waveform.get_window_count())
+            trigger_positions = list(getattr(ila.waveform, "trigger_position", []))
+            trigger_position = int(trigger_positions[0]) if trigger_positions else 0
+            return self._capture_result(
+                dev,
+                ila_name,
+                out_path,
+                window_size,
+                window_count,
+                trigger_position,
+                [],
+            )
+        finally:
+            self._delete_session(session)
+
     def capture(
         self,
         part_hint: str,
@@ -168,82 +277,152 @@ class ChipScoPyBackend:
     ) -> CaptureResult:
         session = self._create_session(require_cs=True)
         try:
-            dev = self._select_device(session, part_hint)
-            resolved_ltx = self._ltx_from_env(ltx)
-            if resolved_ltx:
-                dev.discover_and_setup_cores(ltx_file=resolved_ltx)
-            else:
-                dev.discover_and_setup_cores()
-
-            ila = dev.ila_cores.get(name=ila_name)
-            if not ila:
-                raise XdbError(f"ILA not found: {ila_name}")
-            if samples <= 0 or samples & (samples - 1):
-                raise XdbError("samples per window must be a positive power of two")
-            if windows <= 0:
-                raise XdbError("window count must be positive")
-            effective_trigger_position = (
-                samples // 2 if trigger_position is None else trigger_position
+            dev, ila = self._select_ila(session, part_hint, ila_name, ltx)
+            effective_position, normalized_triggers = self._arm_capture(
+                ila, samples, windows, trigger_position, triggers
             )
-            if not 0 <= effective_trigger_position < samples:
-                raise XdbError(f"trigger position must be between 0 and {samples - 1}")
-            data_depth = int(getattr(getattr(ila, "static_info", None), "data_depth", 0))
-            if data_depth and samples * windows > data_depth:
-                raise XdbError(
-                    f"capture requests {samples * windows} samples but ILA depth is {data_depth}"
-                )
-
-            normalized_triggers = list(triggers or [])
-            ila.reset_probes()
-            if normalized_triggers:
-                trigger_values: dict[str, list[str | int]] = {}
-                for trigger in normalized_triggers:
-                    trigger_values.setdefault(trigger["probe"], []).extend(
-                        [trigger["operator"], trigger["value"]]
-                    )
-                for probe, values in trigger_values.items():
-                    ila.set_probe_trigger_value(probe, values)
-                ila.run_basic_trigger(
-                    trigger_position=effective_trigger_position,
-                    window_count=windows,
-                    window_size=samples,
-                )
-            else:
-                ila.run_trigger_immediately(
-                    trigger_position=effective_trigger_position,
-                    window_count=windows,
-                    window_size=samples,
-                )
-            max_wait_minutes = max(timeout, 1) / 60.0
-            ila.wait_till_done(max_wait_minutes=max_wait_minutes)
-            uploaded = ila.upload()
-            if not uploaded or ila.waveform is None:
+            ila.wait_till_done(max_wait_minutes=max(timeout, 1) / 60.0)
+            if not ila.upload() or ila.waveform is None:
                 raise XdbError("failed to upload ILA data")
-
             out_path = str(Path(csv_path))
             ila.waveform.export_waveform("CSV", out_path)
-
-            target = self._target_name(dev)
-            part = str(getattr(dev, "part_name", ""))
-            return {
-                "ok": True,
-                "target": target,
-                "part": part,
-                "ila": ila_name,
-                "csv": out_path,
-                "samples": samples,
-                "windows": windows,
-                "total_samples": samples * windows,
-                "trigger_position": effective_trigger_position,
-                "triggers": normalized_triggers,
-                "provenance": self._provenance(
-                    require_cs=True,
-                    selected_target=target,
-                    selected_part=part,
-                ),
-            }
+            return self._capture_result(
+                dev,
+                ila_name,
+                out_path,
+                samples,
+                windows,
+                effective_position,
+                normalized_triggers,
+            )
         finally:
             self._delete_session(session)
+
+    def _select_ila(self, session, part_hint: str, ila_name: str, ltx: str | None):
+        dev = self._select_device(session, part_hint)
+        resolved_ltx = self._ltx_from_env(ltx)
+        if resolved_ltx:
+            dev.discover_and_setup_cores(ltx_file=resolved_ltx)
+        else:
+            dev.discover_and_setup_cores()
+        ila = dev.ila_cores.get(name=ila_name)
+        if not ila:
+            raise XdbError(f"ILA not found: {ila_name}")
+        return dev, ila
+
+    @staticmethod
+    def _arm_capture(
+        ila,
+        samples: int,
+        windows: int,
+        trigger_position: int | None,
+        triggers: list[ProbeTrigger] | None,
+    ) -> tuple[int, list[ProbeTrigger]]:
+        if samples <= 0 or samples & (samples - 1):
+            raise XdbError("samples per window must be a positive power of two")
+        if windows <= 0:
+            raise XdbError("window count must be positive")
+        effective_position = samples // 2 if trigger_position is None else trigger_position
+        if not 0 <= effective_position < samples:
+            raise XdbError(f"trigger position must be between 0 and {samples - 1}")
+        data_depth = int(getattr(getattr(ila, "static_info", None), "data_depth", 0))
+        if data_depth and samples * windows > data_depth:
+            raise XdbError(
+                f"capture requests {samples * windows} samples but ILA depth is {data_depth}"
+            )
+        normalized_triggers = list(triggers or [])
+        ila.reset_probes()
+        if normalized_triggers:
+            trigger_values: dict[str, list[str | int]] = {}
+            for trigger in normalized_triggers:
+                trigger_values.setdefault(trigger["probe"], []).extend(
+                    [trigger["operator"], trigger["value"]]
+                )
+            for probe, values in trigger_values.items():
+                ila.set_probe_trigger_value(probe, values)
+            ila.run_basic_trigger(
+                trigger_position=effective_position,
+                window_count=windows,
+                window_size=samples,
+            )
+        else:
+            ila.run_trigger_immediately(
+                trigger_position=effective_position,
+                window_count=windows,
+                window_size=samples,
+            )
+        return effective_position, normalized_triggers
+
+    def _ila_status_result(self, dev, ila, ila_name: str, *, status=None) -> IlaStatusResult:
+        target = self._target_name(dev)
+        part = str(getattr(dev, "part_name", ""))
+        return {
+            "target": target,
+            "part": part,
+            "ila": ila_name,
+            "status": self._status_dict(ila.status if status is None else status),
+            "provenance": self._provenance(
+                require_cs=True, selected_target=target, selected_part=part
+            ),
+        }
+
+    def _capture_result(
+        self,
+        dev,
+        ila_name: str,
+        csv_path: str,
+        samples: int,
+        windows: int,
+        trigger_position: int,
+        triggers: list[ProbeTrigger],
+    ) -> CaptureResult:
+        target = self._target_name(dev)
+        part = str(getattr(dev, "part_name", ""))
+        return {
+            "ok": True,
+            "target": target,
+            "part": part,
+            "ila": ila_name,
+            "csv": csv_path,
+            "samples": samples,
+            "windows": windows,
+            "total_samples": samples * windows,
+            "trigger_position": trigger_position,
+            "triggers": triggers,
+            "provenance": self._provenance(
+                require_cs=True, selected_target=target, selected_part=part
+            ),
+        }
+
+    @classmethod
+    def _status_dict(cls, value) -> dict[str, object]:
+        normalized = cls._normalize_value(value)
+        if not isinstance(normalized, dict):
+            raise XdbError(f"unexpected ILA status type: {type(value).__name__}")
+        return normalized
+
+    @classmethod
+    def _normalize_value(cls, value):
+        if isinstance(value, Enum):
+            return value.name.lower()
+        if is_dataclass(value) and not isinstance(value, type):
+            return {
+                field.name: cls._normalize_value(getattr(value, field.name))
+                for field in fields(value)
+            }
+        if isinstance(value, dict):
+            return {str(key): cls._normalize_value(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [cls._normalize_value(item) for item in value]
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if hasattr(value, "__dict__"):
+            return {
+                str(key): cls._normalize_value(item)
+                for key, item in vars(value).items()
+                if not str(key).startswith("_")
+            }
+        return str(value)
 
     def _create_session(self, require_cs: bool):
         chipscopy = self._chipscopy_imports()
