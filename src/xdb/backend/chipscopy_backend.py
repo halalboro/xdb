@@ -13,6 +13,8 @@ from xdb.backend.base import (
     Capability,
     CaptureResult,
     DebugProvenance,
+    IlaTriggerCompileResult,
+    IlaTriggerConfig,
     IlaArmResult,
     IlaStatusResult,
     InstrumentsResult,
@@ -34,6 +36,7 @@ class ChipScoPyBackend:
             Capability.ILA_CONTROL,
             Capability.ILA_BASIC_CAPTURE,
             Capability.ILA_BASIC_TRIGGER,
+            Capability.ILA_ADVANCED_TRIGGER,
             Capability.ILA_CAPTURE_POSITION,
             Capability.ILA_MULTI_WINDOW_CAPTURE,
             Capability.INSTRUMENTS_LIST,
@@ -142,6 +145,7 @@ class ChipScoPyBackend:
                     Capability.ILA_LIST.value,
                     Capability.ILA_BASIC_CAPTURE.value,
                     Capability.ILA_BASIC_TRIGGER.value,
+                    Capability.ILA_ADVANCED_TRIGGER.value,
                     Capability.ILA_CAPTURE_POSITION.value,
                     Capability.ILA_MULTI_WINDOW_CAPTURE.value,
                 ],
@@ -169,13 +173,14 @@ class ChipScoPyBackend:
         windows: int = 1,
         trigger_position: int | None = None,
         triggers: list[ProbeTrigger] | None = None,
+        advanced_trigger: IlaTriggerConfig | None = None,
     ) -> IlaArmResult:
         del timeout
         session = self._create_session(require_cs=True)
         try:
             dev, ila = self._select_ila(session, part_hint, ila_name, ltx)
             effective_position, normalized_triggers = self._arm_capture(
-                ila, samples, windows, trigger_position, triggers
+                ila, samples, windows, trigger_position, triggers, advanced_trigger
             )
             ila.refresh_status()
             target = self._target_name(dev)
@@ -189,6 +194,36 @@ class ChipScoPyBackend:
                 "windows": windows,
                 "trigger_position": effective_position,
                 "triggers": normalized_triggers,
+                "provenance": self._provenance(
+                    require_cs=True, selected_target=target, selected_part=part
+                ),
+            }
+        finally:
+            self._delete_session(session)
+
+    def compile_ila_trigger(
+        self,
+        part_hint: str,
+        ila_name: str,
+        tsm_path: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaTriggerCompileResult:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev, ila = self._select_ila(session, part_hint, ila_name, ltx)
+            error_count, messages = ila.run_advanced_trigger(tsm_path, compile_only=True)
+            target = self._target_name(dev)
+            part = str(getattr(dev, "part_name", ""))
+            return {
+                "target": target,
+                "part": part,
+                "ila": ila_name,
+                "tsm_path": tsm_path,
+                "error_count": int(error_count),
+                "messages": str(messages),
                 "provenance": self._provenance(
                     require_cs=True, selected_target=target, selected_part=part
                 ),
@@ -310,13 +345,14 @@ class ChipScoPyBackend:
             raise XdbError(f"ILA not found: {ila_name}")
         return dev, ila
 
-    @staticmethod
     def _arm_capture(
+        self,
         ila,
         samples: int,
         windows: int,
         trigger_position: int | None,
         triggers: list[ProbeTrigger] | None,
+        advanced_trigger: IlaTriggerConfig | None = None,
     ) -> tuple[int, list[ProbeTrigger]]:
         if samples <= 0 or samples & (samples - 1):
             raise XdbError("samples per window must be a positive power of two")
@@ -331,15 +367,42 @@ class ChipScoPyBackend:
                 f"capture requests {samples * windows} samples but ILA depth is {data_depth}"
             )
         normalized_triggers = list(triggers or [])
+        config = advanced_trigger
+        tsm_path = config.get("tsm_path") if config else None
+        if tsm_path and normalized_triggers:
+            raise XdbError("TSM and basic probe triggers are mutually exclusive")
         ila.reset_probes()
-        if normalized_triggers:
-            trigger_values: dict[str, list[str | int]] = {}
-            for trigger in normalized_triggers:
-                trigger_values.setdefault(trigger["probe"], []).extend(
-                    [trigger["operator"], trigger["value"]]
+        self._set_probe_values(ila, normalized_triggers, capture=False)
+        capture_values = list(config.get("capture_values", [])) if config else []
+        self._set_probe_values(ila, capture_values, capture=True)
+
+        if config:
+            enums = self._chipscopy_trigger_enums()
+            trig_in = enums["ILATrigInMode"][str(config.get("trig_in", "disabled")).upper()]
+            trig_out = enums["ILATrigOutMode"][str(config.get("trig_out", "disabled")).upper()]
+            capture_name = str(
+                config.get("capture_condition", "and" if capture_values else "always")
+            )
+            capture_condition = enums["ILACaptureCondition"][capture_name.upper()]
+            common = {
+                "trigger_position": effective_position,
+                "window_count": windows,
+                "window_size": samples,
+                "capture_condition": capture_condition,
+                "trig_in": trig_in,
+                "trig_out": trig_out,
+            }
+            if tsm_path:
+                ila.run_advanced_trigger(tsm_path, **common)
+            else:
+                trigger_condition = enums["ILATriggerCondition"][
+                    str(config.get("trigger_condition", "and")).upper()
+                ]
+                ila.run_basic_trigger(
+                    trigger_condition=trigger_condition,
+                    **common,
                 )
-            for probe, values in trigger_values.items():
-                ila.set_probe_trigger_value(probe, values)
+        elif normalized_triggers:
             ila.run_basic_trigger(
                 trigger_position=effective_position,
                 window_count=windows,
@@ -352,6 +415,33 @@ class ChipScoPyBackend:
                 window_size=samples,
             )
         return effective_position, normalized_triggers
+
+    @staticmethod
+    def _set_probe_values(ila, values: list[ProbeTrigger], *, capture: bool) -> None:
+        grouped: dict[str, list[str | int]] = {}
+        for comparison in values:
+            grouped.setdefault(comparison["probe"], []).extend(
+                [comparison["operator"], comparison["value"]]
+            )
+        setter = ila.set_probe_capture_value if capture else ila.set_probe_trigger_value
+        for probe, comparisons in grouped.items():
+            setter(probe, comparisons)
+
+    @staticmethod
+    def _chipscopy_trigger_enums() -> dict[str, Any]:
+        try:
+            module = importlib.import_module("chipscopy.api.ila")
+            return {
+                name: getattr(module, name)
+                for name in (
+                    "ILACaptureCondition",
+                    "ILATriggerCondition",
+                    "ILATrigInMode",
+                    "ILATrigOutMode",
+                )
+            }
+        except Exception as error:
+            raise XdbError("ChipScoPy ILA trigger enums are unavailable") from error
 
     def _ila_status_result(self, dev, ila, ila_name: str, *, status=None) -> IlaStatusResult:
         target = self._target_name(dev)

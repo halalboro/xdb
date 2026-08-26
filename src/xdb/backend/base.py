@@ -11,6 +11,7 @@ class Capability(str, Enum):
     ILA_CONTROL = "ila.control"
     ILA_BASIC_CAPTURE = "ila.basic_capture"
     ILA_BASIC_TRIGGER = "ila.basic_trigger"
+    ILA_ADVANCED_TRIGGER = "ila.advanced_trigger"
     ILA_CAPTURE_POSITION = "ila.capture_position"
     ILA_MULTI_WINDOW_CAPTURE = "ila.multi_window_capture"
     INSTRUMENTS_LIST = "instruments.list"
@@ -89,6 +90,24 @@ class IlaArmResult(IlaStatusResult):
     triggers: list[ProbeTrigger]
 
 
+class IlaTriggerConfig(TypedDict, total=False):
+    trigger_condition: str
+    capture_condition: str
+    capture_values: list[ProbeTrigger]
+    tsm_path: str
+    trig_in: str
+    trig_out: str
+
+
+class IlaTriggerCompileResult(ProvenanceResult):
+    target: str
+    part: str
+    ila: str
+    tsm_path: str
+    error_count: int
+    messages: str
+
+
 class CaptureResult(ProvenanceResult):
     ok: bool
     target: str
@@ -142,7 +161,18 @@ class DebugBackend(Protocol):
         windows: int = 1,
         trigger_position: int | None = None,
         triggers: list[ProbeTrigger] | None = None,
+        advanced_trigger: IlaTriggerConfig | None = None,
     ) -> IlaArmResult: ...
+
+    def compile_ila_trigger(
+        self,
+        part_hint: str,
+        ila_name: str,
+        tsm_path: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaTriggerCompileResult: ...
 
     def ila_status(
         self,

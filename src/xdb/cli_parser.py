@@ -118,6 +118,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         metavar=("PROBE", "OPERATOR", "VALUE"),
     )
+    s_ila_arm.add_argument(
+        "--trigger-condition", choices=["and", "or", "nand", "nor"], default="and"
+    )
+    s_ila_arm.add_argument(
+        "--capture-value",
+        action="append",
+        nargs=3,
+        default=[],
+        metavar=("PROBE", "OPERATOR", "VALUE"),
+        help="capture qualifier comparison",
+    )
+    s_ila_arm.add_argument(
+        "--capture-condition", choices=["and", "or", "nand", "nor"], default="and"
+    )
+    s_ila_arm.add_argument("--tsm", default=None, help="ChipScoPy trigger state-machine file")
+    s_ila_arm.add_argument(
+        "--trig-in",
+        choices=["disabled", "trig_in_only", "trigger_or_trig_in"],
+        default="disabled",
+    )
+    s_ila_arm.add_argument(
+        "--trig-out",
+        choices=["disabled", "trigger_only", "trig_in_only", "trigger_or_trig_in"],
+        default="disabled",
+    )
+
+    s_ila_compile = ila_sub.add_parser(
+        "compile-trigger", help="compile a ChipScoPy trigger state machine without arming"
+    )
+    add_ila_target_args(s_ila_compile)
+    s_ila_compile.add_argument("--tsm", required=True)
 
     s_ila_status = ila_sub.add_parser("status", help="read capture status")
     add_ila_target_args(s_ila_status)

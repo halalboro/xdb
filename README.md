@@ -78,7 +78,17 @@ xdb ila status --ila hw_ila_1
 xdb ila wait --ila hw_ila_1 --timeout 120
 xdb ila upload --ila hw_ila_1 --csv ./ila.csv
 
-# ChipScoPy: the same setup as one blocking capture
+# Advanced ChipScoPy trigger: validate a TSM, then arm it with capture filtering
+xdb ila compile-trigger --ila hw_ila_1 --tsm ./trigger.tsm
+xdb ila arm \
+  --ila hw_ila_1 \
+  --samples 256 \
+  --tsm ./trigger.tsm \
+  --capture-value valid '==' 1 \
+  --capture-condition and \
+  --trig-out trigger_only
+
+# ChipScoPy: the same basic setup as one blocking capture
 xdb capture \
   --ila hw_ila_1 \
   --csv ./ila.csv \
@@ -292,7 +302,8 @@ already a report file, omit `--report`.
 - `xdb ilas` and `xdb capture` apply the selected LTX before discovering debug cores.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - `xdb ila arm`, `status`, `wait`, and `upload` expose a decoupled ChipScoPy capture lifecycle. Each finite command currently reconnects and rediscovers the selected ILA; hardware capture state remains in the core between commands. The blocking `xdb capture` convenience command remains available.
-- Captures use a wall-clock timeout. ChipScoPy supports bounded multi-window capture, an explicit per-window trigger position, and repeated basic probe comparisons combined with AND. Supported comparison operators are `==`, `!=`, `>`, `<`, `>=`, `<=`, and `||`; decimal values are passed as integers while hexadecimal and bit-pattern values are preserved as strings. Backends advertise these capabilities, and XDB rejects unsupported Vivado-backend options before connecting to hardware.
+- Captures use a wall-clock timeout. ChipScoPy supports bounded multi-window capture, an explicit per-window trigger position, repeated probe comparisons, AND/OR/NAND/NOR global trigger and capture conditions, capture qualifiers, trigger-in/out modes, and trigger state machines. `xdb ila compile-trigger` validates a TSM without arming the ILA. TSM and basic probe triggers are mutually exclusive.
+- Supported comparison operators are `==`, `!=`, `>`, `<`, `>=`, `<=`, and `||`; transition/don't-care bit patterns are passed through to ChipScoPy. Decimal values are passed as integers while hexadecimal and bit-pattern values are preserved as strings. Backends advertise these capabilities, and XDB rejects unsupported Vivado-backend options before connecting to hardware.
 - `xdb sim` currently supports the packaged runtime-backed flow, not the direct
   project-backed `.xpr` flow.
 - Direct project launch via `xdb sim launch --project ...` is not supported yet.

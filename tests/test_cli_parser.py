@@ -204,6 +204,38 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(wait.timeout, 9)
         self.assertEqual(upload.csv, "capture.csv")
 
+    def test_advanced_trigger_options_are_parseable(self) -> None:
+        arm = build_parser().parse_args(
+            [
+                "ila",
+                "arm",
+                "--ila",
+                "ila0",
+                "--tsm",
+                "trigger.tsm",
+                "--capture-value",
+                "valid",
+                "==",
+                "1",
+                "--capture-condition",
+                "or",
+                "--trig-in",
+                "trigger_or_trig_in",
+                "--trig-out",
+                "trigger_only",
+            ]
+        )
+        compile_trigger = build_parser().parse_args(
+            ["ila", "compile-trigger", "--ila", "ila0", "--tsm", "trigger.tsm"]
+        )
+
+        self.assertEqual(arm.tsm, "trigger.tsm")
+        self.assertEqual(arm.capture_value, [["valid", "==", "1"]])
+        self.assertEqual(arm.capture_condition, "or")
+        self.assertEqual(arm.trig_in, "trigger_or_trig_in")
+        self.assertEqual(arm.trig_out, "trigger_only")
+        self.assertEqual(compile_trigger.ila_cmd, "compile-trigger")
+
     def test_chipscopy_capture_options_are_parseable(self) -> None:
         args = build_parser().parse_args(
             [

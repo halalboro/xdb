@@ -18,7 +18,7 @@ from xdb.cli_output import (
 )
 from xdb.config import set_config_file
 from xdb.cli_parser import build_parser
-from xdb.backend.base import Capability, ProbeTrigger
+from xdb.backend.base import Capability, IlaTriggerConfig, ProbeTrigger
 from xdb.backend.select import select_backend
 from xdb.errors import UnsupportedOperationError, XdbError
 from xdb.hls import (
@@ -197,6 +197,14 @@ def _parse_trigger_value(value: str) -> str | int:
     if unsigned == "0" or (unsigned.isdigit() and not unsigned.startswith("0")):
         return int(value, 10)
     return value
+
+
+def _resolve_tsm(path: str | None) -> str | None:
+    if path is None:
+        return None
+    if not os.path.isfile(path):
+        raise XdbError(f"trigger state-machine file not found: {path}")
+    return path
 
 
 def _parse_probe_triggers(values: list[list[str]]) -> list[ProbeTrigger]:
@@ -1262,6 +1270,35 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 windows = _validate_windows(args.windows)
                 trigger_position = _validate_trigger_position(args.trigger_position, samples)
                 triggers = _parse_probe_triggers(args.trigger)
+                capture_values = _parse_probe_triggers(args.capture_value)
+                tsm_path = _resolve_tsm(args.tsm)
+                if tsm_path and triggers:
+                    raise XdbError("--tsm and --trigger are mutually exclusive")
+                advanced_requested = bool(
+                    tsm_path
+                    or capture_values
+                    or args.trigger_condition != "and"
+                    or args.capture_condition != "and"
+                    or args.trig_in != "disabled"
+                    or args.trig_out != "disabled"
+                )
+                advanced_trigger: IlaTriggerConfig | None = None
+                if advanced_requested:
+                    _require_capability(
+                        backend,
+                        Capability.ILA_ADVANCED_TRIGGER,
+                        operation="ila arm advanced trigger",
+                        target_hint=part_hint,
+                    )
+                    advanced_trigger = {
+                        "trigger_condition": args.trigger_condition,
+                        "capture_condition": args.capture_condition,
+                        "capture_values": capture_values,
+                        "trig_in": args.trig_in,
+                        "trig_out": args.trig_out,
+                    }
+                    if tsm_path is not None:
+                        advanced_trigger["tsm_path"] = tsm_path
                 if windows != 1:
                     _require_capability(
                         backend,
@@ -1292,7 +1329,27 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                     windows=windows,
                     trigger_position=trigger_position,
                     triggers=triggers,
+                    advanced_trigger=advanced_trigger,
                 )
+            elif args.ila_cmd == "compile-trigger":
+                _require_capability(
+                    backend,
+                    Capability.ILA_ADVANCED_TRIGGER,
+                    operation="ila compile-trigger",
+                    target_hint=part_hint,
+                )
+                result = backend.compile_ila_trigger(
+                    part_hint,
+                    args.ila,
+                    _resolve_tsm(args.tsm) or "",
+                    timeout=args.timeout,
+                    ltx=ltx,
+                )
+                if result["error_count"] != 0:
+                    _print(result)
+                    raise XdbError(
+                        f"trigger state-machine compilation failed with {result['error_count']} errors"
+                    )
             elif args.ila_cmd == "status":
                 result = backend.ila_status(part_hint, args.ila, timeout=args.timeout, ltx=ltx)
             elif args.ila_cmd == "wait":

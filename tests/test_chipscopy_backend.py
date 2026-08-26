@@ -6,6 +6,7 @@ import sys
 import tempfile
 import types
 import unittest
+from enum import Enum
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +14,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xdb.backend.chipscopy_backend import ChipScoPyBackend
 from xdb.errors import XdbError
+
+
+class FakeTriggerCondition(Enum):
+    AND = 1
+    OR = 2
+    NAND = 3
+    NOR = 4
+
+
+class FakeCaptureCondition(Enum):
+    ALWAYS = 0
+    AND = 1
+    OR = 2
+    NAND = 3
+    NOR = 4
+
+
+class FakeTrigInMode(Enum):
+    DISABLED = 0
+    TRIG_IN_ONLY = 1
+    TRIGGER_OR_TRIG_IN = 2
+
+
+class FakeTrigOutMode(Enum):
+    DISABLED = 0
+    TRIGGER_ONLY = 1
+    TRIG_IN_ONLY = 2
+    TRIGGER_OR_TRIG_IN = 3
+
+
+FAKE_TRIGGER_ENUMS = {
+    "ILATriggerCondition": FakeTriggerCondition,
+    "ILACaptureCondition": FakeCaptureCondition,
+    "ILATrigInMode": FakeTrigInMode,
+    "ILATrigOutMode": FakeTrigOutMode,
+}
 
 
 class FakeProbe:
@@ -43,6 +80,8 @@ class FakeIla:
         self.trigger_args: dict[str, int] | None = None
         self.basic_trigger_args: dict[str, int] | None = None
         self.trigger_values: dict[str, list[str | int]] = {}
+        self.capture_values: dict[str, list[str | int]] = {}
+        self.advanced_trigger_args: tuple[str, dict[str, object]] | None = None
         self.wait_minutes: float | None = None
         self.status = types.SimpleNamespace(
             capture_state="idle",
@@ -68,7 +107,10 @@ class FakeIla:
     def set_probe_trigger_value(self, probe: str, values: list[str | int]) -> None:
         self.trigger_values[probe] = values
 
-    def run_basic_trigger(self, **kwargs: int) -> None:
+    def set_probe_capture_value(self, probe: str, values: list[str | int]) -> None:
+        self.capture_values[probe] = values
+
+    def run_basic_trigger(self, **kwargs: object) -> None:
         self.basic_trigger_args = kwargs
         self.status = types.SimpleNamespace(
             capture_state="pre_trigger",
@@ -80,6 +122,19 @@ class FakeIla:
 
     def refresh_status(self) -> None:
         pass
+
+    def run_advanced_trigger(self, tsm_path: str, *, compile_only: bool = False, **kwargs: object):
+        self.advanced_trigger_args = (tsm_path, kwargs)
+        if compile_only:
+            return 0, ""
+        self.status = types.SimpleNamespace(
+            capture_state="pre_trigger",
+            is_armed=True,
+            is_full=False,
+            samples_captured=0,
+            windows_captured=0,
+        )
+        return 0, ""
 
     def wait_till_done(self, *, max_wait_minutes: float):
         self.wait_minutes = max_wait_minutes
@@ -282,6 +337,53 @@ class ChipScoPyBackendTests(unittest.TestCase):
         self.assertEqual(result["trigger_position"], 512)
         self.assertEqual(result["triggers"], [])
         self.assertEqual(self.deleted, [self.session])
+
+    def test_advanced_trigger_arms_tsm_with_capture_qualifiers_and_trigger_io(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tsm = Path(td) / "trigger.tsm"
+            tsm.write_text("state s0:\n  trigger;\n", encoding="utf-8")
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch.object(
+                    ChipScoPyBackend,
+                    "_chipscopy_trigger_enums",
+                    return_value=FAKE_TRIGGER_ENUMS,
+                ),
+            ):
+                result = ChipScoPyBackend().arm_ila(
+                    "xcv80",
+                    "ila0",
+                    256,
+                    advanced_trigger={
+                        "tsm_path": str(tsm),
+                        "capture_condition": "or",
+                        "capture_values": [{"probe": "valid", "operator": "==", "value": 1}],
+                        "trig_in": "trigger_or_trig_in",
+                        "trig_out": "trigger_only",
+                    },
+                )
+
+        ila = next(iter(self.device.ila_cores))
+        self.assertEqual(ila.capture_values["valid"], ["==", 1])
+        self.assertIsNotNone(ila.advanced_trigger_args)
+        assert ila.advanced_trigger_args is not None
+        self.assertEqual(ila.advanced_trigger_args[0], str(tsm))
+        kwargs = ila.advanced_trigger_args[1]
+        self.assertEqual(kwargs["capture_condition"], FakeCaptureCondition.OR)
+        self.assertEqual(kwargs["trig_in"], FakeTrigInMode.TRIGGER_OR_TRIG_IN)
+        self.assertEqual(kwargs["trig_out"], FakeTrigOutMode.TRIGGER_ONLY)
+        self.assertTrue(result["status"]["is_armed"])
+
+    def test_trigger_state_machine_can_be_compiled_without_arming(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tsm = Path(td) / "trigger.tsm"
+            tsm.write_text("state s0:\n  trigger;\n", encoding="utf-8")
+            with patch.dict(os.environ, {}, clear=True):
+                result = ChipScoPyBackend().compile_ila_trigger("xcv80", "ila0", str(tsm))
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["messages"], "")
+        ila = next(iter(self.device.ila_cores))
+        self.assertEqual(ila.advanced_trigger_args, (str(tsm), {}))
 
     def test_capture_rejects_request_larger_than_ila_depth(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -55,6 +55,7 @@ class HardwareCliTests(unittest.TestCase):
             windows=2,
             trigger_position=None,
             triggers=[],
+            advanced_trigger=None,
         )
 
     def test_capture_forwards_generic_chipscopy_trigger_options(self) -> None:

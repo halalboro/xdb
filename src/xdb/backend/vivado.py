@@ -16,6 +16,8 @@ from xdb.backend.base import (
     CaptureResult,
     IlaArmResult,
     IlaStatusResult,
+    IlaTriggerCompileResult,
+    IlaTriggerConfig,
     InstrumentsResult,
     ListIlasResult,
     ProbeTrigger,
@@ -65,9 +67,23 @@ class VivadoBackend:
         windows: int = 1,
         trigger_position: int | None = None,
         triggers: list[ProbeTrigger] | None = None,
+        advanced_trigger: IlaTriggerConfig | None = None,
     ) -> IlaArmResult:
         del part_hint, ila_name, samples, timeout, ltx, windows, trigger_position, triggers
+        del advanced_trigger
         raise XdbError("decoupled ILA lifecycle is not supported by the Vivado backend")
+
+    def compile_ila_trigger(
+        self,
+        part_hint: str,
+        ila_name: str,
+        tsm_path: str,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> IlaTriggerCompileResult:
+        del part_hint, ila_name, tsm_path, timeout, ltx
+        raise XdbError("advanced ILA triggers are not supported by the Vivado backend")
 
     def ila_status(
         self,
