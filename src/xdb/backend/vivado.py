@@ -16,6 +16,7 @@ from xdb.backend.base import (
     CaptureResult,
     InstrumentsResult,
     ListIlasResult,
+    ProbeTrigger,
     ProgramResult,
     TargetsResult,
 )
@@ -60,8 +61,24 @@ class VivadoBackend:
         timeout: int = 120,
         *,
         ltx: str | None = None,
+        windows: int = 1,
+        trigger_position: int | None = None,
+        triggers: list[ProbeTrigger] | None = None,
     ) -> CaptureResult:
-        return capture(part_hint, ila_name, csv_path, samples, timeout=timeout, ltx=ltx)
+        if windows != 1 or trigger_position is not None or triggers:
+            raise XdbError(
+                "Vivado backend does not support multi-window, explicit-position, or probe-trigger capture"
+            )
+        result = dict(capture(part_hint, ila_name, csv_path, samples, timeout=timeout, ltx=ltx))
+        result.update(
+            {
+                "windows": 1,
+                "total_samples": samples,
+                "trigger_position": samples // 2 if trigger_position is None else trigger_position,
+                "triggers": [],
+            }
+        )
+        return cast(CaptureResult, result)
 
     def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult:
         ilas = self.list_ilas(part_hint, timeout=timeout)

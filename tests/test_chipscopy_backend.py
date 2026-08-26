@@ -31,9 +31,12 @@ class FakeWaveform:
 class FakeIla:
     def __init__(self, name: str) -> None:
         self.name = name
+        self.static_info = types.SimpleNamespace(data_depth=4096)
         self.probes = {"probe0": FakeProbe("probe0", 32)}
         self.waveform = FakeWaveform()
         self.trigger_args: dict[str, int] | None = None
+        self.basic_trigger_args: dict[str, int] | None = None
+        self.trigger_values: dict[str, list[str | int]] = {}
         self.wait_minutes: float | None = None
 
     def reset_probes(self) -> None:
@@ -41,6 +44,12 @@ class FakeIla:
 
     def run_trigger_immediately(self, **kwargs: int) -> None:
         self.trigger_args = kwargs
+
+    def set_probe_trigger_value(self, probe: str, values: list[str | int]) -> None:
+        self.trigger_values[probe] = values
+
+    def run_basic_trigger(self, **kwargs: int) -> None:
+        self.basic_trigger_args = kwargs
 
     def wait_till_done(self, *, max_wait_minutes: float) -> None:
         self.wait_minutes = max_wait_minutes
@@ -208,6 +217,51 @@ class ChipScoPyBackendTests(unittest.TestCase):
         )
         self.assertEqual(ila.wait_minutes, 2.0)
         self.assertEqual(result["samples"], 1024)
+        self.assertEqual(result["windows"], 1)
+        self.assertEqual(result["total_samples"], 1024)
+        self.assertEqual(result["trigger_position"], 512)
+        self.assertEqual(result["triggers"], [])
+        self.assertEqual(self.deleted, [self.session])
+
+    def test_capture_rejects_request_larger_than_ila_depth(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            with patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(XdbError, "ILA depth is 4096"):
+                    ChipScoPyBackend().capture(
+                        "xcv80", "ila0", str(Path(td) / "capture.csv"), 2048, windows=4
+                    )
+        self.assertEqual(self.deleted, [self.session])
+
+    def test_triggered_multi_window_capture_groups_probe_comparisons(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            csv = Path(td) / "capture.csv"
+            with patch.dict(os.environ, {}, clear=True):
+                result = ChipScoPyBackend().capture(
+                    "xcv80",
+                    "ila0",
+                    str(csv),
+                    256,
+                    windows=4,
+                    trigger_position=32,
+                    triggers=[
+                        {"probe": "state", "operator": "==", "value": 3},
+                        {"probe": "state", "operator": "<=", "value": 10},
+                        {"probe": "valid", "operator": "==", "value": "1"},
+                    ],
+                )
+
+        ila = next(iter(self.device.ila_cores))
+        self.assertIsNone(ila.trigger_args)
+        self.assertEqual(
+            ila.basic_trigger_args,
+            {"trigger_position": 32, "window_count": 4, "window_size": 256},
+        )
+        self.assertEqual(ila.trigger_values["state"], ["==", 3, "<=", 10])
+        self.assertEqual(ila.trigger_values["valid"], ["==", "1"])
+        self.assertEqual(result["windows"], 4)
+        self.assertEqual(result["total_samples"], 1024)
+        self.assertEqual(result["trigger_position"], 32)
+        self.assertEqual(len(result["triggers"]), 3)
         self.assertEqual(self.deleted, [self.session])
 
 

@@ -188,6 +188,36 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(write.sim_service_csr_cmd, "write")
         self.assertEqual(write.value, "0x1234")
 
+    def test_chipscopy_capture_options_are_parseable(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "capture",
+                "--ila",
+                "ila0",
+                "--csv",
+                "capture.csv",
+                "--samples",
+                "256",
+                "--windows",
+                "4",
+                "--trigger-position",
+                "32",
+                "--trigger",
+                "state",
+                ">=",
+                "3",
+                "--trigger",
+                "valid",
+                "==",
+                "1",
+            ]
+        )
+
+        self.assertEqual(args.samples, 256)
+        self.assertEqual(args.windows, 4)
+        self.assertEqual(args.trigger_position, 32)
+        self.assertEqual(args.trigger, [["state", ">=", "3"], ["valid", "==", "1"]])
+
     def test_reports_utilization_help_documents_report_aliases(self) -> None:
         parser = build_parser()
         reports_parser = parser._subparsers._group_actions[0].choices["reports"]  # noqa: SLF001

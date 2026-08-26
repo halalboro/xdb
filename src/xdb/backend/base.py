@@ -9,6 +9,9 @@ class Capability(str, Enum):
     PROGRAM = "program"
     ILA_LIST = "ila.list"
     ILA_BASIC_CAPTURE = "ila.basic_capture"
+    ILA_BASIC_TRIGGER = "ila.basic_trigger"
+    ILA_CAPTURE_POSITION = "ila.capture_position"
+    ILA_MULTI_WINDOW_CAPTURE = "ila.multi_window_capture"
     INSTRUMENTS_LIST = "instruments.list"
 
 
@@ -65,6 +68,12 @@ class ProgramResult(ProgramResultExtras):
     part: str
 
 
+class ProbeTrigger(TypedDict):
+    probe: str
+    operator: str
+    value: str | int
+
+
 class CaptureResult(ProvenanceResult):
     ok: bool
     target: str
@@ -72,6 +81,10 @@ class CaptureResult(ProvenanceResult):
     ila: str
     csv: str
     samples: int
+    windows: int
+    total_samples: int
+    trigger_position: int
+    triggers: list[ProbeTrigger]
 
 
 class InstrumentInfo(TypedDict):
@@ -112,6 +125,9 @@ class DebugBackend(Protocol):
         timeout: int = 120,
         *,
         ltx: str | None = None,
+        windows: int = 1,
+        trigger_position: int | None = None,
+        triggers: list[ProbeTrigger] | None = None,
     ) -> CaptureResult: ...
 
     def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult: ...

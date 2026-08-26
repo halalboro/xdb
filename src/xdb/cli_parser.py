@@ -74,7 +74,22 @@ def build_parser() -> argparse.ArgumentParser:
     s_capture.add_argument("--fpga-bdf", default=os.environ.get("FPGA_BDF"))
     s_capture.add_argument("--ila", required=True)
     s_capture.add_argument("--csv", required=True)
-    s_capture.add_argument("--samples", type=int, default=2048)
+    s_capture.add_argument("--samples", type=int, default=2048, help="samples per capture window")
+    s_capture.add_argument("--windows", type=int, default=1, help="number of capture windows")
+    s_capture.add_argument(
+        "--trigger-position",
+        type=int,
+        default=None,
+        help="trigger sample index in each window (default: middle)",
+    )
+    s_capture.add_argument(
+        "--trigger",
+        action="append",
+        nargs=3,
+        default=[],
+        metavar=("PROBE", "OPERATOR", "VALUE"),
+        help="basic probe comparison; repeat to combine comparisons with AND",
+    )
     s_capture.add_argument("--timeout", type=int, default=120)
 
     def add_reports_utilization_args(sp: argparse.ArgumentParser) -> None:

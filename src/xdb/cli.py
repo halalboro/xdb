@@ -18,7 +18,7 @@ from xdb.cli_output import (
 )
 from xdb.config import set_config_file
 from xdb.cli_parser import build_parser
-from xdb.backend.base import Capability
+from xdb.backend.base import Capability, ProbeTrigger
 from xdb.backend.select import select_backend
 from xdb.errors import UnsupportedOperationError, XdbError
 from xdb.hls import (
@@ -178,6 +178,44 @@ def _validate_samples(samples: int) -> int:
     if not _is_power_of_two(samples):
         raise XdbError("--samples must be a power of two (e.g., 128, 256, 512, 1024)")
     return samples
+
+
+def _validate_windows(windows: int) -> int:
+    if windows <= 0:
+        raise XdbError("--windows must be > 0")
+    return windows
+
+
+def _validate_trigger_position(position: int | None, samples: int) -> int | None:
+    if position is not None and not 0 <= position < samples:
+        raise XdbError(f"--trigger-position must be between 0 and {samples - 1}")
+    return position
+
+
+def _parse_trigger_value(value: str) -> str | int:
+    unsigned = value[1:] if value.startswith("-") else value
+    if unsigned == "0" or (unsigned.isdigit() and not unsigned.startswith("0")):
+        return int(value, 10)
+    return value
+
+
+def _parse_probe_triggers(values: list[list[str]]) -> list[ProbeTrigger]:
+    operators = {"==", "!=", ">", "<", ">=", "<=", "||"}
+    triggers: list[ProbeTrigger] = []
+    for probe, operator, value in values:
+        if operator not in operators:
+            raise XdbError(
+                f"unsupported trigger operator {operator}: expected one of "
+                + ", ".join(sorted(operators))
+            )
+        triggers.append(
+            {
+                "probe": probe,
+                "operator": operator,
+                "value": _parse_trigger_value(value),
+            }
+        )
+    return triggers
 
 
 def _unsupported_operation_message(
@@ -1218,14 +1256,42 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 operation="capture",
                 target_hint=part_hint,
             )
+            samples = _validate_samples(args.samples)
+            windows = _validate_windows(args.windows)
+            trigger_position = _validate_trigger_position(args.trigger_position, samples)
+            triggers = _parse_probe_triggers(args.trigger)
+            if windows != 1:
+                _require_capability(
+                    backend,
+                    Capability.ILA_MULTI_WINDOW_CAPTURE,
+                    operation="capture --windows",
+                    target_hint=part_hint,
+                )
+            if trigger_position is not None:
+                _require_capability(
+                    backend,
+                    Capability.ILA_CAPTURE_POSITION,
+                    operation="capture --trigger-position",
+                    target_hint=part_hint,
+                )
+            if triggers:
+                _require_capability(
+                    backend,
+                    Capability.ILA_BASIC_TRIGGER,
+                    operation="capture --trigger",
+                    target_hint=part_hint,
+                )
             _print(
                 backend.capture(
                     part_hint,
                     args.ila,
                     args.csv,
-                    _validate_samples(args.samples),
+                    samples,
                     timeout=args.timeout,
                     ltx=_resolve_optional_ltx(args.ltx),
+                    windows=windows,
+                    trigger_position=trigger_position,
+                    triggers=triggers,
                 )
             )
         elif args.cmd == "instruments" and args.instruments_cmd == "list":

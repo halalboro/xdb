@@ -72,6 +72,16 @@ xdb capture \
   --csv ./ila.csv \
   --samples 2048
 
+# ChipScoPy: four 256-sample windows, triggering 32 samples into each window
+xdb capture \
+  --ila hw_ila_1 \
+  --csv ./ila.csv \
+  --samples 256 \
+  --windows 4 \
+  --trigger-position 32 \
+  --trigger state '==' 3 \
+  --trigger valid '==' 1
+
 # launch a persistent simulation session from a packaged runtime bundle
 # exported by an integration shell
 export XDB_SIM_WORKSPACE=$PWD/.build/sim-workspace
@@ -275,7 +285,7 @@ already a report file, omit `--report`.
 - The ChipScoPy backend reads `HW_SERVER_URL` and `CS_SERVER_URL`, selects Versal devices by part, and uses `FPGA_JTAG_TARGET` to disambiguate. A part matching multiple devices without an explicit target is rejected rather than selecting the first device.
 - `xdb ilas` and `xdb capture` apply the selected LTX before discovering debug cores.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
-- Captures are one-shot and blocking (with timeout).
+- Captures are blocking with a wall-clock timeout. ChipScoPy supports bounded multi-window capture, an explicit per-window trigger position, and repeated basic probe comparisons combined with AND. Supported comparison operators are `==`, `!=`, `>`, `<`, `>=`, `<=`, and `||`; decimal values are passed as integers while hexadecimal and bit-pattern values are preserved as strings. Backends advertise these capabilities, and XDB rejects unsupported Vivado-backend options before connecting to hardware.
 - `xdb sim` currently supports the packaged runtime-backed flow, not the direct
   project-backed `.xpr` flow.
 - Direct project launch via `xdb sim launch --project ...` is not supported yet.
