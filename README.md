@@ -111,6 +111,10 @@ xdb ila arm \
   --capture-condition and \
   --trig-out trigger_only
 
+# Arm, run a bounded host workload, wait, and upload in one operation.
+xdb ila with-capture --ila hw_ila_1 --out ./workload.vcd --format vcd \
+  --samples 1024 --trigger valid '==' 1 --host-timeout 30 --exec -- ./workload
+
 # ChipScoPy: the same basic setup as one blocking capture
 xdb capture \
   --ila hw_ila_1 \
@@ -325,6 +329,7 @@ already a report file, omit `--report`.
 - `xdb ilas` and `xdb capture` apply the selected LTX before discovering debug cores.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - `xdb ila arm`, `status`, `wait`, and `upload` expose a decoupled ChipScoPy capture lifecycle. Without `XDB_HW_SESSION`, each finite command reconnects and rediscovers the selected ILA while capture state remains in the core. `xdb hw-session launch` creates an optional local daemon that owns and reuses one ChipScoPy session across commands selected through `XDB_HW_SESSION`; `status` and `close` make its lifetime explicit. The blocking `xdb capture` convenience command remains available.
+- `xdb ila with-capture --exec -- <command>` performs arm → bounded host execution → wait → upload in order. Host stdout/stderr are retained beside the waveform with hashes and exit/timeout evidence; an unexpected exit is reported only after capture evidence is emitted.
 - Multi-ILA coordination arms at least two unique cores in one ChipScoPy session. With `--source-ila`, followers are armed first in TRIG-IN-only mode and the source is armed last with TRIG-OUT enabled; a concrete source probe trigger is mandatory. Group status/wait operations retain member identity, and group upload emits deterministic member filenames plus one `xdb.ila-group/v1` manifest with hashes and trigger positions.
 - ChipScoPy VIO support lists cores/probe directions, reads selected values and activity, and writes named output probes. Writes require explicit `--yes` confirmation and return immediate readback; XDB never infers or automatically drives VIO outputs.
 - Waveform upload supports CSV, VCD, and ChipScoPy's native CITF archive. CSV/VCD exports may select probes, windows, and sample ranges; CITF deliberately retains the complete waveform. Every upload writes an `xdb.ila-waveform/v1` JSON manifest beside the output with selection metadata and a SHA-256 integrity identity. `xdb waveform compare` validates both manifests/artifacts and reports content and export-metadata differences.

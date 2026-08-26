@@ -147,6 +147,27 @@ def build_parser() -> argparse.ArgumentParser:
         default="disabled",
     )
 
+    s_ila_with_capture = ila_sub.add_parser(
+        "with-capture", help="capture an ILA around a bounded host command"
+    )
+    add_ila_target_args(s_ila_with_capture)
+    s_ila_with_capture.add_argument("--samples", type=int, default=2048)
+    s_ila_with_capture.add_argument("--windows", type=int, default=1)
+    s_ila_with_capture.add_argument("--trigger-position", type=int, default=None)
+    s_ila_with_capture.add_argument(
+        "--trigger", action="append", nargs=3, default=[], metavar=("PROBE", "OPERATOR", "VALUE")
+    )
+    s_ila_with_capture.add_argument("--out", required=True)
+    s_ila_with_capture.add_argument("--format", choices=["csv", "vcd", "citf"], default="csv")
+    s_ila_with_capture.add_argument("--host-timeout", type=float, default=60.0)
+    s_ila_with_capture.add_argument("--cwd", default=None)
+    s_ila_with_capture.add_argument("--env", action="append", default=[])
+    s_ila_with_capture.add_argument(
+        "--expect-exit-code", type=int, default=0, help="expected host command exit code"
+    )
+    s_ila_with_capture.add_argument("--exec", action="store_true", required=True)
+    s_ila_with_capture.add_argument("exec_command", nargs=argparse.REMAINDER)
+
     s_ila_compile = ila_sub.add_parser(
         "compile-trigger", help="compile a ChipScoPy trigger state machine without arming"
     )

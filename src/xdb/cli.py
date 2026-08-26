@@ -1369,7 +1369,51 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 target_hint=part_hint,
             )
             ltx = _resolve_optional_ltx(args.ltx)
-            if args.ila_cmd == "group-arm":
+            if args.ila_cmd == "with-capture":
+                from xdb.hardware_workflow import capture_around_command
+
+                samples = _validate_samples(args.samples)
+                windows = _validate_windows(args.windows)
+                trigger_position = _validate_trigger_position(args.trigger_position, samples)
+                triggers = _parse_probe_triggers(args.trigger)
+                if windows != 1:
+                    _require_capability(
+                        backend,
+                        Capability.ILA_MULTI_WINDOW_CAPTURE,
+                        operation="ila with-capture --windows",
+                        target_hint=part_hint,
+                    )
+                if triggers:
+                    _require_capability(
+                        backend,
+                        Capability.ILA_BASIC_TRIGGER,
+                        operation="ila with-capture --trigger",
+                        target_hint=part_hint,
+                    )
+                result = capture_around_command(
+                    backend,
+                    part_hint=part_hint,
+                    ila_name=args.ila,
+                    output_path=args.out,
+                    command=args.exec_command,
+                    samples=samples,
+                    windows=windows,
+                    trigger_position=trigger_position,
+                    triggers=triggers,
+                    ltx=ltx,
+                    capture_timeout=args.timeout,
+                    export_format=args.format.upper(),
+                    host_timeout=args.host_timeout,
+                    host_cwd=args.cwd,
+                    host_env=args.env,
+                )
+                if result["host"]["exit_code"] != args.expect_exit_code:
+                    _print(result)
+                    raise XdbError(
+                        f"host command exited with {result['host']['exit_code']}; "
+                        f"expected {args.expect_exit_code}"
+                    )
+            elif args.ila_cmd == "group-arm":
                 _require_capability(
                     backend,
                     Capability.ILA_MULTI_CORE,

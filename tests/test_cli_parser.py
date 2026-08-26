@@ -230,6 +230,31 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(upload.output, "capture.csv")
         self.assertEqual(upload.format, "csv")
 
+    def test_host_command_capture_is_parseable(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "ila",
+                "with-capture",
+                "--ila",
+                "ila0",
+                "--out",
+                "capture.vcd",
+                "--format",
+                "vcd",
+                "--host-timeout",
+                "12",
+                "--exec",
+                "--",
+                "./workload",
+                "--case",
+                "smoke",
+            ]
+        )
+        self.assertEqual(args.ila_cmd, "with-capture")
+        self.assertEqual(args.format, "vcd")
+        self.assertEqual(args.host_timeout, 12)
+        self.assertEqual(args.exec_command, ["--", "./workload", "--case", "smoke"])
+
     def test_multi_ila_commands_are_parseable(self) -> None:
         arm = build_parser().parse_args(
             [
