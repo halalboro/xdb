@@ -43,6 +43,9 @@ class ChipScoPyBackend:
             Capability.ILA_ADVANCED_TRIGGER,
             Capability.ILA_CAPTURE_POSITION,
             Capability.ILA_MULTI_WINDOW_CAPTURE,
+            Capability.VIO_LIST,
+            Capability.VIO_READ,
+            Capability.VIO_WRITE,
             Capability.INSTRUMENTS_LIST,
         }
 
@@ -165,6 +168,71 @@ class ChipScoPyBackend:
                 "provenance": ilas.get("provenance", self._provenance(require_cs=True)),
             },
         )
+
+    def list_vios(
+        self,
+        part_hint: str,
+        timeout: int = 180,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev = self._select_device(session, part_hint)
+            self._discover_cores(dev, ltx)
+            vios = []
+            for vio in dev.vio_cores:
+                vios.append(
+                    {
+                        "name": vio.name,
+                        "probes": [self._normalize_value(probe) for probe in vio.probes],
+                    }
+                )
+            return self._core_result(dev, {"vios": vios})
+        finally:
+            self._delete_session(session)
+
+    def read_vio(
+        self,
+        part_hint: str,
+        vio_name: str,
+        probes: list[str] | None = None,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del timeout
+        session = self._create_session(require_cs=True)
+        try:
+            dev, vio = self._select_vio(session, part_hint, vio_name, ltx)
+            values = self._normalize_value(vio.read_probes(probes))
+            return self._core_result(dev, {"vio": vio_name, "values": values})
+        finally:
+            self._delete_session(session)
+
+    def write_vio(
+        self,
+        part_hint: str,
+        vio_name: str,
+        values: dict[str, int],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del timeout
+        if not values:
+            raise XdbError("at least one VIO output value is required")
+        session = self._create_session(require_cs=True)
+        try:
+            dev, vio = self._select_vio(session, part_hint, vio_name, ltx)
+            vio.write_probes(values)
+            readback = self._normalize_value(vio.read_probes(list(values)))
+            return self._core_result(
+                dev, {"vio": vio_name, "written": dict(values), "readback": readback}
+            )
+        finally:
+            self._delete_session(session)
 
     def arm_ila(
         self,
@@ -394,17 +462,40 @@ class ChipScoPyBackend:
         finally:
             self._delete_session(session)
 
-    def _select_ila(self, session, part_hint: str, ila_name: str, ltx: str | None):
-        dev = self._select_device(session, part_hint)
+    def _discover_cores(self, dev, ltx: str | None) -> None:
         resolved_ltx = self._ltx_from_env(ltx)
         if resolved_ltx:
             dev.discover_and_setup_cores(ltx_file=resolved_ltx)
         else:
             dev.discover_and_setup_cores()
+
+    def _select_ila(self, session, part_hint: str, ila_name: str, ltx: str | None):
+        dev = self._select_device(session, part_hint)
+        self._discover_cores(dev, ltx)
         ila = dev.ila_cores.get(name=ila_name)
         if not ila:
             raise XdbError(f"ILA not found: {ila_name}")
         return dev, ila
+
+    def _select_vio(self, session, part_hint: str, vio_name: str, ltx: str | None):
+        dev = self._select_device(session, part_hint)
+        self._discover_cores(dev, ltx)
+        vio = dev.vio_cores.get(name=vio_name)
+        if not vio:
+            raise XdbError(f"VIO not found: {vio_name}")
+        return dev, vio
+
+    def _core_result(self, dev, payload: dict[str, object]) -> dict[str, object]:
+        target = self._target_name(dev)
+        part = str(getattr(dev, "part_name", ""))
+        return {
+            "target": target,
+            "part": part,
+            **payload,
+            "provenance": self._provenance(
+                require_cs=True, selected_target=target, selected_part=part
+            ),
+        }
 
     def _arm_capture(
         self,

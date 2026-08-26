@@ -36,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         "instruments",
         "hw-session",
         "waveform",
+        "vio",
         "hls",
         "sim",
     ]
@@ -176,6 +177,30 @@ def build_parser() -> argparse.ArgumentParser:
         command_parser.add_argument("--name", default="default")
         if command == "close":
             command_parser.add_argument("--force", action="store_true")
+
+    s_vio = sub.add_parser("vio", help="inspect or drive ChipScoPy VIO cores")
+    _add_debug_flag(s_vio)
+    vio_sub = s_vio.add_subparsers(dest="vio_cmd", required=True)
+
+    def add_vio_target_args(sp: argparse.ArgumentParser, *, require_vio: bool) -> None:
+        _add_debug_flag(sp)
+        sp.add_argument("--part-hint", "--fpga-part-hint", dest="part_hint", default=None)
+        sp.add_argument("--ltx", default=None)
+        sp.add_argument("--timeout", type=int, default=120)
+        if require_vio:
+            sp.add_argument("--vio", required=True)
+
+    s_vio_list = vio_sub.add_parser("list")
+    add_vio_target_args(s_vio_list, require_vio=False)
+    s_vio_read = vio_sub.add_parser("read")
+    add_vio_target_args(s_vio_read, require_vio=True)
+    s_vio_read.add_argument("--probe", action="append", default=None)
+    s_vio_write = vio_sub.add_parser("write")
+    add_vio_target_args(s_vio_write, require_vio=True)
+    s_vio_write.add_argument("--set", action="append", required=True, metavar="PROBE=VALUE")
+    s_vio_write.add_argument(
+        "--yes", action="store_true", help="confirm that VIO outputs may change hardware state"
+    )
 
     s_waveform = sub.add_parser("waveform", help="inspect exported ILA waveform manifests")
     _add_debug_flag(s_waveform)

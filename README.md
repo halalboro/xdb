@@ -85,6 +85,11 @@ xdb ila upload --ila hw_ila_1 --out ./ila.csv --format csv
 xdb ila upload --ila hw_ila_1 --out ./window.vcd --format vcd \
   --probe state --start-window 1 --window-count 1 --start-sample 32 --sample-count 128
 xdb waveform compare ./baseline.csv.json ./window.vcd.json
+
+# ChipScoPy VIO inspection and explicitly confirmed output writes
+xdb vio list
+xdb vio read --vio hw_vio_1 --probe status
+xdb vio write --vio hw_vio_1 --set enable=1 --yes
 xdb hw-session status --name v80
 xdb hw-session close --name v80
 
@@ -312,6 +317,7 @@ already a report file, omit `--report`.
 - `xdb ilas` and `xdb capture` apply the selected LTX before discovering debug cores.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - `xdb ila arm`, `status`, `wait`, and `upload` expose a decoupled ChipScoPy capture lifecycle. Without `XDB_HW_SESSION`, each finite command reconnects and rediscovers the selected ILA while capture state remains in the core. `xdb hw-session launch` creates an optional local daemon that owns and reuses one ChipScoPy session across commands selected through `XDB_HW_SESSION`; `status` and `close` make its lifetime explicit. The blocking `xdb capture` convenience command remains available.
+- ChipScoPy VIO support lists cores/probe directions, reads selected values and activity, and writes named output probes. Writes require explicit `--yes` confirmation and return immediate readback; XDB never infers or automatically drives VIO outputs.
 - Waveform upload supports CSV, VCD, and ChipScoPy's native CITF archive. CSV/VCD exports may select probes, windows, and sample ranges; CITF deliberately retains the complete waveform. Every upload writes an `xdb.ila-waveform/v1` JSON manifest beside the output with selection metadata and a SHA-256 integrity identity. `xdb waveform compare` validates both manifests/artifacts and reports content and export-metadata differences.
 - Captures use a wall-clock timeout. ChipScoPy supports bounded multi-window capture, an explicit per-window trigger position, repeated probe comparisons, AND/OR/NAND/NOR global trigger and capture conditions, capture qualifiers, trigger-in/out modes, and trigger state machines. `xdb ila compile-trigger` validates a TSM without arming the ILA. TSM and basic probe triggers are mutually exclusive.
 - Supported comparison operators are `==`, `!=`, `>`, `<`, `>=`, `<=`, and `||`; transition/don't-care bit patterns are passed through to ChipScoPy. Decimal values are passed as integers while hexadecimal and bit-pattern values are preserved as strings. Backends advertise these capabilities, and XDB rejects unsupported Vivado-backend options before connecting to hardware.

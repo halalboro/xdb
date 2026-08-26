@@ -15,6 +15,34 @@ from xdb.cli import main
 
 
 class HardwareCliTests(unittest.TestCase):
+    def test_vio_write_requires_confirmation_before_backend_execution(self) -> None:
+        backend = MagicMock()
+        backend.name = "chipscopy"
+        backend.capabilities.return_value = {Capability.VIO_WRITE}
+        with (
+            patch("xdb.cli.select_backend", return_value=backend),
+            patch("xdb.cli._print_error"),
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "xdb",
+                    "vio",
+                    "write",
+                    "--part-hint",
+                    "xcv80",
+                    "--vio",
+                    "vio0",
+                    "--set",
+                    "enable=1",
+                ],
+            ),
+            self.assertRaisesRegex(SystemExit, "2"),
+        ):
+            main()
+        backend.write_vio.assert_not_called()
+
     def test_ila_arm_uses_decoupled_backend_lifecycle(self) -> None:
         backend = MagicMock()
         backend.name = "chipscopy"

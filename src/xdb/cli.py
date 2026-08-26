@@ -241,6 +241,21 @@ def _resolve_tsm(path: str | None) -> str | None:
     return path
 
 
+def _parse_vio_values(values: list[str]) -> dict[str, int]:
+    parsed: dict[str, int] = {}
+    for item in values:
+        if "=" not in item:
+            raise XdbError(f"invalid VIO assignment {item!r}: expected PROBE=VALUE")
+        probe, raw_value = item.split("=", 1)
+        if not probe or probe in parsed:
+            raise XdbError(f"invalid or duplicate VIO probe assignment: {probe!r}")
+        try:
+            parsed[probe] = int(raw_value, 0)
+        except ValueError as error:
+            raise XdbError(f"invalid integer VIO value for {probe}: {raw_value}") from error
+    return parsed
+
+
 def _parse_probe_triggers(values: list[list[str]]) -> list[ProbeTrigger]:
     operators = {"==", "!=", ">", "<", ">=", "<=", "||"}
     triggers: list[ProbeTrigger] = []
@@ -1269,7 +1284,38 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
             return
 
         backend = select_backend()
-        if args.cmd == "targets":
+        if args.cmd == "vio":
+            part_hint = _require_part_hint(args.part_hint)
+            ltx = _resolve_optional_ltx(args.ltx)
+            if args.vio_cmd == "list":
+                _require_capability(
+                    backend, Capability.VIO_LIST, operation="vio list", target_hint=part_hint
+                )
+                result = backend.list_vios(part_hint, timeout=args.timeout, ltx=ltx)
+            elif args.vio_cmd == "read":
+                _require_capability(
+                    backend, Capability.VIO_READ, operation="vio read", target_hint=part_hint
+                )
+                result = backend.read_vio(
+                    part_hint, args.vio, args.probe, timeout=args.timeout, ltx=ltx
+                )
+            elif args.vio_cmd == "write":
+                _require_capability(
+                    backend, Capability.VIO_WRITE, operation="vio write", target_hint=part_hint
+                )
+                if not args.yes:
+                    raise XdbError("vio write requires --yes confirmation")
+                result = backend.write_vio(
+                    part_hint,
+                    args.vio,
+                    _parse_vio_values(args.set),
+                    timeout=args.timeout,
+                    ltx=ltx,
+                )
+            else:
+                p.error(f"unknown vio command: {args.vio_cmd}")
+            _print(result)
+        elif args.cmd == "targets":
             _require_capability(
                 backend,
                 Capability.TARGETS,

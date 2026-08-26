@@ -27,6 +27,9 @@ _ALLOWED_METHODS = {
     "wait_ila",
     "upload_ila",
     "capture",
+    "list_vios",
+    "read_vio",
+    "write_vio",
 }
 
 

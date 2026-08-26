@@ -167,6 +167,26 @@ class FakeIlaCollection:
         return next((ila for ila in self._ilas if ila.name == name), None)
 
 
+class FakeVio:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.probes = [
+            types.SimpleNamespace(probe_name="status", direction="in", is_bus=False),
+            types.SimpleNamespace(probe_name="enable", direction="out", is_bus=False),
+        ]
+        self.values = {"status": {"value": 1, "activity": "R"}, "enable": {"value": 0}}
+        self.writes: list[dict[str, int]] = []
+
+    def read_probes(self, probes: list[str] | None = None):
+        names = list(self.values) if probes is None else probes
+        return {name: self.values[name] for name in names}
+
+    def write_probes(self, values: dict[str, int]) -> None:
+        self.writes.append(dict(values))
+        for name, value in values.items():
+            self.values[name] = {"value": value}
+
+
 class FakeDevice:
     family_name = "versal"
 
@@ -174,6 +194,7 @@ class FakeDevice:
         self.part_name = part
         self.serial = serial
         self.ila_cores = FakeIlaCollection([FakeIla("ila0")])
+        self.vio_cores = FakeIlaCollection([FakeVio("vio0")])
         self.programmed: str | None = None
         self.discovered_ltx: str | None = None
 
@@ -313,6 +334,22 @@ class ChipScoPyBackendTests(unittest.TestCase):
         )
         self.assertEqual(result["provenance"]["cs_server_url"], "TCP:rose:3042")
         self.assertEqual(self.deleted, [self.session])
+
+    def test_vio_list_read_and_confirmed_backend_write(self) -> None:
+        backend = ChipScoPyBackend()
+        with patch.dict(os.environ, {}, clear=True):
+            listed = backend.list_vios("xcv80")
+            read = backend.read_vio("xcv80", "vio0", ["status"])
+            written = backend.write_vio("xcv80", "vio0", {"enable": 1})
+
+        self.assertEqual(listed["vios"][0]["name"], "vio0")
+        self.assertEqual(listed["vios"][0]["probes"][1]["direction"], "out")
+        self.assertEqual(read["values"]["status"]["value"], 1)
+        self.assertEqual(written["written"], {"enable": 1})
+        self.assertEqual(written["readback"]["enable"]["value"], 1)
+        vio = next(iter(self.device.vio_cores))
+        self.assertEqual(vio.writes, [{"enable": 1}])
+        self.assertEqual(self.deleted, [self.session] * 3)
 
     def test_decoupled_ila_lifecycle_arms_checks_waits_and_uploads(self) -> None:
         backend = ChipScoPyBackend()

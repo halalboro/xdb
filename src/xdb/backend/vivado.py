@@ -155,6 +155,36 @@ class VivadoBackend:
         )
         return cast(CaptureResult, result)
 
+    def list_vios(
+        self, part_hint: str, timeout: int = 180, *, ltx: str | None = None
+    ) -> dict[str, object]:
+        del part_hint, timeout, ltx
+        raise XdbError("VIO is not supported by the Vivado backend")
+
+    def read_vio(
+        self,
+        part_hint: str,
+        vio_name: str,
+        probes: list[str] | None = None,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del part_hint, vio_name, probes, timeout, ltx
+        raise XdbError("VIO is not supported by the Vivado backend")
+
+    def write_vio(
+        self,
+        part_hint: str,
+        vio_name: str,
+        values: dict[str, int],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]:
+        del part_hint, vio_name, values, timeout, ltx
+        raise XdbError("VIO is not supported by the Vivado backend")
+
     def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult:
         ilas = self.list_ilas(part_hint, timeout=timeout)
         instruments = [

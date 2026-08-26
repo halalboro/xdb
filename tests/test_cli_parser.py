@@ -188,6 +188,17 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(write.sim_service_csr_cmd, "write")
         self.assertEqual(write.value, "0x1234")
 
+    def test_vio_commands_are_parseable(self) -> None:
+        listed = build_parser().parse_args(["vio", "list"])
+        read = build_parser().parse_args(["vio", "read", "--vio", "vio0", "--probe", "status"])
+        write = build_parser().parse_args(
+            ["vio", "write", "--vio", "vio0", "--set", "enable=1", "--yes"]
+        )
+        self.assertEqual(listed.vio_cmd, "list")
+        self.assertEqual(read.probe, ["status"])
+        self.assertEqual(write.set, ["enable=1"])
+        self.assertTrue(write.yes)
+
     def test_waveform_compare_command_is_parseable(self) -> None:
         args = build_parser().parse_args(["waveform", "compare", "before.json", "after.json"])
         self.assertEqual(args.waveform_cmd, "compare")

@@ -14,6 +14,9 @@ class Capability(str, Enum):
     ILA_ADVANCED_TRIGGER = "ila.advanced_trigger"
     ILA_CAPTURE_POSITION = "ila.capture_position"
     ILA_MULTI_WINDOW_CAPTURE = "ila.multi_window_capture"
+    VIO_LIST = "vio.list"
+    VIO_READ = "vio.read"
+    VIO_WRITE = "vio.write"
     INSTRUMENTS_LIST = "instruments.list"
 
 
@@ -229,6 +232,30 @@ class DebugBackend(Protocol):
         trigger_position: int | None = None,
         triggers: list[ProbeTrigger] | None = None,
     ) -> CaptureResult: ...
+
+    def list_vios(
+        self, part_hint: str, timeout: int = 180, *, ltx: str | None = None
+    ) -> dict[str, object]: ...
+
+    def read_vio(
+        self,
+        part_hint: str,
+        vio_name: str,
+        probes: list[str] | None = None,
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]: ...
+
+    def write_vio(
+        self,
+        part_hint: str,
+        vio_name: str,
+        values: dict[str, int],
+        timeout: int = 120,
+        *,
+        ltx: str | None = None,
+    ) -> dict[str, object]: ...
 
     def list_instruments(self, part_hint: str, timeout: int = 180) -> InstrumentsResult: ...
 
