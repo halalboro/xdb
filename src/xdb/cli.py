@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import signal
@@ -150,19 +151,20 @@ def _resolve_bitstream(cli_value: str | None) -> str:
     return bit
 
 
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _resolve_optional_ltx(cli_value: str | None) -> str | None:
     ltx = cli_value or os.environ.get("FPGA_LTX")
     if not ltx:
         return None
     if not os.path.isfile(ltx):
         raise XdbError(f"ltx not found: {ltx}")
-    return ltx
-
-
-def _resolve_ltx(cli_value: str | None) -> str:
-    ltx = _resolve_optional_ltx(cli_value)
-    if not ltx:
-        raise XdbError("missing ltx: pass --ltx or set FPGA_LTX")
     return ltx
 
 
@@ -1180,14 +1182,17 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
                 target_hint=part_hint,
             )
             bit = _resolve_bitstream(args.bit)
-            ltx = _resolve_ltx(args.ltx)
-            result = backend.program(
+            ltx = _resolve_optional_ltx(args.ltx)
+            backend_result = backend.program(
                 bit,
                 ltx,
                 part_hint,
                 timeout=args.timeout,
             )
+            result = dict(backend_result)
+            result["backend"] = backend.name
             result["bitstream"] = bit
+            result["bitstream_sha256"] = _sha256_file(bit)
             result["ltx"] = ltx
             _print(result)
         elif args.cmd == "ilas":

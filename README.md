@@ -60,7 +60,7 @@ export FPGA_LTX=/path/to/cyt_top.ltx
 # show targets
 xdb targets
 
-# program board (uses FPGA_BITSTREAM/FPGA_LTX by default)
+# program board (uses FPGA_BITSTREAM; FPGA_LTX is optional)
 xdb program
 
 # list ILAs (uses FPGA_LTX by default when set; override with --ltx)
@@ -270,10 +270,10 @@ already a report file, omit `--report`.
 
 - `FPGA_PART_HINT` is used by default to select the hardware target.
   Matching is done against `PART=` from `get_property NAME`.
-- `FPGA_BITSTREAM` and `FPGA_LTX` are used by default for `xdb program`.
-- You can override with `--part-hint`/`--fpga-part-hint`, `--bit`, and `--ltx`.
-  `xdb program`, `xdb ilas`, and `xdb capture` apply the selected LTX before
-  refreshing the hardware device.
+- `FPGA_BITSTREAM` is used by default for `xdb program`; programming does not require an LTX file. Program results include the selected backend, target, part, server context, and SHA-256 identity of the programmed artifact.
+- `FPGA_LTX` is optional for programming and is used for ILA discovery/capture when supplied. You can override with `--part-hint`/`--fpga-part-hint`, `--bit`, and `--ltx`.
+- The ChipScoPy backend reads `HW_SERVER_URL` and `CS_SERVER_URL`, selects Versal devices by part, and uses `FPGA_JTAG_TARGET` to disambiguate. A part matching multiple devices without an explicit target is rejected rather than selecting the first device.
+- `xdb ilas` and `xdb capture` apply the selected LTX before discovering debug cores.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - Captures are one-shot and blocking (with timeout).
 - `xdb sim` currently supports the packaged runtime-backed flow, not the direct

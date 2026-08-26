@@ -17,7 +17,23 @@ class TargetInfo(TypedDict):
     part: str
 
 
-class TargetsResult(TypedDict):
+class DebugSelection(TypedDict, total=False):
+    selected_target: str
+    selected_part: str
+
+
+class DebugProvenance(DebugSelection):
+    backend: str
+    device_family: str
+    hw_server_url: str
+    cs_server_url: str | None
+
+
+class ProvenanceResult(TypedDict, total=False):
+    provenance: DebugProvenance
+
+
+class TargetsResult(ProvenanceResult):
     targets: list[TargetInfo]
 
 
@@ -31,19 +47,25 @@ class IlaInfo(TypedDict):
     probes: list[ProbeInfo]
 
 
-class ListIlasResult(TypedDict):
+class ListIlasResult(ProvenanceResult):
     target: str
     part: str
     ilas: list[IlaInfo]
 
 
-class ProgramResult(TypedDict):
+class ProgramResultExtras(ProvenanceResult, total=False):
+    bitstream: str
+    bitstream_sha256: str
+    ltx: str | None
+
+
+class ProgramResult(ProgramResultExtras):
     ok: bool
     target: str
     part: str
 
 
-class CaptureResult(TypedDict):
+class CaptureResult(ProvenanceResult):
     ok: bool
     target: str
     part: str
@@ -58,7 +80,7 @@ class InstrumentInfo(TypedDict):
     capabilities: list[str]
 
 
-class InstrumentsResult(TypedDict):
+class InstrumentsResult(ProvenanceResult):
     target: str
     part: str
     instruments: list[InstrumentInfo]

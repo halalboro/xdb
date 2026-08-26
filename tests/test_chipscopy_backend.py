@@ -1,0 +1,215 @@
+from __future__ import annotations
+
+import hashlib
+import os
+import sys
+import tempfile
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from xdb.backend.chipscopy_backend import ChipScoPyBackend
+from xdb.errors import XdbError
+
+
+class FakeProbe:
+    def __init__(self, name: str, width: int) -> None:
+        self.name = name
+        self.bit_width = width
+
+
+class FakeWaveform:
+    def export_waveform(self, output_format: str, path: str) -> None:
+        if output_format != "CSV":
+            raise AssertionError(output_format)
+        Path(path).write_text("sample,probe\n0,1\n", encoding="utf-8")
+
+
+class FakeIla:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.probes = {"probe0": FakeProbe("probe0", 32)}
+        self.waveform = FakeWaveform()
+        self.trigger_args: dict[str, int] | None = None
+        self.wait_minutes: float | None = None
+
+    def reset_probes(self) -> None:
+        pass
+
+    def run_trigger_immediately(self, **kwargs: int) -> None:
+        self.trigger_args = kwargs
+
+    def wait_till_done(self, *, max_wait_minutes: float) -> None:
+        self.wait_minutes = max_wait_minutes
+
+    def upload(self) -> bool:
+        return True
+
+
+class FakeIlaCollection:
+    def __init__(self, ilas: list[FakeIla]) -> None:
+        self._ilas = ilas
+
+    def __iter__(self):
+        return iter(self._ilas)
+
+    def get(self, *, name: str):
+        return next((ila for ila in self._ilas if ila.name == name), None)
+
+
+class FakeDevice:
+    family_name = "versal"
+
+    def __init__(self, part: str, serial: str) -> None:
+        self.part_name = part
+        self.serial = serial
+        self.ila_cores = FakeIlaCollection([FakeIla("ila0")])
+        self.programmed: str | None = None
+        self.discovered_ltx: str | None = None
+
+    def __str__(self) -> str:
+        return f"device:{self.serial}"
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "cable_name": "rose-cable",
+            "part": self.part_name,
+            "dna": self.serial,
+            "serial": self.serial,
+        }
+
+    def program(self, path: str) -> None:
+        self.programmed = path
+
+    def discover_and_setup_cores(self, ltx_file: str | None = None) -> None:
+        self.discovered_ltx = ltx_file
+
+
+class FakeSession:
+    def __init__(self, devices: list[FakeDevice]) -> None:
+        self.devices = devices
+
+
+class ChipScoPyBackendTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.device = FakeDevice("xcv80-lsva4737-2MHP-e-S", "XFL1EZVSAG4SA")
+        self.session = FakeSession([self.device])
+        self.created: list[dict[str, str]] = []
+        self.deleted: list[FakeSession] = []
+
+        module = types.ModuleType("chipscopy")
+
+        def create_session(**kwargs: str) -> FakeSession:
+            self.created.append(kwargs)
+            return self.session
+
+        def delete_session(session: FakeSession) -> None:
+            self.deleted.append(session)
+
+        module.create_session = create_session  # type: ignore[attr-defined]
+        module.delete_session = delete_session  # type: ignore[attr-defined]
+        self.module_patch = patch.dict(sys.modules, {"chipscopy": module})
+        self.module_patch.start()
+        self.addCleanup(self.module_patch.stop)
+
+    def test_targets_records_server_backend_and_closes_session(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"HW_SERVER_URL": "TCP:rose:3122", "CS_SERVER_URL": "TCP:rose:3042"},
+            clear=True,
+        ):
+            result = ChipScoPyBackend().list_targets("xcv80")
+
+        self.assertEqual(self.created, [{"hw_server_url": "TCP:rose:3122"}])
+        self.assertEqual(self.deleted, [self.session])
+        self.assertEqual(result["targets"][0]["part"], self.device.part_name)
+        self.assertEqual(result["provenance"]["backend"], "chipscopy")
+        self.assertEqual(result["provenance"]["device_family"], "versal")
+        self.assertEqual(result["provenance"]["hw_server_url"], "TCP:rose:3122")
+        self.assertIsNone(result["provenance"]["cs_server_url"])
+
+    def test_program_needs_no_ltx_and_hashes_programmed_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            pdi = Path(td) / "design.pdi"
+            pdi.write_bytes(b"versal-pdi")
+            with patch.dict(
+                os.environ,
+                {
+                    "HW_SERVER_URL": "TCP:rose:3122",
+                    "FPGA_JTAG_TARGET": self.device.serial,
+                },
+                clear=True,
+            ):
+                result = ChipScoPyBackend().program(str(pdi), None, "xcv80")
+
+        self.assertEqual(self.device.programmed, str(pdi))
+        self.assertEqual(result["ltx"], None)
+        self.assertEqual(result["bitstream_sha256"], hashlib.sha256(b"versal-pdi").hexdigest())
+        self.assertEqual(result["provenance"]["selected_part"], self.device.part_name)
+        self.assertEqual(result["provenance"]["selected_target"], result["target"])
+        self.assertEqual(self.deleted, [self.session])
+
+    def test_ambiguous_part_match_fails_closed_and_closes_session(self) -> None:
+        self.session.devices.append(FakeDevice(self.device.part_name, "SECOND-V80"))
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(XdbError, "ambiguous Versal target"):
+                ChipScoPyBackend().program("unused.pdi", None, "xcv80")
+        self.assertEqual(self.deleted, [self.session])
+
+    def test_explicit_jtag_target_disambiguates_matching_parts(self) -> None:
+        second = FakeDevice(self.device.part_name, "SECOND-V80")
+        self.session.devices.append(second)
+        with tempfile.TemporaryDirectory() as td:
+            pdi = Path(td) / "design.pdi"
+            pdi.write_bytes(b"pdi")
+            with patch.dict(os.environ, {"FPGA_JTAG_TARGET": second.serial}, clear=True):
+                ChipScoPyBackend().program(str(pdi), None, "xcv80")
+        self.assertIsNone(self.device.programmed)
+        self.assertEqual(second.programmed, str(pdi))
+
+    def test_ila_listing_uses_cs_server_and_explicit_ltx(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            ltx = Path(td) / "debug.ltx"
+            ltx.write_text("probes", encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {
+                    "HW_SERVER_URL": "TCP:rose:3122",
+                    "CS_SERVER_URL": "TCP:rose:3042",
+                },
+                clear=True,
+            ):
+                result = ChipScoPyBackend().list_ilas("xcv80", ltx=str(ltx))
+
+        self.assertEqual(
+            self.created,
+            [{"hw_server_url": "TCP:rose:3122", "cs_server_url": "TCP:rose:3042"}],
+        )
+        self.assertEqual(self.device.discovered_ltx, str(ltx))
+        self.assertEqual(
+            result["ilas"], [{"name": "ila0", "probes": [{"name": "probe0", "width": 32}]}]
+        )
+        self.assertEqual(result["provenance"]["cs_server_url"], "TCP:rose:3042")
+        self.assertEqual(self.deleted, [self.session])
+
+    def test_capture_exports_csv_and_closes_session(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            csv = Path(td) / "capture.csv"
+            with patch.dict(os.environ, {}, clear=True):
+                result = ChipScoPyBackend().capture("xcv80", "ila0", str(csv), 1024, timeout=120)
+            self.assertTrue(csv.is_file())
+
+        ila = next(iter(self.device.ila_cores))
+        self.assertEqual(
+            ila.trigger_args, {"trigger_position": 512, "window_count": 1, "window_size": 1024}
+        )
+        self.assertEqual(ila.wait_minutes, 2.0)
+        self.assertEqual(result["samples"], 1024)
+        self.assertEqual(self.deleted, [self.session])
+
+
+if __name__ == "__main__":
+    unittest.main()

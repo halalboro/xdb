@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ from xdb.errors import XdbError
 from xdb.backend.base import (
     Capability,
     CaptureResult,
+    DebugProvenance,
     InstrumentsResult,
     ListIlasResult,
     ProgramResult,
@@ -33,7 +35,7 @@ class ChipScoPyBackend:
         session = self._create_session(require_cs=False)
         try:
             devices = self._get_versal_devices(session)
-            out = {
+            out: dict[str, Any] = {
                 "targets": [
                     {
                         "target": self._target_name(d),
@@ -45,6 +47,7 @@ class ChipScoPyBackend:
             if part_hint:
                 ph = part_hint.lower()
                 out["targets"] = [t for t in out["targets"] if ph in str(t.get("part", "")).lower()]
+            out["provenance"] = self._provenance(require_cs=False)
             return cast(TargetsResult, out)
         finally:
             self._delete_session(session)
@@ -57,10 +60,20 @@ class ChipScoPyBackend:
         try:
             dev = self._select_device(session, part_hint)
             dev.program(bit)
+            target = self._target_name(dev)
+            part = str(getattr(dev, "part_name", ""))
             return {
                 "ok": True,
-                "target": self._target_name(dev),
-                "part": str(getattr(dev, "part_name", "")),
+                "target": target,
+                "part": part,
+                "bitstream": bit,
+                "bitstream_sha256": self._sha256_file(bit),
+                "ltx": None,
+                "provenance": self._provenance(
+                    require_cs=False,
+                    selected_target=target,
+                    selected_part=part,
+                ),
             }
         finally:
             self._delete_session(session)
@@ -92,12 +105,19 @@ class ChipScoPyBackend:
                     )
                 ilas_out.append({"name": ila.name, "probes": probes})
 
+            target = self._target_name(dev)
+            part = str(getattr(dev, "part_name", ""))
             return cast(
                 ListIlasResult,
                 {
-                    "target": self._target_name(dev),
-                    "part": str(getattr(dev, "part_name", "")),
+                    "target": target,
+                    "part": part,
                     "ilas": ilas_out,
+                    "provenance": self._provenance(
+                        require_cs=True,
+                        selected_target=target,
+                        selected_part=part,
+                    ),
                 },
             )
         finally:
@@ -119,6 +139,7 @@ class ChipScoPyBackend:
                 "target": ilas.get("target", ""),
                 "part": ilas.get("part", ""),
                 "instruments": instruments,
+                "provenance": ilas.get("provenance", self._provenance(require_cs=True)),
             },
         )
 
@@ -160,24 +181,54 @@ class ChipScoPyBackend:
             out_path = str(Path(csv_path))
             ila.waveform.export_waveform("CSV", out_path)
 
+            target = self._target_name(dev)
+            part = str(getattr(dev, "part_name", ""))
             return {
                 "ok": True,
-                "target": self._target_name(dev),
-                "part": str(getattr(dev, "part_name", "")),
+                "target": target,
+                "part": part,
                 "ila": ila_name,
                 "csv": out_path,
                 "samples": samples,
+                "provenance": self._provenance(
+                    require_cs=True,
+                    selected_target=target,
+                    selected_part=part,
+                ),
             }
         finally:
             self._delete_session(session)
 
     def _create_session(self, require_cs: bool):
         chipscopy = self._chipscopy_imports()
-        hw_url = os.environ.get("HW_SERVER_URL", "TCP:localhost:3121")
+        provenance = self._provenance(require_cs=require_cs)
         if require_cs:
-            cs_url = os.environ.get("CS_SERVER_URL", "TCP:localhost:3042")
-            return chipscopy["create_session"](hw_server_url=hw_url, cs_server_url=cs_url)
-        return chipscopy["create_session"](hw_server_url=hw_url)
+            return chipscopy["create_session"](
+                hw_server_url=provenance["hw_server_url"],
+                cs_server_url=provenance["cs_server_url"],
+            )
+        return chipscopy["create_session"](hw_server_url=provenance["hw_server_url"])
+
+    def _provenance(
+        self,
+        *,
+        require_cs: bool,
+        selected_target: str | None = None,
+        selected_part: str | None = None,
+    ) -> DebugProvenance:
+        out: DebugProvenance = {
+            "backend": self.name,
+            "device_family": "versal",
+            "hw_server_url": os.environ.get("HW_SERVER_URL", "TCP:localhost:3121"),
+            "cs_server_url": (
+                os.environ.get("CS_SERVER_URL", "TCP:localhost:3042") if require_cs else None
+            ),
+        }
+        if selected_target is not None:
+            out["selected_target"] = selected_target
+        if selected_part is not None:
+            out["selected_part"] = selected_part
+        return out
 
     @staticmethod
     def _delete_session(session) -> None:
@@ -217,14 +268,54 @@ class ChipScoPyBackend:
     def _select_device(self, session, part_hint: str):
         part_hint_l = part_hint.lower()
         versal_devices = self._get_versal_devices(session)
-        for d in versal_devices:
-            part = str(getattr(d, "part_name", ""))
-            if part_hint_l in part.lower():
-                return d
+        candidates = [
+            d for d in versal_devices if part_hint_l in str(getattr(d, "part_name", "")).lower()
+        ]
 
         if not versal_devices:
             raise XdbError("no Versal devices found via chipscopy")
-        raise XdbError(f"no Versal target matching part hint {part_hint}")
+        if not candidates:
+            raise XdbError(f"no Versal target matching part hint {part_hint}")
+
+        target_hint = (os.environ.get("FPGA_JTAG_TARGET") or "").strip()
+        if target_hint:
+            target_matches = [d for d in candidates if self._matches_target_hint(d, target_hint)]
+            if len(target_matches) == 1:
+                return target_matches[0]
+            if not target_matches:
+                raise XdbError(
+                    f"no Versal target matching FPGA_JTAG_TARGET {target_hint} "
+                    f"and part hint {part_hint}"
+                )
+            raise XdbError(
+                f"ambiguous Versal target: FPGA_JTAG_TARGET {target_hint} and part hint "
+                f"{part_hint} match {len(target_matches)} devices"
+            )
+
+        if len(candidates) != 1:
+            raise XdbError(
+                f"ambiguous Versal target: part hint {part_hint} matches {len(candidates)} devices; "
+                "set FPGA_JTAG_TARGET"
+            )
+        return candidates[0]
+
+    @classmethod
+    def _matches_target_hint(cls, device, target_hint: str) -> bool:
+        hint = target_hint.lower()
+        values = [cls._target_name(device), str(device)]
+        try:
+            values.extend(str(value) for value in device.to_dict().values())
+        except Exception:
+            pass
+        return any(hint in value.lower() for value in values)
+
+    @staticmethod
+    def _sha256_file(path: str) -> str:
+        digest = hashlib.sha256()
+        with open(path, "rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     @staticmethod
     def _target_name(device) -> str:
