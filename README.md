@@ -86,6 +86,8 @@ xdb ila upload --ila hw_ila_1 --out ./ila.csv --format csv
 xdb ila upload --ila hw_ila_1 --out ./window.vcd --format vcd \
   --probe state --start-window 1 --window-count 1 --start-sample 32 --sample-count 128
 xdb waveform compare ./baseline.csv.json ./window.vcd.json
+xdb hw-bundle create --out ./debug-bundle \
+  --manifest ./workload.vcd.workflow.json --session v80 --max-bytes 67108864
 
 # ChipScoPy VIO inspection and explicitly confirmed output writes
 xdb vio list
@@ -331,6 +333,7 @@ already a report file, omit `--report`.
 - `FDEV_NAME` and `FPGA_BDF` are accepted as optional context flags.
 - `xdb ila arm`, `status`, `wait`, and `upload` expose a decoupled ChipScoPy capture lifecycle. Without `XDB_HW_SESSION`, each finite command reconnects and rediscovers the selected ILA while capture state remains in the core. `xdb hw-session launch` creates an optional local daemon that owns and reuses one ChipScoPy session across commands selected through `XDB_HW_SESSION`; `status` and `close` make its lifetime explicit. The blocking `xdb capture` convenience command remains available.
 - `xdb ila with-capture --exec -- <command>` performs arm → bounded host execution → wait → upload in order. Host stdout/stderr are retained beside the waveform with hashes and exit/timeout evidence; an unexpected exit is reported only after capture evidence is emitted.
+- `xdb hw-bundle create` exports supported waveform, multi-ILA, and host-command-capture manifests plus every referenced regular artifact into a size-bounded portable directory. The bundle manifest uses relative artifact paths, hashes every copy, optionally records persistent-session context, rejects symlinks, and refuses non-empty destinations.
 - `xdb instruments inventory` reports stable machine-readable ILA static information, capture depth, ports, probe metadata, match-unit properties, supported operations, and VIO port/probe directions and widths before a capture is configured.
 - Multi-ILA coordination arms at least two unique cores in one ChipScoPy session. With `--source-ila`, followers are armed first in TRIG-IN-only mode and the source is armed last with TRIG-OUT enabled; a concrete source probe trigger is mandatory. Group status/wait operations retain member identity, and group upload emits deterministic member filenames plus one `xdb.ila-group/v1` manifest with hashes and trigger positions.
 - ChipScoPy VIO support lists cores/probe directions, reads selected values and activity, and writes named output probes. Writes require explicit `--yes` confirmation and return immediate readback; XDB never infers or automatically drives VIO outputs.

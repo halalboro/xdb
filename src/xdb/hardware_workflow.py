@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import signal
 import subprocess
@@ -139,10 +140,14 @@ def capture_around_command(
         ltx=ltx,
         export_format=export_format,
     )
-    return {
+    result: dict[str, Any] = {
         "schema": "xdb.ila-with-capture/v1",
         "arm": armed,
         "host": host,
         "wait": waited,
         "capture": capture,
     }
+    manifest_path = Path(str(output) + ".workflow.json")
+    result["manifest"] = str(manifest_path)
+    manifest_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return result

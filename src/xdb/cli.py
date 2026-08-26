@@ -1259,6 +1259,26 @@ def main() -> None:  # pyright: ignore[reportGeneralTypeIssues]
             _run_vivado(args)
             return
 
+        if args.cmd == "hw-bundle":
+            from xdb.hardware_bundle import create_hardware_bundle
+            from xdb.hw_session import hardware_session_status
+
+            if args.hw_bundle_cmd == "create":
+                session_context = (
+                    hardware_session_status(args.session) if args.session is not None else None
+                )
+                _print(
+                    create_hardware_bundle(
+                        args.out,
+                        args.manifest,
+                        max_bytes=args.max_bytes,
+                        session_context=session_context,
+                    )
+                )
+            else:
+                p.error(f"unknown hw-bundle command: {args.hw_bundle_cmd}")
+            return
+
         if args.cmd == "waveform":
             if args.waveform_cmd == "compare":
                 _print(_compare_waveform_manifests(args.baseline, args.new))

@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         "vivado",
         "instruments",
         "hw-session",
+        "hw-bundle",
         "waveform",
         "vio",
         "hls",
@@ -215,6 +216,16 @@ def build_parser() -> argparse.ArgumentParser:
     s_ila_upload.add_argument("--start-sample", type=int, default=0)
     s_ila_upload.add_argument("--sample-count", type=int, default=None)
     s_ila_upload.add_argument("--include-gap", action="store_true")
+
+    s_hw_bundle = sub.add_parser("hw-bundle", help="export portable hardware-debug evidence")
+    _add_debug_flag(s_hw_bundle)
+    hw_bundle_sub = s_hw_bundle.add_subparsers(dest="hw_bundle_cmd", required=True)
+    s_hw_bundle_create = hw_bundle_sub.add_parser("create")
+    _add_debug_flag(s_hw_bundle_create)
+    s_hw_bundle_create.add_argument("--out", required=True)
+    s_hw_bundle_create.add_argument("--manifest", action="append", required=True)
+    s_hw_bundle_create.add_argument("--session", default=None)
+    s_hw_bundle_create.add_argument("--max-bytes", type=int, default=64 * 1024 * 1024)
 
     s_hw_session = sub.add_parser("hw-session", help="manage a persistent hardware session")
     _add_debug_flag(s_hw_session)

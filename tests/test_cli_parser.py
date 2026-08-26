@@ -213,6 +213,25 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.baseline, "before.json")
         self.assertEqual(args.new, "after.json")
 
+    def test_hardware_bundle_command_is_parseable(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "hw-bundle",
+                "create",
+                "--out",
+                "bundle",
+                "--manifest",
+                "capture.json",
+                "--session",
+                "v80",
+                "--max-bytes",
+                "4096",
+            ]
+        )
+        self.assertEqual(args.hw_bundle_cmd, "create")
+        self.assertEqual(args.manifest, ["capture.json"])
+        self.assertEqual(args.max_bytes, 4096)
+
     def test_hardware_session_commands_are_parseable(self) -> None:
         launch = build_parser().parse_args(["hw-session", "launch", "--name", "v80"])
         status = build_parser().parse_args(["hw-session", "status", "--name", "v80"])
