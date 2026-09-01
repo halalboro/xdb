@@ -66,38 +66,56 @@ _RESOURCE_LABELS = {
     "hard": "hard IP / NoC",
     "other": "other placed site",
 }
+# Vivado-Device-View-inspired dark palette. Background sits in the
+# #2b2b2b–#333333 range (like the Vivado GUI), and resource types are drawn
+# in slightly desaturated pastels that read clearly on the dark surface.
 _RESOURCE_COLORS = {
-    "logic": "#e2e8f0",
-    "bram": "#bfdbfe",
-    "uram": "#ddd6fe",
-    "dsp": "#fecaca",
-    "io": "#bbf7d0",
-    "transceiver": "#fde68a",
-    "clock": "#e5e7eb",
-    "hard": "#cbd5e1",
-    "other": "#f1f5f9",
+    "logic":       "#3f5468",  # muted steel-blue — CLB columns
+    "bram":        "#3b5b7a",  # deeper blue for BRAM
+    "uram":        "#4b3f70",  # violet for URAM
+    "dsp":         "#7a3a3a",  # rust for DSP
+    "io":          "#2f6b46",  # forest green for I/O
+    "transceiver": "#7a6a2a",  # olive/gold for GT bricks
+    "clock":       "#4a4a4a",  # neutral for clocking
+    "hard":        "#4a4a5a",  # slate for hard IP / NoC
+    "other":       "#3a3a3a",  # near-background for filler
 }
+# Theme constants — matched to Vivado 2023.2 Device View defaults (dark grey).
+_THEME = {
+    "document_bg":  "#1a1a1a",   # near-black canvas (Vivado ~#191919)
+    "plot_bg":      "#1a1a1a",   # inner plot surface — same as canvas
+    "plot_stroke":  "#3a3a3a",   # thin outline around plot rect
+    "ink":          "#e6e6e6",   # main text
+    "ink_muted":    "#a0a4ac",   # subtitle / secondary text
+    "ink_dim":      "#7c8088",   # captions
+    "legend_swatch_stroke": "#3a3a3a",
+    "pblock_label": "#e0e0e0",
+}
+# Vivado Device View "highlight_objects" palette — bright, saturated colors
+# on a dark surface. Slot 1 (typically inst_shell — the dominant "background"
+# hierarchy) is muted to a warm slate so it recedes; the vFPGA slots stay
+# saturated so the outlined regions read clearly.
 _GROUP_COLORS = (
-    "#0072b2",
-    "#d55e00",
-    "#009e73",
-    "#cc79a7",
-    "#e69f00",
-    "#56b4e9",
-    "#6f4e7c",
-    "#8c564b",
-    "#2f4b7c",
-    "#b03a2e",
-    "#1b7f79",
-    "#7a5195",
-    "#4e79a7",
-    "#f28e2b",
-    "#e15759",
-    "#76b7b2",
-    "#59a14f",
-    "#edc948",
-    "#b07aa1",
-    "#ff9da7",
+    "#3c78ff",   # blue        (slot 0 — usually <top>, unnoticeable)
+    "#5a5040",   # muted warm slate — inst_shell background
+    "#a3803a",   # dusty gold — inst_static (moderate visibility)
+    "#22c825",   # green       (vFPGA 0)
+    "#ffee00",   # yellow      (vFPGA 1)
+    "#00c8c8",   # cyan        (vFPGA 2)
+    "#ff36ff",   # magenta     (vFPGA 3)
+    "#a0f000",   # lime        (vFPGA 4)
+    "#ff8000",   # dark orange (vFPGA 5)
+    "#00a0ff",   # sky blue
+    "#c848ff",   # purple
+    "#ff6060",   # coral
+    "#40e0d0",   # turquoise
+    "#ffd700",   # gold
+    "#98fb98",   # pale green
+    "#ff69b4",   # hot pink
+    "#7fffd4",   # aquamarine
+    "#dda0dd",   # plum
+    "#f0e68c",   # khaki
+    "#87cefa",   # light sky
 )
 _MAX_PATH_RECTANGLES = 1024
 _MIN_DOCUMENT_WIDTH = 1100.0
@@ -123,6 +141,11 @@ proc xdb_prop {object name} {
   return $value
 }
 proc xdb_group {name depth} {
+  # Special case: if the cell lives inside inst_user_wrapper_N, name the group
+  # after that wrapper (so each vFPGA is its own color regardless of depth).
+  if {[regexp {(inst_user_wrapper_\d+)} $name _ wrapper]} {
+    return $wrapper
+  }
   set parts [split $name "/"]
   if {[llength $parts] <= 1} { return "<top>" }
   return [join [lrange $parts 0 [expr {$depth - 1}]] "/"]
@@ -170,8 +193,36 @@ foreach cell $cells name $cell_names loc $cell_locs {
 set sites [get_sites -quiet]
 set site_names [get_property NAME $sites]
 set site_types [get_property SITE_TYPE $sites]
-set site_xs [get_property RPM_X $sites]
-set site_ys [get_property RPM_Y $sites]
+# Physical tile coordinates instead of RPM grid — matches Vivado Device View
+# geometry. get_tiles -of_objects preserves the order of the input list, so
+# a single bulk call gives us tile-per-site cheaply.
+set site_tile_objs [get_tiles -of_objects $sites -quiet]
+if {[llength $site_tile_objs] == [llength $sites]} {
+    set site_xs [get_property COLUMN $site_tile_objs]
+    set site_ys [get_property ROW    $site_tile_objs]
+} else {
+    # Fallback: rebuild via per-tile lookup.
+    set all_tiles [get_tiles -quiet]
+    array set tc {}
+    array set tr {}
+    foreach n [get_property NAME $all_tiles] c [get_property COLUMN $all_tiles] r [get_property ROW $all_tiles] {
+        set tc($n) $c
+        set tr($n) $r
+    }
+    set site_xs [list]
+    set site_ys [list]
+    foreach s $sites {
+        set t [lindex [get_tiles -of_objects $s -quiet] 0]
+        if {$t ne "" && [info exists tc([get_property NAME $t])]} {
+            lappend site_xs $tc([get_property NAME $t])
+            lappend site_ys $tr([get_property NAME $t])
+        } else {
+            lappend site_xs ""
+            lappend site_ys ""
+        }
+    }
+    unset tc tr
+}
 set coordinate_count 0
 set missing_coordinate_count 0
 foreach site $sites name $site_names type $site_types x $site_xs y $site_ys {
@@ -489,10 +540,20 @@ def inspect_floorplan_checkpoint(
     if not design.occupancy or design.stats.get("placed_cells", 0) <= 0:
         raise XdbError(f"checkpoint contains no placed primitives; use a routed DCP: {checkpoint}")
     if design.stats["routing_errors"]:
-        raise XdbError(
-            f"checkpoint contains {design.stats['routing_errors']} routing errors; "
-            f"use a fully routed DCP: {checkpoint}"
-        )
+        # Placement information is still valid even if routing failed; downgrade
+        # to a warning when the caller sets XDB_ALLOW_ROUTING_ERRORS=1.
+        if os.environ.get("XDB_ALLOW_ROUTING_ERRORS", "") not in ("1", "true", "yes"):
+            raise XdbError(
+                f"checkpoint contains {design.stats['routing_errors']} routing errors; "
+                f"use a fully routed DCP: {checkpoint}"
+            )
+        else:
+            import sys
+            print(
+                f"warning: checkpoint has {design.stats['routing_errors']} routing "
+                f"errors — rendering placement only",
+                file=sys.stderr,
+            )
     return design
 
 
@@ -673,23 +734,42 @@ def _svg_document(
     if not drawable_sites:
         raise XdbError(f"no drawable FPGA resources found in checkpoint: {design.source}")
 
-    min_x = min(site.x for site in drawable_sites)
-    max_x = max(site.x for site in drawable_sites)
-    min_y = min(site.y for site in drawable_sites)
-    max_y = max(site.y for site in drawable_sites)
+    # Auto-crop: use the extent of OCCUPIED sites (not all drawable sites) so
+    # empty tile columns/rows at the die edges don't inflate the plot area.
+    # Fall back to the full drawable extent if the design is empty.
+    occupied_sites = [
+        site for site in drawable_sites if site.name in site_occupancy
+    ]
+    if occupied_sites:
+        min_x = min(site.x for site in occupied_sites)
+        max_x = max(site.x for site in occupied_sites)
+        min_y = min(site.y for site in occupied_sites)
+        max_y = max(site.y for site in occupied_sites)
+        # Small margin (in tile units) so bboxes don't touch the plot edge.
+        margin_x = int(max(4, (max_x - min_x) * 0.01))
+        margin_y = int(max(4, (max_y - min_y) * 0.01))
+        min_x = max(0, min_x - margin_x)
+        max_x = max_x + margin_x
+        min_y = max(0, min_y - margin_y)
+        max_y = max_y + margin_y
+    else:
+        min_x = min(site.x for site in drawable_sites)
+        max_x = max(site.x for site in drawable_sites)
+        min_y = min(site.y for site in drawable_sites)
+        max_y = max(site.y for site in drawable_sites)
     raw_width = max(1.0, float(max_x - min_x))
     raw_height = max(1.0, float(max_y - min_y))
-    scale = min(1050.0 / raw_width, 1020.0 / raw_height)
-    plot_width = raw_width * scale
+    # Vertical layout: die is drawn full-width and the legend stacks BELOW.
+    # Fit the die to a fixed target width; height follows aspect ratio.
+    target_plot_width = 1050.0
+    scale = target_plot_width / raw_width
+    plot_width  = raw_width  * scale
     plot_height = raw_height * scale
-    left = 42.0
-    top = 92.0
-    legend_gap = 48.0
-    legend_width = 390.0
-    document_width = max(
-        _MIN_DOCUMENT_WIDTH,
-        left + plot_width + legend_gap + legend_width + 36.0,
-    )
+    left = 20.0
+    top = 20.0
+    legend_gap = 0.0
+    legend_width = plot_width
+    document_width = max(_MIN_DOCUMENT_WIDTH, left * 2 + plot_width)
 
     groups = sorted(group for group, count in group_sites.items() if count)
     if len(groups) > max_groups:
@@ -719,18 +799,15 @@ def _svg_document(
         stroke = _group_color(index + len(groups))
         pblock_regions.append((pblock, regions, stroke))
 
-    resource_legend_height = 38.0 + len(resource_keys) * 24.0
-    if pblock_regions:
-        resource_legend_height += 42.0 + len(pblock_regions) * 24.0
-    resource_legend_height += 28.0
-    main_height = max(plot_height + 16.0, resource_legend_height)
-
-    hierarchy_columns = min(3, max(1, (len(groups) + 7) // 8))
-    hierarchy_rows = (len(groups) + hierarchy_columns - 1) // hierarchy_columns
-    hierarchy_top = top + main_height + 38.0
-    hierarchy_height = 34.0 + max(1, hierarchy_rows) * 42.0
-    document_height = hierarchy_top + hierarchy_height + 25.0
-    output_width = 1600
+    # Vertical layout: the resource legend and the placed-hierarchy legend
+    # sit BELOW the plot. The resource legend uses multiple columns so it
+    # doesn't stretch the whole figure vertically.
+    # No caption, no legend — plot fills the entire document.
+    main_height = plot_height + 16.0
+    resource_legend_top = top + main_height   # dummies kept for downstream refs
+    hierarchy_top = resource_legend_top
+    document_height = top + main_height + top   # symmetric padding
+    output_width = 1200
     output_height = max(600, round(output_width * document_height / document_width))
 
     def transform(site: FloorplanSite) -> tuple[float, float]:
@@ -744,7 +821,15 @@ def _svg_document(
         defaultdict(list)
     )
     mixed_sites = 0
+    # The auto-crop above trims (min_x, max_x, min_y, max_y) to the extent of
+    # OCCUPIED sites, but drawable_sites still spans the whole die. Drawing the
+    # unfiltered background layer would map tiles outside the crop to negative
+    # SVG offsets (past the left/top border) or beyond plot_width/plot_height
+    # (past the right/bottom border), so the die appears to spill outside the
+    # plot box. Filter to the same cropped extent so the background stays inside.
     for site in drawable_sites:
+        if site.x < min_x or site.x > max_x or site.y < min_y or site.y > max_y:
+            continue
         point = transform(site)
         background_points[site.resource].add(point)
         counts = site_occupancy.get(site.name)
@@ -768,6 +853,22 @@ def _svg_document(
             )
 
     color_by_group = {group: _group_color(index) for index, group in enumerate(groups)}
+
+    # Bounding box per hierarchy group in SVG coordinates. Skip the trivial
+    # "<top>" group so it doesn't wrap the whole die.
+    group_bboxes: dict[str, tuple[float, float, float, float]] = {}
+    for (group, _resource), rects in occupied_rectangles.items():
+        if not rects:
+            continue
+        gx0 = min(r[0] for r in rects)
+        gx1 = max(r[0] + r[2] for r in rects)
+        gy0 = min(r[1] for r in rects)
+        gy1 = max(r[1] + r[3] for r in rects)
+        if group in group_bboxes:
+            cx0, cy0, cx1, cy1 = group_bboxes[group]
+            group_bboxes[group] = (min(cx0, gx0), min(cy0, gy0), max(cx1, gx1), max(cy1, gy1))
+        else:
+            group_bboxes[group] = (gx0, gy0, gx1, gy1)
     display_title = title or f"FPGA placement — {design.design or design.source.stem}"
     subtitle_parts = [
         part for part in (design.device, f"hierarchy depth {hierarchy_depth}") if part
@@ -829,46 +930,37 @@ def _svg_document(
             "</metadata>"
         ),
         "  <style>",
-        "    text { font-family: Inter, 'DejaVu Sans', sans-serif; fill: #172033; }",
+        f"    text {{ font-family: Inter, 'DejaVu Sans', sans-serif; fill: {_THEME['ink']}; }}",
         "    .title { font-size: 26px; font-weight: 700; }",
-        "    .subtitle { font-size: 14px; fill: #526071; }",
+        f"    .subtitle {{ font-size: 14px; fill: {_THEME['ink_muted']}; }}",
         "    .legend-title { font-size: 16px; font-weight: 700; }",
         "    .legend-label { font-size: 13px; }",
         "    .hierarchy-name { font-size: 13px; font-weight: 600; }",
-        "    .legend-detail { font-size: 12px; fill: #64748b; }",
-        "    .pblock-label { font-size: 11px; font-weight: 600; fill: #334155; }",
+        f"    .legend-detail {{ font-size: 12px; fill: {_THEME['ink_dim']}; }}",
+        f"    .pblock-label {{ font-size: 11px; font-weight: 600; fill: {_THEME['pblock_label']}; }}",
         "  </style>",
-        f'  <rect width="{_fmt(document_width)}" height="{_fmt(document_height)}" fill="#ffffff"/>',
-        f'  <text class="title" x="{_fmt(left)}" y="38">{xml_escape(display_title)}</text>',
-        f'  <text class="subtitle" x="{_fmt(left)}" y="64">{xml_escape(subtitle)}</text>',
+        f'  <rect width="{_fmt(document_width)}" height="{_fmt(document_height)}" fill="{_THEME["document_bg"]}"/>',
         (
             f'  <rect x="{_fmt(left - 8)}" y="{_fmt(top - 8)}" '
             f'width="{_fmt(plot_width + 16)}" height="{_fmt(plot_height + 16)}" '
-            'rx="4" fill="#f8fafc" stroke="#94a3b8" stroke-width="1"/>'
+            f'rx="4" fill="{_THEME["plot_bg"]}" stroke="{_THEME["plot_stroke"]}" stroke-width="1"/>'
         ),
-        '  <g id="device-resources">',
+        # (device-resources background layer intentionally omitted — keeps
+        # the plot uncluttered; a subtle unified CLB shading is drawn below.)
     ]
 
-    for resource in resource_keys:
-        points = background_points.get(resource, set())
-        if not points:
-            continue
-        width, height = _MARK_SIZE[resource]
-        lines.extend(
-            [
-                (
-                    f'    <g id="resource-{resource}" '
-                    f'fill="{_RESOURCE_COLORS[resource]}" opacity="0.86">'
-                ),
-                (
-                    f"      <title>{xml_escape(_RESOURCE_LABELS[resource])}: "
-                    f"{resource_counts[resource]} sites</title>"
-                ),
-            ]
+    # Subtle single-hue background covering ALL device sites, so the die
+    # geometry (I/O banks, GT bricks, gaps) is visible without a rainbow of
+    # resource-type colors.
+    lines.append('  <g id="device-canvas">')
+    all_points: set[tuple[float, float]] = set()
+    for rset in background_points.values():
+        all_points.update(rset)
+    width, height = _MARK_SIZE["logic"]
+    for path, _count in _mark_path_chunks(all_points, width, height):
+        lines.append(
+            f'    <path d="{path}" fill="#3a3f47" opacity="0.55"/>'
         )
-        for path, _count in _mark_path_chunks(points, width, height):
-            lines.append(f'      <path d="{path}"/>')
-        lines.append("    </g>")
     lines.append("  </g>")
 
     lines.append('  <g id="placed-hierarchies">')
@@ -894,6 +986,68 @@ def _svg_document(
                 )
     lines.append("  </g>")
 
+    # Outlined bounding boxes + inline labels for the vFPGA wrappers.
+    import re as _re
+    _INTERESTING_RE = _re.compile(r"^inst_user_wrapper_(\d+)$")
+    lines.append('  <g id="hierarchy-bboxes">')
+    # First pass: compute bboxes for all vFPGA groups, sorted numerically.
+    vfpga_entries = []
+    for group, (gx0, gy0, gx1, gy1) in group_bboxes.items():
+        m = _INTERESTING_RE.match(group)
+        if not m:
+            continue
+        vfpga_entries.append((int(m.group(1)), group, gx0, gy0, gx1, gy1))
+    vfpga_entries.sort()
+    # Draw all rects first — heavier strokes so bboxes read at figure scale.
+    for _idx, group, gx0, gy0, gx1, gy1 in vfpga_entries:
+        color = color_by_group[group]
+        pad = 4.0
+        rx = gx0 - pad
+        ry = gy0 - pad
+        rw = (gx1 - gx0) + 2 * pad
+        rh = (gy1 - gy0) + 2 * pad
+        lines.append(
+            f'    <rect x="{_fmt(rx)}" y="{_fmt(ry)}" width="{_fmt(rw)}" height="{_fmt(rh)}" '
+            f'fill="none" stroke="{color}" stroke-width="4.5" opacity="0.95" rx="3">'
+            f'<title>{xml_escape(group)}</title></rect>'
+        )
+    # Anchor each vFPGA's label at the top-left corner of its bbox, but if a
+    # tag would overlap a previously-placed one, push it downward.
+    LABEL_H = 32.0
+    LABEL_FONT_SIZE = 18
+    LABEL_CHAR_W = 11.0
+    LABEL_PAD_X = 10.0
+    placed_labels: list[tuple[float, float, float, float]] = []
+    for idx, group, gx0, gy0, gx1, gy1 in vfpga_entries:
+        color = color_by_group[group]
+        label = f"vFPGA {idx}"
+        text_w = LABEL_CHAR_W * len(label) + 2 * LABEL_PAD_X
+        lx = gx0 - pad
+        ly = gy0 - pad
+        collides = True
+        while collides:
+            collides = False
+            for px0, py0, pw, ph in placed_labels:
+                if not (lx + text_w < px0 or px0 + pw < lx or
+                        ly + LABEL_H < py0 or py0 + ph < ly):
+                    ly = py0 + ph + 4.0
+                    collides = True
+                    break
+        placed_labels.append((lx, ly, text_w, LABEL_H))
+        lines.append(
+            f'    <rect x="{_fmt(lx)}" y="{_fmt(ly)}" width="{_fmt(text_w)}" '
+            f'height="{_fmt(LABEL_H)}" fill="{color}" opacity="0.96" rx="4" '
+            f'stroke="#111111" stroke-width="1.2"/>'
+        )
+        lines.append(
+            f'    <text x="{_fmt(lx + LABEL_PAD_X)}" '
+            f'y="{_fmt(ly + LABEL_H - 10)}" '
+            f'font-family="Inter, DejaVu Sans, sans-serif" '
+            f'font-size="{LABEL_FONT_SIZE}" font-weight="700" fill="#111111">'
+            f'{xml_escape(label)}</text>'
+        )
+    lines.append("  </g>")
+
     if pblock_regions:
         lines.append('  <g id="pblocks">')
         for pblock, raw_regions, stroke in pblock_regions:
@@ -914,91 +1068,17 @@ def _svg_document(
                     )
         lines.append("  </g>")
 
-    legend_x = document_width - legend_width - 36.0
-    legend_y = top
     lines.extend(
         [
-            (f'  <g id="device-legend" transform="translate({_fmt(legend_x)} {_fmt(legend_y)})">'),
-            '    <text class="legend-title" x="0" y="0">Device resources</text>',
-        ]
-    )
-    row = 25.0
-    for resource in resource_keys:
-        lines.append(
-            f'    <rect x="0" y="{_fmt(row - 12)}" width="15" height="15" rx="2" '
-            f'fill="{_RESOURCE_COLORS[resource]}" stroke="#94a3b8" stroke-width="0.5"/>'
-        )
-        label = (
-            f"{_RESOURCE_LABELS[resource]} — {resource_counts[resource]:,} sites, "
-            f"{occupied_resource_counts[resource]:,} occupied"
-        )
-        lines.append(
-            f'    <text class="legend-label" x="24" y="{_fmt(row)}">{xml_escape(label)}</text>'
-        )
-        row += 24.0
-
-    if pblock_regions:
-        row += 15.0
-        lines.append(f'    <text class="legend-title" x="0" y="{_fmt(row)}">Pblocks</text>')
-        row += 25.0
-        for pblock, _regions, stroke in pblock_regions:
-            lines.append(
-                f'    <line x1="0" y1="{_fmt(row - 5)}" x2="16" y2="{_fmt(row - 5)}" '
-                f'stroke="{stroke}" stroke-width="2" stroke-dasharray="6 4"/>'
-            )
-            lines.append(
-                f'    <text class="legend-label" x="24" y="{_fmt(row)}">'
-                f"{xml_escape(pblock.name)}</text>"
-            )
-            row += 24.0
-
-    lines.extend(
-        [
-            f'    <text class="legend-detail" x="0" y="{_fmt(row + 18)}">'
-            "Coordinates: Vivado RPM site grid</text>",
-            "  </g>",
-            '  <g id="hierarchy-legend">',
-            (
-                f'    <text class="legend-title" x="{_fmt(left)}" '
-                f'y="{_fmt(hierarchy_top)}">Placed hierarchy</text>'
-            ),
+            # legend + caption intentionally omitted — plot only.
+            "  <g id=\"device-legend\"></g>",
+            '  <g id="hierarchy-legend"></g>',
         ]
     )
 
-    hierarchy_column_width = (document_width - 2.0 * left) / hierarchy_columns
-    if groups:
-        for index, group in enumerate(groups):
-            column = index // hierarchy_rows
-            item_row = index % hierarchy_rows
-            x = left + column * hierarchy_column_width
-            y = hierarchy_top + 30.0 + item_row * 42.0
-            detail = f"{group_cells[group]:,} cells · {group_sites[group]:,} occupied sites"
-            lines.extend(
-                [
-                    "    <g>",
-                    (f"      <title>{xml_escape(group)} — {xml_escape(detail)}</title>"),
-                    (
-                        f'      <rect x="{_fmt(x)}" y="{_fmt(y - 12)}" width="15" '
-                        f'height="15" rx="2" fill="{color_by_group[group]}"/>'
-                    ),
-                    (
-                        f'      <text class="hierarchy-name" x="{_fmt(x + 24)}" '
-                        f'y="{_fmt(y)}">{xml_escape(_short_label(group))}</text>'
-                    ),
-                    (
-                        f'      <text class="legend-detail" x="{_fmt(x + 24)}" '
-                        f'y="{_fmt(y + 17)}">{xml_escape(detail)}</text>'
-                    ),
-                    "    </g>",
-                ]
-            )
-    else:
-        lines.append(
-            f'    <text class="legend-detail" x="{_fmt(left)}" '
-            f'y="{_fmt(hierarchy_top + 28)}">No placed primitives</text>'
-        )
+    # (external legend suppressed; labels are drawn inline on the bboxes.)
 
-    lines.extend(["  </g>", "</svg>", ""])
+    lines.extend(["</svg>", ""])
     return "\n".join(lines), metadata
 
 

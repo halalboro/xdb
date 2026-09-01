@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -119,7 +120,11 @@ def _run_vivado_tcl(tcl: str, args: list[str], timeout: int = 120) -> VivadoResu
         tf.write(tcl)
         tcl_path = tf.name
 
-    cmd = ["vivado", "-mode", "batch", "-source", tcl_path, "-notrace", "-nolog", "-nojournal"]
+    # Python 3.13+ subprocess uses posix_spawn under the hood, which does NOT
+    # search PATH for argv[0]; only execvpe does. Resolve to an absolute path
+    # ourselves via shutil.which so a PATH-visible vivado is found either way.
+    vivado_binary = shutil.which("vivado") or "vivado"
+    cmd = [vivado_binary, "-mode", "batch", "-source", tcl_path, "-notrace", "-nolog", "-nojournal"]
     if args:
         cmd += ["-tclargs", *args]
 
